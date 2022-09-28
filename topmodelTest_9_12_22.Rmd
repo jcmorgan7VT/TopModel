@@ -238,7 +238,37 @@ delay[,2] <- c(0, cumsum(delay[1:(n-1),2]))
 
 ```{r}
 #generating PET data
-#I am being lazy so I will just make 
+#I am being lazy so I will just make
+y <- rnorm(seq(1, 365, 1), mean = 0.00226, sd = 1)
+
+hist(y)
+
+#generating list of parameters
+HB_params <- list(
+# qs0	Initial subsurface flow per unit area [m]
+  qs0 = 0,
+# lnTe	log of the areal average of T0 [m2/h]
+  lnTe = ,
+# m	Model parameter controlling the rate of decline of transmissivity in the soil profile, see Beven, 1984
+  m = ,
+# Sr0	Initial root zone storage deficit [m]
+  Sr0 = ,
+# Srmax	Maximum root zone storage deficit [m]
+  Srmax = ,
+# td	Unsaturated zone time delay per unit storage deficit [h/m]
+  td = ,
+# vch	channel flow outside the catchment [m/h] (currently not used)
+  vch = ,
+# vr	channel flow inside catchment [m/h]
+  vr = ,
+# k0	Surface hydraulic conductivity [m/h]
+  k0 = 0,
+# CD	capillary drive, see Morel-Seytoux and Khanji (1974)
+  CD = ,
+# dt	The timestep [h]
+  dt = 24)
+
+
 ```
 
 ```{r}
@@ -267,9 +297,9 @@ q2 <- q %>%
   filter(date > ymd("2020-01-01") & date < ymd("2021-01-01"))
 
 
-test <- topmodel(h$parameters, topidx1, h$delay, rain2$Precip, h$ETp, verbose = F, Qobs = NA)
+test <- topmodel(h$parameters, topidx1, h$delay, rain2$Precip, y, verbose = F, Qobs = NA)
 
 plot(test, type="l", col="red", ylim = c(0, 20))
-points(q2$q_average)
+points(q2$q_average, type = 'l')
 ```
 
