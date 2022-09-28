@@ -8,7 +8,7 @@ date: '2022-09-12'
 Downloading and playing with TopModel package, just finished reading Hornberger paper.
 
 ```{r}
-install.packages('topmodel')
+#install.packages('topmodel')
 ```
 
 ```{r, echo = false, warning=FALSE}
@@ -183,13 +183,26 @@ mean(limits[2,] - limits[1,]) / mean(Qobs, na.rm=T)
 
 9/14/22
 Reading the references from topmodel documentation, downloaded HB data, going to take a crack at deriving some of the components.
+
 9/26/22
 Haven't worked on this at all since last update. Going to try to make a map and calculate topographic wetness index
 
+Succeeded in calculating topographic wetness index
+
+9/27/22
+Implemented model to run using HB topography and precipitation, now need to determine other properties and parameters of the shed
+
+Getting PET for HB from Green et al. 2021, using Penman Monteith
+
+9/28/22
+Attempting to implement PET, figure out what other parameters are and how I will get them
+
+
 ```{r, warning=FALSE}
-#setwd("C:/Users/John/Documents/TopModel/HB/knb-lter-hbr.211.2")
-#dem <- raster("dem1m.tif")
-setwd("C:/Users/John/Documents/TopModel/HB/hbef_wsheds")
+#generating topographic index
+setwd("C:/Users/John/Documents/HBTopModel/HB/knb-lter-hbr.211.2")
+dem <- raster("dem1m.tif")
+setwd("C:/Users/John/Documents/HBTopModel/HB/hbef_wsheds")
 
 w3 <- readOGR(dsn='.',layer = 'hbef_wsheds')
 
@@ -206,6 +219,7 @@ plot(w3_dem)
 mat <- raster::as.matrix(dem_crop)
 mat[mat==-9999] <- NA
 topindex <- topidx(mat, resolution=1)
+write.table(topindex, 'HB_topindex.txt')
 
 topidx1 <- make.classes(topindex$atb,16)
 topidx2 <- make.classes(topindex$area,16)
@@ -221,7 +235,15 @@ delay <- delay[n:1,]
 delay[,2] <- c(0, cumsum(delay[1:(n-1),2]))
 ```
 
+
 ```{r}
+#generating PET data
+#I am being lazy so I will just make 
+```
+
+```{r}
+data(huagrahuma)
+
 h <- huagrahuma
 #using a combination of variables from example data and HB
 #precip
