@@ -1,0 +1,139 @@
+---
+title: "Lab 6 R4Geo"
+output:
+  html_document: default
+  pdf_document: default
+date: "2022-11-19"
+---
+John Morgan
+
+For my research, I am planning on utilizing the hydrological model Topmodel to explore the impact of different soil units on streamflow in the Hubbard Brook experimental forest in New Hampshire.
+
+There are two R package implementations of Topmodel as packages, "topmodel" and "dynatop". Neither is exactly how I want to implement it, so at this time I am planning on making my own implementation, and comparing it to these pre-existing ones for my final project. 
+
+For this assignment, I am attempting to run a very basic iteration of the "topmodel" implementation. First, I will make a map of the study watershed, then I will input parameters and run the model.
+  
+
+```{r}
+#setup
+library(pacman)
+
+p_load(dynatopGIS, tidyverse, raster, rgdal, sp, mapview,
+       rgeos, spdplyr, whitebox, RColorBrewer, topmodel, lubridate)
+```
+  
+Below is a map of my study watershed, showing field mapped stream flowlines for Paradise Brook, and a hillshade generated from a 1 meter DEM.
+```{r}
+#reading in dem and watershed shapefiles
+setwd("C:/Users/John/Documents/HBTopModel/HB/knb-lter-hbr.211.2")
+dem <- raster("dem1m.tif")
+#plot(dem)
+
+setwd("C:/Users/John/Documents/HBTopModel/HB/hbef_wsheds")
+w3 <- readOGR(dsn='.',layer = 'hbef_wsheds')
+wall <- w3
+
+w3 <- w3 %>% filter(WS == "WS3")
+#plot(w3)
+
+w3_p <- spTransform(w3, crs(dem))
+dem_crop <- crop(dem, w3_p)
+w3_dem <- mask(dem_crop, w3_p)
+#raster::writeRaster(w3_dem, "w3_dem.tif", format = "GTiff")
+
+#stream shapefile, from Jensen et al. 2017
+setwd("C:/Users/John/Documents/HBTopModel/HB/hbstream/HB_Shapefiles")
+stream <- readOGR("hb42_master.shp")
+s <- raster::shapefile("hb42_master.shp")
+stream_p <- spTransform(stream, crs(dem))
+
+#make a hillshade
+wbt_hillshade(dem = "w3_dem.tif",
+              output = "w3_hillshade.tif",
+              azimuth = 115)
+
+hill <- raster("w3_hillshade.tif")
+
+#mapview(hill, col.regions = brewer.pal(6, "Greys"))+
+#  mapview(stream_p)
+
+#make a nice map of the HB LTER, highlighting watershed 3
+ggplot()
+
+```
+  
+Below I calculate the TWI using one of the implementations of topmodel, the "topmodel" package.
+```{r, warning=FALSE}
+#generating topographic index
+
+#convert DEM to matrix
+mat <- raster::as.matrix(dem_crop)
+mat[mat==-9999] <- NA
+#already generated topidx table before
+topindex <- topidx(mat, resolution=1)
+#write.table(topindex, 'HB_topindex.txt')
+
+#topidx <- read.csv("C:/Users/John/Documents/HBTopModel/HB_topindex.txt", sep = " ")
+topidx1 <- make.classes(topindex$atb,16)
+topidx2 <- make.classes(topindex$area,16)
+
+# the delay function is a bit more tricky because this requires cumulative fractions, but you generate it as follows:
+
+n <- 5 # number of classes; a higher number will result in a smoother histogram
+which(mat == min(mat), arr.ind = TRUE)
+
+delay <- flowlength(mat, c(837, 176))*1 #TOD: add the outlet coordinates; otherwise the flowlength will be calculated to the edge of the map.
+delay <- make.classes(delay, n)
+delay <- delay[n:1,]
+delay[,2] <- c(0, cumsum(delay[1:(n-1),2]))
+```
+  
+And here I attempt to implement the model for the first time:
+
+```{r}
+data(huagrahuma)
+
+h <- huagrahuma
+#using a combination of variables from example data and HB
+#precip
+rain <- read.csv("HB/dailyWatershedPrecip1956-2021.csv")
+rain$DATE <- ymd(rain$DATE)
+rain2 <- filter(rain, watershed == "W3") %>% 
+  filter(DATE > ymd("2020-01-01") & DATE < ymd("2021-01-01"))
+
+#actual observed discharge
+q <- read.csv("HB/w3_stmflow_2013-2022_5min.csv")
+q$DATETIME <- ymd_hms(q$DATETIME)
+q2 <- q %>%
+  mutate(date = floor_date(DATETIME, unit = "day")) %>%
+  group_by(date) %>%
+  summarise(
+    n = n(),
+    q_total = sum(Discharge_ls),
+    q_average = mean(Discharge_ls),
+    .groups = "drop"
+  ) %>% 
+  filter(date > ymd("2020-01-01") & date < ymd("2021-01-01"))
+
+#generating PET data
+#lazy bad method: normal distribution of PET through year
+y <- rnorm(seq(1, 365, 1), mean = 0.00226, sd = 1)
+
+test <- topmodel(h$parameters, topidx1, h$delay, rain2$Precip, y, verbose = F, Qobs = NA)
+
+#plot(test, type="l", col="red", ylim = c(0, 30))
+#points(q2$q_average, type = 'l')
+
+final <- data.frame("Date" = q2$date,
+                       "Actual_Q" = q2$q_average,
+                       "Modeled_Q" = test)
+
+final2 <- gather(final, key = "key", value = "value", -Date)
+ggplot(final2)+
+  geom_line(aes(x = Date, y = value, color = key))+
+  theme_classic()+
+  labs(y = "Discharge (L/s)",
+       title = "Simulated discharge using topmodel for Paradise Brook, 2020")
+```
+  
+Based on the model results, the simulated discharge was not very close at all. It failed to capture the magnitude of the peaks observed. In future attempts, I will use a more robust method to estimate or parameterize ET.

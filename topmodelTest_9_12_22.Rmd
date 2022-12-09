@@ -218,11 +218,13 @@ plot(w3_dem)
 #convert DEM to matrix
 mat <- raster::as.matrix(dem_crop)
 mat[mat==-9999] <- NA
+#already generated topidx table before
 topindex <- topidx(mat, resolution=1)
-write.table(topindex, 'HB_topindex.txt')
+#write.table(topindex, 'HB_topindex.txt')
 
-topidx1 <- make.classes(topindex$atb,16)
-topidx2 <- make.classes(topindex$area,16)
+#topidx <- read.csv("C:/Users/John/Documents/HBTopModel/HB_topindex.txt", sep = " ")
+topidx1 <- make.classes(topidx$atb,16)
+topidx2 <- make.classes(topidx$area,16)
 
 # the delay function is a bit more tricky because this requires cumulative fractions, but you generate it as follows:
 
@@ -238,9 +240,28 @@ delay[,2] <- c(0, cumsum(delay[1:(n-1),2]))
 
 ```{r}
 #generating PET data
-#I am being lazy so I will just make
+#lazy bad method: normal distribution of PET through year
 y <- rnorm(seq(1, 365, 1), mean = 0.00226, sd = 1)
 
+#better way- estimating PET using harmon method: https://vt-hydroinformatics.github.io/modelingintro.html#calculate-pet
+
+#find latitude of site
+lat <- 43 + 57/60 #43 degrees and 57 minutes
+latrad <- (lat/360) * 2 * pi #convert to radians
+
+PET1 <- select(Temp1, DATE) %>%
+         mutate(DOY = yday(DATE)) %>% #DOY for dates
+         mutate(tempvar = (2 * pi / 365) * DOY) %>%
+         #declination of the sun above the celestial equator in 
+         #radians on day JulDay of the year
+         mutate(delta_h = 0.4093 * sin(tempvar - 1.405)) %>% 
+         #day length in h
+         mutate(daylen = (2 * acos(-tan(delta_h) * tan(latrad)) / 0.2618)) %>% 
+         mutate(
+           PET = 29.8 * daylen * 0.611 * exp(17.3 * Temp / 
+                  (Temp + 237.3)) / (Temp + 273.2))  #PET Hamon method
+
+PET <- PET1$PET
 hist(y)
 
 #generating list of parameters
@@ -258,7 +279,7 @@ HB_params <- list(
 # td	Unsaturated zone time delay per unit storage deficit [h/m]
   td = ,
 # vch	channel flow outside the catchment [m/h] (currently not used)
-  vch = ,
+  vch = 0,
 # vr	channel flow inside catchment [m/h]
   vr = ,
 # k0	Surface hydraulic conductivity [m/h]
@@ -302,4 +323,9 @@ test <- topmodel(h$parameters, topidx1, h$delay, rain2$Precip, y, verbose = F, Q
 plot(test, type="l", col="red", ylim = c(0, 20))
 points(q2$q_average, type = 'l')
 ```
+
+
+
+```{r}
+
 
