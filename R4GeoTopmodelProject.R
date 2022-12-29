@@ -47,6 +47,8 @@ mapview(hill_f, col.regions = brewer.pal(6, "Greys"), legend = FALSE)+
 ggplot()+
   geom_raster(hill_f, aes(x = x, y = y, fill = z))
 
+
+
 #generating topographic index
 
 #convert DEM to matrix
@@ -128,7 +130,7 @@ PET <- PET1$PET
 
 
 
-test <- topmodel(h$parameters, topidx1, h$delay, rain2$Precip, PET, verbose = F, Qobs = NA)
+test <- topmodel(best, topidx1, h$delay, rain2$Precip, PET, verbose = F, Qobs = NA)
 
 #plot(test, type="l", col="red", ylim = c(0, 30))
 #points(q2$q_average, type = 'l')
@@ -138,12 +140,33 @@ final <- data.frame("Date" = q2$date,
                     "Modeled_Q" = test)
 
 final2 <- gather(final, key = "key", value = "value", -Date) %>% 
-  filter(key == "Modeled_Q.qo" | key == "Actual_Q")
+  filter(key == "Modeled_Q" | key == "Actual_Q")
 ggplot(final2)+
   geom_line(aes(x = Date, y = value, color = key))+
   theme_classic()+
   labs(y = "Discharge (L/s)",
        title = "Simulated discharge using topmodel for Paradise Brook, 2020")
 
-test <- topmodel(parameters, topidx1, h$delay, rain2$Precip, PET, verbose = F, Qobs = q2$q_average)
+## Now sample all parameters at random. We take a sample size of 100
 
+n <- 1000
+
+qs0 <- runif(n, min = 0.0001, max = 0.00025)
+lnTe <- runif(n, min = -2, max = 3)
+m <- runif(n, min = 0, max = 0.1)
+Sr0 <- runif(n, min = 0, max = 0.2)
+Srmax <- runif(n, min = 0, max = 0.1)
+td <- runif(n, min = 0, max = 3)
+vch <- runif(n, min = 100, max = 2500)
+vr <- runif(n, min = 100, max = 2500)
+k0 <- runif(n, min = 0, max = 10)
+CD <- runif(n, min = 0, max = 5)
+dt <- 24
+
+parameters <- cbind(qs0,lnTe,m,Sr0,Srmax,td,vch,vr,k0,CD,dt)
+
+best <- parameters[which.max(test),]
+
+test <- topmodel(parameters, topidx1, h$delay, rain2$Precip, PET, verbose = F, Qobs = q2$q_average)
+summary(test)
+hist(test, xlim = c(-0.2, 0.2), bins = 10)

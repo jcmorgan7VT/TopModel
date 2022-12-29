@@ -114,7 +114,7 @@ points(Qobs)
 
 ## Now sample all parameters at random. We take a sample size of 100
 
-n <- 100
+n <- 1000
 
 qs0 <- runif(n, min = 0.0001, max = 0.00025)
 lnTe <- runif(n, min = -2, max = 3)
@@ -169,7 +169,7 @@ probs = c(0.05,0.95), normwt=T)
 
 plot(limits[2,], type="l")
 points(limits[1,], type="l")
-points(Qobs, col="red")
+points(Qobs, col="blue")
 
 ## how many measurements fall outside of the prediction limits?
 
