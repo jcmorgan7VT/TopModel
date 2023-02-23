@@ -18,7 +18,7 @@ dem_crop <- crop(dem, w3_p)
 w3_dem <- mask(dem_crop, w3_p)
 
 #stream shapefile, from Jensen et al. 2017
-setwd("C:/Users/John/Documents/HBTopModel/HB/hbstream/HB_Shapefiles")
+setwd("C:/Users/John/Documents/VT Research/HBTopModel/HB/hbstream/HB_Shapefiles")
 stream <- readOGR("hb42_master.shp")
 s <- raster::shapefile("hb42_master.shp")
 stream_p <- spTransform(stream, crs(dem))
@@ -27,26 +27,22 @@ stream_p <- spTransform(stream, crs(dem))
 wbt_hillshade(dem = "w3_dem.tif",
               output = "w3_hillshade.tif",
               azimuth = 115)
-setwd("C:/Users/John/Documents/HBTopModel/HB/knb-lter-hbr.211.2")
+setwd("C:/Users/John/Documents/VT Research/HBTopModel/HB/knb-lter-hbr.211.2")
 wbt_hillshade(dem = "dem1m.tif",
               output = "wall_hillshade.tif",
               azimuth = 115)
 
 
-hill <- raster("w3_hillshade.tif")
+#hill <- raster("w3_hillshade.tif") #Doesnt seem to work, can't find corresponding file
 bighill <- raster("wall_hillshade.tif")
 
 wall_p <- spTransform(wall, crs(dem))
 hill_crop <- crop(bighill, wall_p)
 hill_f <- mask(hill_crop, wall_p)
+#mapview call produces a lot of errors
 mapview(hill_f, col.regions = brewer.pal(6, "Greys"), legend = FALSE)+
   mapview(w3_p, layer.name = "Watershed 3")
   mapview(stream_p)
-
-#make a nice map of the HB LTER, highlighting watershed 3
-ggplot()+
-  geom_raster(hill_f, aes(x = x, y = y, fill = z))
-
 
 
 #generating topographic index

@@ -69,3 +69,52 @@ ctch$compute_areas()
 #easy
 test <- gUnaryUnion(stream_c)
 stream_c$startNode <- seq(1, length(stream_c$Id), 1)
+
+###########################
+#Dynatop test 2/7/23
+#https://cran.r-project.org/web/packages/dynatop/vignettes/dynatop.html
+install.packages("dynatop")
+library(dynatop)
+data("Swindale")
+
+names(Swindale)
+
+swindale_model <- Swindale$model
+swindale_obs <- Swindale$obs
+
+names(swindale_model)
+
+
+swindale_model$map$hillslope <- system.file("extdata","Swindale.tif",package="dynatop",mustWork=TRUE)
+swindale_model$map$channel <- system.file("extdata","channel.shp",package="dynatop",mustWork=TRUE)
+swindale_model$map$channel_id <- system.file("extdata","channel_id.tif",package="dynatop",mustWork=TRUE)
+
+
+ctch_mdl <- dynatop$new(swindale_model)
+
+#adding discharge observations
+ctch_mdl$add_data(swindale_obs)
+#running a simulation
+ctch_mdl$sim()
+ctch_mdl$initialise()$plot_state("s_sz")
+sim1 <- ctch_mdl$sim()$get_gauge_flow()
+ctch_mdl$plot_state("s_sz")
+
+sim2 <- ctch_mdl$sim()$get_gauge_flow()
+out <- merge( merge(swindale_obs,sim1),sim2)
+names(out) <- c(names(swindale_obs),'sim_1','sim_2')
+plot(out[,c('Flow','sim_1','sim_2')], main="Discharge",ylab="m3/s",legend.loc="topright")
+
+#trying to follow the set up guide again
+library(dynatopGIS)
+demo_dir <- tempfile("dygis")
+dir.create(demo_dir)
+#create a new dynatop object
+ctch <- dynatopGIS$new(file.path(demo_dir,"meta.json"))
+
+#add catchment data
+#specify paths to the DEM and stream flowlines
+channel_file <- "C:/Users/John/Documents/VT Research/HBTopModel/HB/hbstream/HB_Shapefiles/hb42_master.shp"
+
+stream <- readOGR(channel_file)
+
