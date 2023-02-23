@@ -13,35 +13,50 @@ date: "2023-02-23"
 #setup
 library(pacman)
 
-p_load(dynatopGIS, tidyverse, raster, rgdal, sp, mapview,
-       rgeos, spdplyr, whitebox, RColorBrewer, topmodel, lubridate)
+p_load(tidyverse, raster, rgdal, sp,
+       rgeos, spdplyr, whitebox, RColorBrewer, lubridate)
 ```
   
 ```{r}
-dem <- raster("./w3_dem.tif")
+#dem <- raster("./w3_dem.tif")
+dem <- "./w3_dem.tif"
+
+#wbt_fill_single_cell_pits(
+#                    dem = "McDonaldHollowDEM/brushDEMsm_5m_crs.tif",
+ #                   output = "McDonaldHollowDEM/bmstationdem_filled.tif")
+
+wbt_breach_depressions_least_cost(
+  dem = "McDonaldHollowDEM/brushDEMsm_5m_crs.tif",
+  output = "McDonaldHollowDEM/bmstationdem_breached.tif",
+  dist = 5,
+  fill = TRUE)
+
+wbt_fill_depressions_wang_and_liu(
+  dem = "McDonaldHollowDEM/bmstationdem_breached.tif",
+  output = "McDonaldHollowDEM/bmstationdem_filled_breached.tif"
+)
 
 
-# wbt_d_inf_flow_accumulation(input = "McDonaldHollowDEM/bmstationdem_filled_breached.tif",
-#                             output = "McDonaldHollowDEM/DinfFAsca.tif",
-#                             out_type = "Specific Contributing Area")
-# 
-# wbt_slope(dem = "McDonaldHollowDEM/bmstationdem_filled_breached.tif",
-#           output = "McDonaldHollowDEM/demslope.tif",
-#           units = "degrees")
-# 
-# wbt_wetness_index(sca = "McDonaldHollowDEM/DinfFAsca.tif",
-#                   slope = "McDonaldHollowDEM/demslope.tif",
-#                   output = "McDonaldHollowDEM/TWI.tif")
-# 
-# twi <- raster("McDonaldHollowDEM/TWI.tif")
-# 
-# twi[twi > 0] <- NA
-# 
-# tm_shape(hillshade)+
-#   tm_raster(style = "cont",palette = "-Greys", legend.show = FALSE)+
-# tm_shape(twi)+
-#   tm_raster(style = "cont", palette = "PuOr", legend.show = TRUE, alpha = 0.5)+
-#   tm_scale_bar()
+wbt_d_inf_flow_accumulation(input = dem,
+                            output = "DinfFAsca.tif",
+                            out_type = "Specific Contributing Area")
+
+wbt_slope(dem = "McDonaldHollowDEM/bmstationdem_filled_breached.tif",
+          output = "McDonaldHollowDEM/demslope.tif",
+          units = "degrees")
+
+wbt_wetness_index(sca = "McDonaldHollowDEM/DinfFAsca.tif",
+                  slope = "McDonaldHollowDEM/demslope.tif",
+                  output = "McDonaldHollowDEM/TWI.tif")
+
+twi <- raster("McDonaldHollowDEM/TWI.tif")
+
+twi[twi > 0] <- NA
+
+tm_shape(hillshade)+
+  tm_raster(style = "cont",palette = "-Greys", legend.show = FALSE)+
+tm_shape(twi)+
+  tm_raster(style = "cont", palette = "PuOr", legend.show = TRUE, alpha = 0.5)+
+  tm_scale_bar()
 ```
 
-TEST

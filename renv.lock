@@ -406,10 +406,10 @@
     },
     "curl": {
       "Package": "curl",
-      "Version": "4.3.2",
+      "Version": "5.0.0",
       "Source": "Repository",
       "Repository": "CRAN",
-      "Hash": "022c42d49c28e95d69ca60446dbabf88",
+      "Hash": "e4f97056611e8e6b8b852d13b7400cf1",
       "Requirements": []
     },
     "data.table": {
