@@ -323,10 +323,3 @@ test <- topmodel(h$parameters, topidx1, h$delay, rain2$Precip, y, verbose = F, Q
 plot(test, type="l", col="red", ylim = c(0, 20))
 points(q2$q_average, type = 'l')
 ```
-
-
-
-```{r}
-
-
-'''
