@@ -23,6 +23,5 @@ jobs:
       
       - name: Render Rmarkdown files and Commit Results
         run: |
-           R install.packages("rmarkdown")
            R -e 'rmarkdown::render("topmodel_fromscratch_2_23_23.Rmd")'
 
