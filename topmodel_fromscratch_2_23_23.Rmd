@@ -9,12 +9,13 @@ date: "2023-02-23"
   - modifying twi based on soil location and properties
   - modifying infiltration properties based on soil location and properties
     
-```{r}
+```{r, echo = FALSE}
 #setup
 library(pacman)
 
 p_load(tidyverse, raster, rgdal, sp,
-       rgeos, spdplyr, whitebox, RColorBrewer, lubridate)
+       rgeos, spdplyr, whitebox, RColorBrewer, lubridate,
+       tmap)
 ```
   
 ```{r}
@@ -25,38 +26,92 @@ dem <- "./w3_dem.tif"
 #                    dem = "McDonaldHollowDEM/brushDEMsm_5m_crs.tif",
  #                   output = "McDonaldHollowDEM/bmstationdem_filled.tif")
 
+breach_output <- "./w3_dems/w3_dem_breached.tif"
 wbt_breach_depressions_least_cost(
-  dem = "McDonaldHollowDEM/brushDEMsm_5m_crs.tif",
-  output = "McDonaldHollowDEM/bmstationdem_breached.tif",
+  dem = dem,
+  output = breach_output,
   dist = 5,
   fill = TRUE)
 
+fill_output <- "./w3_dems/w3_dem_filled.tif"
 wbt_fill_depressions_wang_and_liu(
-  dem = "McDonaldHollowDEM/bmstationdem_breached.tif",
-  output = "McDonaldHollowDEM/bmstationdem_filled_breached.tif"
+  dem = breach_output,
+  output = fill_output
 )
 
-
-wbt_d_inf_flow_accumulation(input = dem,
-                            output = "DinfFAsca.tif",
+flowacc_output <- "./w3_dems/w3_dem_flowacc.tif"
+wbt_d_inf_flow_accumulation(input = fill_output,
+                            output = flowacc_output,
                             out_type = "Specific Contributing Area")
 
-wbt_slope(dem = "McDonaldHollowDEM/bmstationdem_filled_breached.tif",
-          output = "McDonaldHollowDEM/demslope.tif",
+slope_output <- "./w3_dems/w3_dem_slope.tif"
+wbt_slope(dem = fill_output,
+          output = slope_output,
           units = "degrees")
 
-wbt_wetness_index(sca = "McDonaldHollowDEM/DinfFAsca.tif",
-                  slope = "McDonaldHollowDEM/demslope.tif",
-                  output = "McDonaldHollowDEM/TWI.tif")
+twi_output <- "./w3_dems/w3_dem_twi.tif"
+wbt_wetness_index(sca = flowacc_output, #flow accumulation
+                  slope = slope_output,
+                  output = twi_output)
 
-twi <- raster("McDonaldHollowDEM/TWI.tif")
+twi <- raster(twi_output)
+dem <- raster(dem)
+plot(twi)
 
-twi[twi > 0] <- NA
+```
 
-tm_shape(hillshade)+
-  tm_raster(style = "cont",palette = "-Greys", legend.show = FALSE)+
-tm_shape(twi)+
-  tm_raster(style = "cont", palette = "PuOr", legend.show = TRUE, alpha = 0.5)+
-  tm_scale_bar()
+Show topographic wetness index
+```{r}
+thresh <- 13
+twi_threshold <- twi
+twi_threshold[twi_threshold < thresh] <- NA
+
+plot(twi_threshold)
+```
+
+Now actually build model
+```{r}
+#modelling after Bevin and kirkby 1979
+#already found the twi above
+
+#approximating lambda
+#first calculate area of raster
+#get sizes of all cells in raster [km2]
+cell_size <- area(dem, na.rm=TRUE, weights=FALSE)
+#delete NAs from vector of all raster cells
+##NAs lie outside of the rastered region, can thus be omitted
+cell_size <- cell_size[!is.na(cell_size)]
+#compute area [km2] of all cells in geo_raster
+raster_area <- length(cell_size)*median(cell_size)
+#print area of Georgia according to raster object
+A <- raster_area #area in meters
+#Bailey et al. 2014 says it is 42 hectares
+
+Lambda <- (1/A) * cellStats(twi, "sum") * A
+
+#parameters
+Ac <- 0 #variable contributing area; rain falling on this immediately becomes overland flow
+io <- 0 #constant leakage rate from S2 to S3
+i <- 0 #rainfall rate, input to S2 unless i > imax = io + b/S2
+imax <- 0 #maximum rainfall rate
+Excess_rainfall <- i - imax
+
+
+#stores
+S1 <- 0 #interception store
+S2 <- 0 #infiltration store
+S3 <- 0 #saturated zone store
+ch <- 0 #channel flow
+
+#fluxes
+SD <- 0 #max value of S1, must fill before infiltration, loss from interception to evaporation
+SC <- 0 #loss from infiltration to evaporation
+P <- 0 #input from precipitation
+qof <- 0 #quick return flow
+qo <- 0 #baseflow
+qb <- qo * ln(S3 / m) #delayed flow
+
+
+Qout <- Through_fall
 ```
 
