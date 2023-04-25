@@ -7,8 +7,8 @@
 ####################################
 library(pacman)
 
-p_load(dynatop, tidyverse, raster, rgdal, sp, mapview,
-       rgeos, spdplyr, whitebox)
+p_load(dynatop, dynatopGIS, tidyverse, raster, rgdal, sp, mapview,
+       rgeos, spdplyr, whitebox, igraph)
 #working from new folder, called dynatopTest
 
 demo_dir <- tempfile("dygis")
@@ -20,12 +20,11 @@ ctch <- dynatopGIS$new(file.path(demo_dir,"meta.json"))
 dem <- raster("C:/Users/John/Documents/VT Research/HBTopModel/HB/knb-lter-hbr.211.2/dem1m.tif")
 #plot(dem)
 
-setwd("C:/Users/John/Documents/HBTopModel/HB/hbef_wsheds")
 w3 <- readOGR(dsn='C:/Users/John/Documents/VT Research/HBTopModel/HB/hbef_wsheds',layer = 'hbef_wsheds')
 w3 <- w3 %>% filter(WS == "WS3")
 #plot(w3)
 #clipping DEM by W3 boundary
-#w3_p <- spTransform(w3, crs(dem))
+w3_p <- spTransform(w3, crs(dem))
 #dem_crop <- crop(dem, w3_p)
 #w3_dem <- mask(dem_crop, w3_p)
 #raster::writeRaster(w3_dem, "w3_dem.tif", format = "GTiff")
@@ -34,25 +33,47 @@ w3_dem <- raster("C:/Users/John/Documents/VT Research/HBTopModel/w3_dem.tif")
 plot(w3_dem, add = TRUE)
 #stream shapefile, from Jensen et al. 2017
 #original stream shapefile
-stream <- readOGR("./HB/hbstream/HB_Shapefiles/hb42_master.shp")
+#stream <- readOGR("./HB/hbstream/HB_Shapefiles/hb42_master.shp")
 #streams with start and end nodes
-stream <- readOGR("./HB/hbstream/HB_Shapefiles/hb42_master.shp")
+#generated using the archydro tool Generate to/from nodes for lines on a split shapefile of stream
+stream <- readOGR("./HB/hbstream/hb42_master_startend.shp")
 
 stream_p <- spTransform(stream, crs(dem))
 #mapview(list(w3_p,stream_p))
 stream_c <- crop(stream_p, w3_p)
+stream_c <- stream_c[,-2]
+stream_c$Id <- seq(1, length(stream_c$Id), 1)
+stream_c <- stream_c %>% rename("channel_id" = Id,
+         "length" = Shape_Leng,
+         "endNode" = To_Node,
+         "startNode" = From_Node)
+
+property_names <- c(channel_id="channel_id",
+                    endNode="endNode",
+                    startNode="startNode",
+                    length="length")
 
 
 #adding dem to the project
-library(igraph)
 ctch$add_dem(w3_dem)
-ctch$add_channel(stream_c)
+#adding stream channel to the project
+ctch$add_channel(stream_c, property_names)
 
 ctch$compute_areas()
+ctch$plot_layer("dem", add_channel=TRUE)
 
-#easy
-test <- gUnaryUnion(stream_c)
-stream_c$startNode <- seq(1, length(stream_c$Id), 1)
+#fill sinks
+ctch$sink_fill()
+
+#terra::plot( ctch$get_layer('filled_dem') - ctch$get_layer('dem'),main="Changes to height")
+#compute properties
+ctch$compute_properties()
+#plot of topographic index
+ctch$plot_layer('atb')
+
+
+
+
 
 ###########################
 #Dynatop test 2/7/23
