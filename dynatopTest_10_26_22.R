@@ -8,13 +8,12 @@
 library(pacman)
 
 p_load(dynatop, dynatopGIS, tidyverse, raster, rgdal, sp, mapview,
-       rgeos, spdplyr, whitebox, igraph)
+       rgeos, spdplyr, igraph)
 #working from new folder, called dynatopTest
 
-demo_dir <- tempfile("dygis")
-dir.create(demo_dir)
+
 #create a new object, with location of meta data file (which it will make)
-ctch <- dynatopGIS$new(file.path(demo_dir,"meta.json"))
+ctch <- dynatopGIS$new(file.path("./dynatopTest","meta.json"))
 
 #my actual files
 dem <- raster("C:/Users/John/Documents/VT Research/HBTopModel/HB/knb-lter-hbr.211.2/dem1m.tif")
@@ -30,7 +29,7 @@ w3_p <- spTransform(w3, crs(dem))
 #raster::writeRaster(w3_dem, "w3_dem.tif", format = "GTiff")
 w3_dem <- raster("C:/Users/John/Documents/VT Research/HBTopModel/w3_dem.tif")
 
-plot(w3_dem, add = TRUE)
+#plot(w3_dem, add = TRUE)
 #stream shapefile, from Jensen et al. 2017
 #original stream shapefile
 #stream <- readOGR("./HB/hbstream/HB_Shapefiles/hb42_master.shp")
@@ -70,19 +69,59 @@ ctch$sink_fill()
 ctch$compute_properties()
 #plot of topographic index
 ctch$plot_layer('atb')
+ctch$get_layer()
+ctch$compute_flow_lengths()
+ctch$plot_layer("band")
 
+#calculate HRU
+ctch$classify("atb_20","atb",cuts=20)
+ctch$plot_layer("atb_20")
 
+#defining HRUs based on multiple layers
+ctch$combine_classes("atb_20_band",c("atb_20","band"))
+ctch$plot_layer("atb_20_band")
+#actually making the dynamic topmodel
+ctch$create_model("new_model","atb_20_band","band")
 
+list.files(demo_dir,pattern="new_model*")
+ctch$plot_layer("new_model")
 
+#inputs to make the model object
+options <- c("transmissivity_profile" = "exp",
+             "channel_solver" = "histogram")
+#locations of channel, HRU files generated earlier
+map <- c("hillslope" = "./dynatopTest/new_model.tif",
+         "channel" = "./dynatopTest/channel.shp",
+         "channel_id" = "./dynatopTest/channel_id.tif")
+#table of hillslope HRU paramters
+hru <- read.table()
+hillslope <- data.frame("id" = seq(1, 20, 1),
+                        "area" = c())
 
+new_model <- list(
+  "options" = options,
+  "map" = map,
+  "channel" = as.data.frame(stream_c), 
+  #hillslope
+  #flow_direction
+  #gauge
+  #point_inflow
+  #diffuse_inflow
+  #precip_input
+  #pet_input
+)
+#YES! SUCCESS!!!!!!! of course it would be so easy! DynatopGIS does make an easy object, in the RDS format
+new_model <- readRDS("./dynatopTest/new_model.rds")
+dynatop$new(new_model)
 ###########################
 #Dynatop test 2/7/23
 #https://cran.r-project.org/web/packages/dynatop/vignettes/dynatop.html
 install.packages("dynatop")
 library(dynatop)
 data("Swindale")
+model <- Swindale$model
 
-names(Swindale)
+names(model)
 
 swindale_model <- Swindale$model
 swindale_obs <- Swindale$obs
