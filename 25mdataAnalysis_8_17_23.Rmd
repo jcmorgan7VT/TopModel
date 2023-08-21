@@ -1,0 +1,239 @@
+---
+title: "Analysis of 25 m data"
+output:
+  html_document:
+    df_print: paged
+---
+
+8/17/23
+
+Quick analysis of 25 m deployment data for meeting with JP and Kevin
+
+Data summary: Measurements of water presence or absence along tributaries W1 and W2 in Watershed 3. Data was collected every 10 minutes, from 2023-06-06 14:00:00 to 2023-06-14 11:00:00. Presence or absence of water was determined using an absolute value threshold, when the relative conductivity measured over 40. 
+
+```{r, warning=FALSE}
+#setup
+library(pacman)
+p_load(tidyverse, raster, rgdal, sp, mapview,
+       rgeos, spdplyr, whitebox, tmap, stars, STICr,
+       lubridate, gganimate, animation, patchwork)
+
+#read in previously formatted data
+data <- read.csv("25mformatted.csv")
+
+data$date <- day(data$datetime)
+
+
+w3_streams <- readOGR(dsn = "./Map files 6_7_23", layer = "W3_stream")
+w3_streams <- as(w3_streams, 'sf')
+
+
+
+sample <-filter(data, datetime == "2023-06-08 14:40:00")
+ggplot(sample)+
+  geom_point(aes(x = coords.x1, y = coords.x2, color = wetdry), size = 2)+
+  scale_color_manual(values = c("salmon3", "#377EB8"),
+                     breaks = c("dry", "wet"),
+                     name = "STIC Sensors")+
+  geom_sf(data = w3_streams, aes(geometry = geometry, lty = StrType))+
+  scale_linetype_manual(values = c(1,2,3),
+                        breaks = c("P", "I", "E"),
+                        name = "Stream Type")+
+  #labs(title = "Wettest network, all sensors")+
+  #theme_classic()+
+  theme(panel.grid = element_blank(),
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        panel.background = element_blank()#remove y axis ticks
+  )
+```
+
+```{r}
+#6/21/23 adding discharge and precip data
+#read in data
+q_raw <- read.csv("ws3_Q_6_21_2023.csv", skip = 2)
+p_raw <- read.csv("ws3_P_6_21_2023.csv", skip = 3)
+#remove dates outside of the extent of STIC deployment
+q_raw$date.and.time <- mdy_hm(q_raw$date.and.time)
+p_raw$date.time <- mdy_hm(p_raw$date.time)
+
+
+q_date <- filter(q_raw, date.and.time >= "2023-06-06 14:00:00") %>% 
+  filter(date.and.time <= "2023-06-14 11:00:00")
+
+p_date <- filter(p_raw, date.time >= "2023-06-06 14:00:00") %>% 
+  filter(date.time <= "2023-06-14 11:00:00")
+#convert inches to mm
+p_date$mm <- p_date$inches * 25.4
+p_date$day <- date(p_date$date.time)
+
+p2 <- p_date %>% 
+  group_by(day) %>% 
+  summarise(daily_mmhr = sum(mm)/24)
+
+
+
+ggplot(p2, aes(x = day, y = daily_mmhr))+
+  geom_bar(stat = "identity")+
+  theme_classic()+
+  #transition_time(day) +
+  labs(x = "", y = "Precip (mm/hr)", title = "Precipitation from June 6 to June 14")
+
+ggplot(q_date, aes(x = date.and.time, y = mm.hr))+
+  geom_line()+
+  theme_classic()+
+  labs(x = "Date", y = "Discharge (mm/hr)", title = "Discharge from June 6 to June 14")
+q_date2 <- q_date
+q_date2$date.and.time <- as.Date(q_date$date.and.time)
+
+ggplot()+
+  geom_bar(data = p2, aes(x = day, y = daily_mmhr), stat = "identity")+
+  geom_line(data = q_date2, aes(x = date.and.time, y = mm.hr))+
+  theme_classic()+
+  #transition_time(day) +
+  labs(x = "", y = "mm/hr", title = "Discharge and Precip from June 6 to June 14")
+```
+
+```{r}
+
+ggplot(data, 
+       aes(x = datetime, 
+           fill = wetdry)) + 
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("salmon3", "#377EB8"),
+                     breaks = c("dry", "wet"),
+                     name = "STIC Sensors")+
+  #scale_fill_brewer(palette = "Set1") +
+
+  labs(y = "Proportion", title = "Proportion of time flowing by day")
+
+data$datetime <- ymd_hms(data$datetime)
+q_date <- rename(q_date, "datetime" = "date.and.time")
+data_q <- left_join(data, q_date, by = "datetime")
+
+
+# ggplot(data_q, 
+#        aes(x = ft.3.sec, 
+#            fill = wetdry)) + 
+#   geom_density(alpha = 0.4) +
+#   scale_fill_manual(values = c("salmon3", "#377EB8"),
+#                      breaks = c("dry", "wet"),
+#                      name = "STIC Sensors")+
+#   #scale_fill_brewer(palette = "Set1") +
+# 
+#   labs(y = "Proportion", title = "Proportion of time flowing by discharge")
+
+#at any given time, how many are flowing? Can I plot that by discharge?
+#loop to figure out when the wettest time was
+
+#try and do what is happening below but without a for loop
+
+times <- unique(data$datetime)
+
+for(z in 1:length(times)){
+  #filter to every 10 min increment
+  onetime <- (filter(data, datetime == times[z]))
+  #find the number that were wet over the total number of sensors
+  proportion_wet <- length(which(onetime$wetdry == "wet"))/length(onetime$wetdry)
+  #create table of results
+  out <- data.frame("datetime" = times[z], "proportion_wet" = proportion_wet)
+  if(z == 1) final <- out
+  if(z > 1) final <- rbind(final, out)
+  
+}
+q_date$datetime <- mdy_hm(q_date$datetime)
+
+data_prop <- left_join(final, q_date, by = "datetime")
+data_prop$day <- day(data_prop$datetime)
+
+daily <- data_prop %>% group_by(day) %>% 
+  summarize(proportion_wet_max = max(proportion_wet),
+            proportion_wet_min = min(proportion_wet),
+            proportion_wet_mean = mean(proportion_wet))
+ggplot(daily)+
+  geom_bar
+
+
+ggplot(daily, 
+       aes(x = day, 
+           fill = proportion_wet_max )) + 
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("salmon3", "#377EB8"),
+                     breaks = c("dry", "wet"),
+                     name = "STIC Sensors")+
+  #scale_fill_brewer(palette = "Set1") +
+
+  labs(y = "Proportion", title = "Proportion of time flowing by day")
+#plot(x = data_prop$ft.3.sec, y = data_prop$proportion_wet, type = 'l')
+```
+
+
+```{r}
+#analysis based on changing the spacing
+every100 <- filter(data, dist %in% c(0, 100, 200, 300, 400))
+every50 <- filter(data, dist %in% c(0, 50 ,100, 150, 200, 250, 300, 350, 400, 450, 461))
+data$spacing <- 25
+every100$spacing <- 100
+every50$spacing <- 50
+
+allspaces <- rbind(data, every50)
+allspaces <- rbind(allspaces, every100)
+
+#one way to look at how the proportion of sensors that were flowing changed with differences in spatial resolution
+ggplot(allspaces, 
+       aes(x = date, 
+           fill = wetdry)) + 
+  geom_bar(position = "fill") +
+  scale_fill_manual(values = c("salmon3", "#377EB8"),
+                     breaks = c("dry", "wet"),
+                     name = "STIC Sensors")+
+  facet_grid(cols = vars(spacing))+
+  labs(y = "Proportion")+
+  theme_classic()
+
+
+#figuring out proportion of sensors that were flowing for each spacing
+#data_prop is for the baseline scenario, every 25 m 
+  onetime <- (filter(data, datetime == times[1000]))
+number <- length(onetime$wetdry)
+
+
+#every 50 m
+# for(z in 1:length(times)){
+#   #filter to every 10 min increment
+#   onetime <- (filter(every50, datetime == times[z]))
+#   #find the number that were wet over the total number of sensors
+#   proportion_wet <- length(which(onetime$wetdry == "wet"))/length(onetime$wetdry)
+#   #create table of results
+#   out <- data.frame("datetime" = times[z], "proportion_wet" = proportion_wet)
+#   if(z == 1) final <- out
+#   if(z > 1) final <- rbind(final, out)
+#   
+# }
+# data_prop_every50 <- left_join(final, q_date, by = "datetime")
+# 
+# #every100
+# for(z in 1:length(times)){
+#   #filter to every 10 min increment
+#   onetime <- (filter(every100, datetime == times[z]))
+#   #find the number that were wet over the total number of sensors
+#   proportion_wet <- length(which(onetime$wetdry == "wet"))/length(onetime$wetdry)
+#   #create table of results
+#   out <- data.frame("datetime" = times[z], "proportion_wet" = proportion_wet)
+#   if(z == 1) final <- out
+#   if(z > 1) final <- rbind(final, out)
+#   
+# }
+# data_prop_every100 <- left_join(final, q_date, by = "datetime")
+```
+```{r}
+#fewer_times <- alldat[seq(1, nrow(alldat), 6), ]
+#for time and spatial sampling- plot the residuals through time, and plot the residuals between the full resolution and coarser resolutions by precipitation or discharge
+
+#also could plot by distance from outlet
+
+```
+
+
+Possible improvements: Classifying water using dampening of temperature signals in addition to conductivity. 
