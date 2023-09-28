@@ -14,27 +14,38 @@ Data summary: Measurements of water presence or absence along tributaries W1 and
 ```{r, warning=FALSE}
 #setup
 library(pacman)
+library(data.table)
 p_load(tidyverse, raster, rgdal, sp, mapview,
-       rgeos, spdplyr, whitebox, tmap, stars, STICr,
+       rgeos, spdplyr, tmap, stars, STICr,
        lubridate, gganimate, animation, patchwork)
 
 #read in previously formatted data
 data <- read.csv("25mformatted.csv")
+data$datetime <- ymd_hms(data$datetime)
+data$datetime <- with_tz(data$datetime, "US/Eastern")
+
+
 
 data$date <- day(data$datetime)
-
+#adding binary column
+data$wetdry_binary <- 0
+data$wetdry_binary[data$wetdry == "wet"] <- 1
 
 w3_streams <- readOGR(dsn = "./Map files 6_7_23", layer = "W3_stream")
 w3_streams <- as(w3_streams, 'sf')
 
 
 
-sample <-filter(data, datetime == "2023-06-08 14:40:00")
+
+sample <- filter(data, datetime >= "2023-06-13 16:10:00") %>% 
+  filter(datetime <= "2023-06-13 17:00:00")
 ggplot(sample)+
-  geom_point(aes(x = coords.x1, y = coords.x2, color = wetdry), size = 2)+
+  #geom_point(aes(x = coords.x1, y = coords.x2, color = wetdry), size = 2)+
   scale_color_manual(values = c("salmon3", "#377EB8"),
                      breaks = c("dry", "wet"),
                      name = "STIC Sensors")+
+  geom_text(aes(x = coords.x1, y = coords.x2, color = wetdry, label = dist), size = 3)+
+    facet_wrap(~datetime)+
   geom_sf(data = w3_streams, aes(geometry = geometry, lty = StrType))+
   scale_linetype_manual(values = c(1,2,3),
                         breaks = c("P", "I", "E"),
@@ -60,7 +71,8 @@ p_raw$date.time <- mdy_hm(p_raw$date.time)
 
 
 q_date <- filter(q_raw, date.and.time >= "2023-06-06 14:00:00") %>% 
-  filter(date.and.time <= "2023-06-14 11:00:00")
+  filter(date.and.time <= "2023-06-14 11:00:00") %>% 
+  rename("datetime" = "date.and.time")
 
 p_date <- filter(p_raw, date.time >= "2023-06-06 14:00:00") %>% 
   filter(date.time <= "2023-06-14 11:00:00")
@@ -80,16 +92,17 @@ ggplot(p2, aes(x = day, y = daily_mmhr))+
   #transition_time(day) +
   labs(x = "", y = "Precip (mm/hr)", title = "Precipitation from June 6 to June 14")
 
-ggplot(q_date, aes(x = date.and.time, y = mm.hr))+
+ggplot(q_date, aes(x = datetime, y = mm.hr))+
   geom_line()+
   theme_classic()+
   labs(x = "Date", y = "Discharge (mm/hr)", title = "Discharge from June 6 to June 14")
 q_date2 <- q_date
-q_date2$date.and.time <- as.Date(q_date$date.and.time)
+q_date2$datetime <- as.Date(q_date$date.and.time)
+
 
 ggplot()+
   geom_bar(data = p2, aes(x = day, y = daily_mmhr), stat = "identity")+
-  geom_line(data = q_date2, aes(x = date.and.time, y = mm.hr))+
+  geom_line(data = q_date2, aes(x = datetime, y = mm.hr))+
   theme_classic()+
   #transition_time(day) +
   labs(x = "", y = "mm/hr", title = "Discharge and Precip from June 6 to June 14")
@@ -108,64 +121,236 @@ ggplot(data,
 
   labs(y = "Proportion", title = "Proportion of time flowing by day")
 
-data$datetime <- ymd_hms(data$datetime)
-q_date <- rename(q_date, "datetime" = "date.and.time")
 data_q <- left_join(data, q_date, by = "datetime")
 
 
-# ggplot(data_q, 
-#        aes(x = ft.3.sec, 
-#            fill = wetdry)) + 
-#   geom_density(alpha = 0.4) +
-#   scale_fill_manual(values = c("salmon3", "#377EB8"),
-#                      breaks = c("dry", "wet"),
-#                      name = "STIC Sensors")+
-#   #scale_fill_brewer(palette = "Set1") +
-# 
-#   labs(y = "Proportion", title = "Proportion of time flowing by discharge")
+
 
 #at any given time, how many are flowing? Can I plot that by discharge?
-#loop to figure out when the wettest time was
 
-#try and do what is happening below but without a for loop
 
-times <- unique(data$datetime)
 
-for(z in 1:length(times)){
-  #filter to every 10 min increment
-  onetime <- (filter(data, datetime == times[z]))
-  #find the number that were wet over the total number of sensors
-  proportion_wet <- length(which(onetime$wetdry == "wet"))/length(onetime$wetdry)
-  #create table of results
-  out <- data.frame("datetime" = times[z], "proportion_wet" = proportion_wet)
-  if(z == 1) final <- out
-  if(z > 1) final <- rbind(final, out)
-  
-}
-q_date$datetime <- mdy_hm(q_date$datetime)
 
-data_prop <- left_join(final, q_date, by = "datetime")
-data_prop$day <- day(data_prop$datetime)
+#proportion of sensors that were flowing
+daily2 <- data %>% group_by(datetime) %>% 
+  mutate(proportion_wet = sum(wetdry_binary)/length(wetdry_binary)) %>% 
+  dplyr::select(datetime, proportion_wet)
 
-daily <- data_prop %>% group_by(day) %>% 
+daily2$day <- day(daily2$datetime)
+
+daily3 <- unique(daily2)
+
+daily_stats <- daily3 %>% group_by(day) %>% 
   summarize(proportion_wet_max = max(proportion_wet),
             proportion_wet_min = min(proportion_wet),
             proportion_wet_mean = mean(proportion_wet))
-ggplot(daily)+
-  geom_bar
+#successfully made for loop obsolete
 
+#data_prop <- left_join(final, q_date, by = "datetime")
 
-ggplot(daily, 
+#good blue color = #377EB8
+
+#this plot shows the proportions of time flowing statistics at the daily time scale
+daily_stats_tall <- gather(daily_stats, "stat", "value", -day)
+ggplot(daily_stats_tall, 
        aes(x = day, 
-           fill = proportion_wet_max )) + 
-  geom_bar(position = "fill") +
-  scale_fill_manual(values = c("salmon3", "#377EB8"),
-                     breaks = c("dry", "wet"),
-                     name = "STIC Sensors")+
-  #scale_fill_brewer(palette = "Set1") +
-
+           y = value)) + 
+  geom_line(aes(color = stat))+
+  theme_classic()+
   labs(y = "Proportion", title = "Proportion of time flowing by day")
-#plot(x = data_prop$ft.3.sec, y = data_prop$proportion_wet, type = 'l')
+
+#do the same thing but for hourly and every 10 minutes; these are the null hypothesis or control scenario
+
+#removing the last row, because it makes the dataframes even numbered in length- they were odd (1135 rows), so when filtering out every other row, it would set some sensors to begin at 11L10 and others to begin at 11:00. Fixed now, with all of the last dates/rows removed
+even_data <- filter(data, datetime != "2023-06-14 11:00:00")
+  
+
+#remove every other datetime, makes the measurements 20 minutes apart
+  
+mins20 <- even_data[seq(1, nrow(even_data), 2), ]
+
+
+mins20_prop <- mins20 %>% group_by(datetime) %>% 
+  mutate(proportion_wet = sum(wetdry_binary)/length(wetdry_binary)) %>% 
+  dplyr::select(datetime, proportion_wet)
+
+#unique to get rid of duplicate records
+mins20_prop <- unique(mins20_prop)
+
+daily_stats$day_date <- c("2023-06-06",
+                          "2023-06-07",
+                          "2023-06-08",
+                          "2023-06-09",
+                          "2023-06-10",
+                          "2023-06-11",
+                          "2023-06-12",
+                          "2023-06-13",
+                          "2023-06-14")
+
+daily_stats$day_date <- as.POSIXct(ymd(daily_stats$day_date))
+
+#plot showing daily stats, and every actual measurement
+
+#make plot showing what would happen if we had one measurement every 120 minutes
+mins120 <- even_data[seq(1, nrow(even_data), 12), ]
+
+
+mins120_prop <- mins120 %>% group_by(datetime) %>% 
+  mutate(proportion_wet = sum(wetdry_binary)/length(wetdry_binary)) %>% 
+  dplyr::select(datetime, proportion_wet)
+
+#unique to get rid of duplicate records
+mins120_prop <- unique(mins120_prop)
+
+ggplot() + 
+  geom_line(data = daily_stats,
+            aes(x = day_date, 
+                y = proportion_wet_mean), color = "black")+
+  geom_line(data = mins20_prop,
+            aes(x = datetime,
+                y = proportion_wet), color = "blue")
+  # geom_line(data = mins120_prop,
+  #           aes(x = datetime,
+  #               y = proportion_wet), color = "red")
+
+
+```
+  
+```{r}
+#bootstrapping to subset observation points
+sensors <- unique(data$ID)
+n <- 20
+
+less_sense <- function(n, iterations){
+  #n = number of sensors, from total 34
+  for(i in 1:iterations){
+    sub <- sample(sensors, n)
+    filt <- filter(data, ID %in% sub)
+
+    daily_sub <- filt %>% group_by(datetime) %>% 
+    mutate(proportion_wet = sum(wetdry_binary)/length(wetdry_binary)) %>% 
+    dplyr::select(datetime, proportion_wet)
+
+    daily_sub$day <- day(daily_sub$datetime)
+
+    daily_sub_un <- unique(daily_sub)
+
+    daily_sub_stats <- daily_sub_un %>% group_by(day) %>% 
+      summarize(proportion_wet_max = max(proportion_wet),
+              proportion_wet_min = min(proportion_wet),
+              proportion_wet_mean = mean(proportion_wet))
+
+    daily_sub_stats$day_date <- c("2023-06-06",
+                          "2023-06-07",
+                          "2023-06-08",
+                          "2023-06-09",
+                          "2023-06-10",
+                          "2023-06-11",
+                          "2023-06-12",
+                          "2023-06-13",
+                          "2023-06-14")
+
+    daily_sub_stats$day_date <- as.POSIXct(ymd(daily_sub_stats$day_date))
+  
+    #create table of results
+    out <- dplyr::select(daily_sub_stats, -day) %>% 
+      gather(key = "stat", value = "value", -day_date)
+    out$number_set <- n
+    out$sensors <- paste(sort(sub), collapse=', ' )
+  
+  
+    if(i == 1) final <- out
+    if(i > 1) final <- rbind(final, out)
+  }
+  return(final)
+}
+
+#subset of 5 sensors
+n5 <- less_sense(5, 100)
+final2 <- filter(n5, stat == "proportion_wet_mean")
+ggplot() + 
+  geom_boxplot(data = final2,
+            aes(x = day_date, 
+                y = value,
+                group = day_date), color = "black")+
+  geom_line(data = daily_stats,
+            aes(x = day_date, 
+                y = proportion_wet_mean), color = "black")+
+  labs(x = "Date", y = "Proportion flowing", title = "5 random sensors bootstrap, n = 100")+
+  lims(y = c(0, 1))+
+  theme_classic()
+#subset of 10 sensors
+n1 <- less_sense(1, 100)
+#n5 <- less_sense(5, 100)
+n10 <- less_sense(10, 100)
+n20 <- less_sense(20, 100)
+n30 <- less_sense(30, 100)
+
+all1 <- rbind(n1, n5)
+all2 <- rbind(n5, n10)
+all3 <- rbind(all2, n20)
+all4 <- rbind(all3, n30)
+
+#format daily stats correctly
+actual <- filter(daily_stats, day_date == "2023-06-13 20:00:00")
+value <- actual$proportion_wet_mean
+
+actual2 <- filter(daily_stats, day_date == "2023-06-05 20:00:00")
+value2 <- actual2$proportion_wet_mean
+
+
+# This for loop will work, but will take about 20 mins
+# for(z in 1:34){
+#   raw <- less_sense(z, 100)
+#   
+#   if(z == 1) final <- raw
+#   if(z > 1) final <- rbind(final, raw)
+# }
+
+date_wet <- filter(all4, day_date == "2023-06-13 20:00:00") %>% 
+    filter(stat == "proportion_wet_mean")
+
+date_dry <- filter(all4, day_date == "2023-06-05 20:00:00") %>% 
+    filter(stat == "proportion_wet_mean")
+#plot that will show a boxplot for each randomly chosen number of sensors for June 14, the wettest day
+ggplot() + 
+  geom_boxplot(data = date_wet,
+            aes(x = number_set, 
+                y = value,
+                group = number_set), color = "black")+
+  geom_hline(yintercept = value, linetype = "dashed")+
+  labs(x = "Number of randomly chosen sensors", y = "Proportion flowing", title = "Random sensors bootstrap on the wettest day")+
+  lims(y = c(0, 1))+
+  theme_classic()
+
+ggplot() + 
+  geom_boxplot(data = date_dry,
+            aes(x = number_set, 
+                y = value,
+                group = number_set), color = "black")+
+    geom_hline(yintercept = value2, linetype = "dashed")+
+
+  labs(x = "Number of randomly chosen sensors", y = "Proportion flowing", title = "Random sensors bootstrap on the driest day")+
+  lims(y = c(0, 1))+
+  theme_classic()
+
+#when I write this in a for loop, need to save the output somehow
+#out put needs to have the proportion wet, date, number of sensors used, and list the sensors used
+```
+
+```{r}
+#find all unique combinations of wet and dry sensors
+hush <- dplyr::select(data, datetime, wetdry_binary, ID) 
+hush2 <- pivot_wider(hush, names_from = ID, values_from = wetdry_binary)
+
+xy.list <- as.list(as.data.frame(t(hush2[,-1])))
+length(xy.list)
+length(unique(data$datetime))
+#unique combinations of flow
+length(unique(xy.list))
+
+
+
 ```
 
 
@@ -237,3 +422,92 @@ number <- length(onetime$wetdry)
 
 
 Possible improvements: Classifying water using dampening of temperature signals in addition to conductivity. 
+
+```{r}
+#HB air temperature record goes to May 15
+sample <- filter(data, datetime >= "2023-06-12 16:10:00") %>% 
+  filter(datetime <= "2023-06-13 17:00:00") 
+
+#find where wet starts and stops
+test <- filter(data, ID == "w2_175")
+test$start_stop <- c(NA, diff(test$wetdry_binary, lag = 1))
+ends <- dplyr::select(test, datetime, ID, wetdry_binary, start_stop)
+
+ends_start <- filter(ends, start_stop == 1)
+ends_stop <- filter(ends, start_stop == -1)
+
+ends_final <- data.frame("start" = ends_start$datetime,
+                         "stop" = c(ends_stop$datetime, NA),
+                         
+                         "ID" = "w1_0")
+
+sensors <- unique(data$ID)
+
+for(i in 1:length(sensors)){
+  test <- filter(data, ID == sensors[i])
+  if(max(test$wetdry_binary) == 0) next
+  
+  test$start_stop <- c(NA, diff(test$wetdry_binary, lag = 1))
+  ends <- dplyr::select(test, datetime, ID, wetdry_binary, start_stop)
+
+  ends_start <- filter(ends, start_stop == 1)
+  ends_stop <- filter(ends, start_stop == -1)
+  if(length(ends_start$datetime) > length(ends_stop$datetime)) {
+    ends_final <- data.frame("start" = ends_start$datetime,
+                           "stop" = c(ends_stop$datetime, "2023-06-14 11:00:00"),
+                           "ID" = sensors[i])
+  } else {
+    ends_final <- data.frame("start" = ends_start$datetime,
+                           "stop" = ends_stop$datetime,
+                           "ID" = sensors[i])
+  }
+  
+  
+ 
+  
+  if(i == 1) alldat <- ends_final
+  if(i > 1) alldat <- rbind(alldat, ends_final)
+}
+
+ggplot() + 
+  geom_rect(data = alldat,
+            mapping = aes(xmin = start,
+                          xmax = stop,
+                          ymin = - Inf,
+                          ymax = Inf),
+              fill = "blue",
+              alpha = 0.5) +
+  geom_line(data = data, 
+            mapping = aes(x = datetime, 
+            y = tempC,
+            color = stream))+
+  theme_classic()+
+  facet_wrap(~ID)+
+  labs(y = "Temp (C)", 
+       x = "",
+       title = "Temperature versus threshold determined flow")
+
+
+
+ggplot() + 
+  geom_rect(data = alldat,
+            mapping = aes(xmin = start,
+                          xmax = stop,
+                          ymin = - Inf,
+                          ymax = Inf),
+              fill = "blue",
+              alpha = 0.5) +
+  geom_line(data = data, 
+            mapping = aes(x = datetime, 
+            y = condUncal  ,
+            color = stream))+
+  geom_vline(xintercept = ymd_hms("2023-06-07 13:30:00"))+
+  geom_vline(xintercept = ymd_hms("2023-06-13 15:30:00"))+
+  theme_classic()+
+  facet_wrap(~ID, scales = "free_y")+
+  labs(y = "Conductivity (us)",
+       x = "",
+       title = "Conductivity versus threshold determined flow")
+
+```
+

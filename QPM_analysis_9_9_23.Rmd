@@ -1,0 +1,740 @@
+---
+title: "Quarterly Project Meeting"
+author: "John Morgan"
+date: "2023-09-09"
+output: html_document
+---
+
+Using Carrie's equation and long term records at Hubbard Brook, I will characterize how the headwater stream length has changed through time. The topic of the session is the changing hydroclimate at Hubbard Brook.
+
+Look at:
+- How frequently the whole channel network is connected
+- When are summer time full network expansions
+
+Basically taking discharge measured at weirs, and contextualizing it into something meaningful.
+
+```{r}
+library(pacman)
+p_load(tidyverse, raster, rgdal, sp, mapview,
+       rgeos, spdplyr, tmap, stars, STICr,
+       lubridate, gganimate, animation, patchwork,
+       whitebox,ggridges, grid, scales, ggthemes, viridis,
+       parallel, future.apply) #parallel packages
+
+
+#find and read in data
+#precipitation data- I don't think I need it other than as an explanatory piece
+rain <- read.csv("dailyGagePrecip1956-2023.csv")
+rain$DATE <- ymd(rain$DATE)
+rain2 <- filter(rain, rainGage == "RG4") %>% 
+  mutate(DATE = as.Date(DATE))
+
+# ggplot(rain2, aes(x = DATE, y = Precip))+
+#   geom_bar(stat = "identity", position = position_dodge())+
+#   theme_classic()+
+#   labs(x = "", y = "Precip (mm)")
+
+#for Carrie's model, I need runoff (mm/d) and TWI
+twi3 <- "./w3_dems/w3_dem_twi.tif"
+#twi calculated in script topmodel_fromscratch_2_23_23.Rmd
+twi3 <- raster(twi3)
+
+
+
+#high flow in w3 = 6.0 mm/d
+#low flow in w3 = 0.2 mm/d
+
+#location of stream
+stream <- readOGR("./HB/hbstream/hb42_master_startend.shp")
+stream_p <- spTransform(stream, crs(twi3))
+
+```
+
+```{r}
+#make twi raster for the whole valley
+#using 5m hydro enforced dem
+
+dem <- "./HB/5m hydro enforced DEM/hyd5mlpns.asc"
+# display <- raster(dem)
+# plot(display)
+
+flowacc_output <- "./HB/5m hydro enforced DEM/TWI_andotherlayers/flowacc.tif"
+wbt_d_inf_flow_accumulation(input = dem,
+                            output = flowacc_output,
+                            out_type = "Specific Contributing Area")
+
+slope_output <- "./HB/5m hydro enforced DEM/TWI_andotherlayers/slope.tif"
+wbt_slope(dem = dem,
+          output = slope_output,
+          units = "degrees")
+
+twi_output <- "./HB/5m hydro enforced DEM/TWI_andotherlayers/twi.tif"
+wbt_wetness_index(sca = flowacc_output, #flow accumulation
+                  slope = slope_output,
+                  output = twi_output)
+
+twi <- raster(twi_output)
+plot(twi)
+```
+
+
+```{r}
+#test chunk
+#do this for both the whole area, and where we identified stream channels
+#twi_frame <- getValues(twi)
+#twi_frame <- twi_frame[!is.na(twi_frame)]
+
+#keep it all raster
+twi_ln <- log(twi)
+
+b0 <- -35.43
+twi_coef <- 15.57
+flow <- 30 #mm/unit time
+#will need to convert, use published area of catchment
+flow_coef <- 0.12
+
+b1x1 <- flow * flow_coef
+b2x2 <- twi_coef * twi_ln
+
+#keep it all raster
+p <- exp(b0 + b1x1 + b2x2)/(1 + exp(b0 + b1x1 + b2x2))
+plot(p, xlim = c(278000, 280000), ylim = c(4868000, 4869000))
+
+
+#function to calculate probability of flow raster
+willit <- function(input_logtwi, inputQ){
+  #b0, or intercept from Kevin's email from Carrie, might need to redo regression
+  b0 <- -35.43
+  #all ofther coefs from Jensen et al. 2018
+  twi_coef <- 15.57
+  flow_coef <- 0.12
+
+  b1x1 <- flow_coef * inputQ
+  b2x2 <- twi_coef * input_logtwi
+
+  #logistic regression from Jensen et al. 2018
+  p <- exp(b0 + b1x1 + b2x2)/(1 + exp(b0 + b1x1 + b2x2))
+  return(p)
+}
+
+test <- willit(log(twi3), 30)
+plot(test)
+```
+
+```{r}
+#read in stuff for actual analysis
+#read in discharge, units are mm/d already
+q_data <- read.csv("./HB/HBEF_DailyStreamflow_1956-2022.csv")
+q_data$DATE <- ymd(q_data$DATE)
+
+sheds <- readOGR(dsn='C:/Users/John/Documents/VT Research/HBTopModel/HB/hbef_wsheds',layer = 'hbef_wsheds')
+w3 <- sheds %>% filter(WS == "WS3")
+#plot(w3)
+#clipping DEM by W3 boundary
+cat(wkt(w3))
+crs(twi) <- "EPSG:26919"
+
+dem_crop <- crop(twi, w3)
+w3_twi <- mask(dem_crop, w3)
+plot(w3_twi)
+
+w3_q <- filter(q_data, WS == 3)
+
+ggplot(w3_q, aes(x = DATE, y = Streamflow))+
+  geom_line(color = "blue")+
+  theme_classic()+
+  labs(title = "W3 Discharge 1956-2022",
+       y = "Discharge (mm/d)",
+       x = "")
+
+
+#convert raster to dataframe
+runs <- w3_q[23651:23656,3]
+dates <- w3_q[23651:23656,1]
+
+dem_crop <- crop(twi, w3)
+w3_twi <- mask(dem_crop, w3)
+twi_20 <- raster::aggregate(w3_twi, fact = 4)
+plot(twi_20, fun = median)
+
+  
+for(i in 1:length(runs)){
+  out <- willit(log(twi_20), runs[i])
+  out2 <- out %>%
+  rasterToPoints %>%
+  as.data.frame()
+  
+  out2$DATE <- dates[i]
+  
+  if(i == 1) final <- out2
+  if(i > 1) final <- rbind(final, out2)
+
+}
+#save rasters as tifs to a destination
+test <- willit(log(w3_twi), 30)
+
+#writeRaster(test, "./twi_model_rasters/test.tif", format = ".tif")
+#prob_test <- raster("./twi_model_rasters/test.tif")
+
+
+
+g_df <- test %>%
+  rasterToPoints %>%
+  as.data.frame()
+for(t in 1:length(dates)){
+  final2 <- filter(final, DATE == dates[t])
+  ggplot(final2)+
+    geom_tile(aes(x = x, y = y, fill = layer, group = DATE))+
+    theme_void()+
+    scale_fill_viridis_b()
+  
+  
+}
+
+final2 <- filter(final, DATE == dates[1])
+
+ggplot(final2)+
+    geom_tile(aes(x = x, y = y, fill = layer, group = DATE))+
+    theme_void()+
+    scale_fill_viridis_b()
+#+
+  #transition_manual(DATE)
+
+# gganimate::animate(
+#   anim,
+#   width = 400,
+#   height = 400,
+#   renderer=gifski_renderer(),
+#   nframes = 6
+#   )
+
+```
+```{r}
+#the actual analysis, testing on W3
+w3 <- sheds %>% filter(WS == "WS3")
+#plot(w3)
+#clipping DEM by W3 boundary
+cat(wkt(w3))
+crs(twi) <- "EPSG:26919"
+
+dem_crop <- crop(twi, w3)
+w3_twi <- mask(dem_crop, w3)
+plot(w3_twi)
+
+w3_q <- filter(q_data, WS == 3)
+
+
+#testing on subset
+runs <- w3_q[23651:23656,3]
+dates <- w3_q[23651:23656,1]
+
+
+#loop to run model function on each date in my test series
+system.time(
+for(i in 1:length(runs)){
+  out <- willit(log(w3_twi), runs[i])
+  
+  writeRaster(out, paste0("./twi_model_rasters/w3_", dates[i], ".tif"), 
+              format = ".tif",
+              overwrite = TRUE)
+
+})
+
+prob_test <- raster(paste0("./twi_model_rasters/w3_", dates[1], ".tif"))
+plot(prob_test)
+
+prob_test[prob_test < 0.9] <- 0
+prob_test[prob_test >= 0.9] <- 1
+
+plot(prob_test)
+
+g_df <- prob_test %>%
+  rasterToPoints %>%
+  as.data.frame()
+
+sum(g_df$layer)
+
+```
+```{r}
+#try to do it in parallel
+#succeed in running in parallel for one shed, now do it for all of them
+
+#function that will calculate prob, then produce how much was likely flowing
+#rasList <- paste0("./twi_model_rasters/w3_", dates, ".tif")
+qlist <- w3_q$Streamflow
+probable_flow_extent <- function(qlist){
+  out <- willit(log(w3_twi), qlist)
+  
+  out[out < 0.9] <- 0
+  out[out >= 0.9] <- 1
+
+
+  g_df <- out %>%
+    rasterToPoints %>%
+    as.data.frame()
+
+  flowing_area <- sum(g_df$layer)
+  return(flowing_area)
+}
+
+probable_flow_extent(qlist[6])
+
+plan(multicore, workers = detectCores() - 1)
+outStat <- future_lapply(qlist, probable_flow_extent)
+
+results <- data.frame("Q" = w3_q$Streamflow, 
+                      "Date" = w3_q$DATE,
+                      "Cells_flowing" = unlist(outStat))
+write.csv(results, "./twi_model_rasters/w3_flowing_days.csv")
+```
+```{r}
+#the actual analysis, testing on W3
+#plot(w3)
+#clipping DEM by W3 boundary
+cat(wkt(w3))
+crs(twi) <- "EPSG:26919"
+
+runs <- unique(q_data$WS)[-3]
+#big for loop that calced the number of flowing pixels for every day of flow on record for each gauged basin
+for(i in 1:length(runs)){
+  watershed <- sheds %>% filter(WSHEDS0_ID == runs[i])
+
+  dem_crop <- crop(twi, watershed)
+  twi_crop <- mask(dem_crop, watershed)
+  #plot(twi_crop)
+
+  filtered_q <- filter(q_data, WS == runs[i])
+
+
+  qlist <- filtered_q$Streamflow
+#function that thresholds probability of flow- only keeps pixels that had a 90% of flowing
+  probable_flow_extent <- function(qlist){
+    out <- willit(log(twi_crop), qlist)
+  
+    out[out < 0.9] <- 0
+    out[out >= 0.9] <- 1
+
+
+    g_df <- out %>%
+      rasterToPoints %>%
+      as.data.frame()
+
+    flowing_area <- sum(g_df$layer)
+    return(flowing_area)
+  }
+
+#parallel processing
+  plan(multicore, workers = detectCores() - 1)
+  outStat <- future_lapply(qlist, probable_flow_extent)
+
+  results <- data.frame("Q" = filtered_q$Streamflow, 
+                        "Date" = filtered_q$DATE,
+                        "Cells_flowing" = unlist(outStat))
+  #save file output
+  write.csv(results, paste0("./twi_model_rasters/WS", runs[i], "_flowing_days.csv"))
+}
+
+
+```
+
+
+```{r}
+#skip chunk above when I run this next time
+results <- read.csv("./twi_model_rasters/WS3_flowing_days.csv")
+
+filenames <- list.files(path="./twi_model_rasters/",pattern="*.csv")
+shed_numbers <- unique(q_data$WS)
+
+
+#for loop to read in spreadsheets with wet pixels, combine them into one spreadsheet
+for(i in 1:length(shed_numbers)){
+  results <- read.csv(paste0("./twi_model_rasters/",filenames[i]))
+  #add column with the number of the watershed
+  results$WS <- shed_numbers[i]
+  
+  #add column with the area of each watershed
+  long_name <- paste0("WS", shed_numbers[i])
+  shed_for_area <- sheds %>% filter(WS == long_name)
+  results$Area <- shed_for_area$AREA / 1e6
+  
+  if(i == 1) all_results <- results
+  if(i > 1) all_results <- rbind(all_results, results)
+
+}
+
+#earlier test analysis to make sure this worked, probably will exclude
+# results[which.max(results$Cells_flowing),]
+# nrow(results[results$Q > 30, ])
+# hist(results$Q)
+# hist(results$Cells_flowing)
+# 
+# out <- willit(log(w3_twi), 97.64)
+#   
+# out[out < 0.9] <- 0
+# out[out >= 0.9] <- 1
+# 
+# plot(out)
+
+#filter to just growing season
+#growing season- may to beginning of october
+all_results$Date <- ymd(all_results$Date)
+growing_szn <- all_results %>% 
+  filter(Date >= as.Date(paste(year(Date), 05, 01, sep = "-")),
+         Date <= as.Date(paste(year(Date), 10, 01, sep = "-")))
+
+#earlier analysis- to find the biggest flowing extent, from just testing on one watershed
+#growing_szn[which.max(growing_szn$Cells_flowing),]
+#biggest <- arrange(growing_szn, desc(Cells_flowing))
+
+```
+
+```{r}
+#exceedance probability calculation for just one site
+x <- biggest$Cells_flowing
+i <- rank(x, ties.method = "average")
+
+N <- length(i)
+#quantiles of measured values; Cunnae Formula
+qx <- (i - 0.4) / (N + 0.2)
+
+#1st probability weighted moment
+b1 <- sum((i - 1) * x ) * (1/(N * (N - 1)))
+
+#2nd l moment
+l2 <- 2 * b1 - mean(x)
+
+#estimate of alpha
+alpha <- l2 / log(2)
+
+#estimate of beta
+beta <- mean(x) - 0.5772 * alpha
+
+#quantiles of the Gumbel distribution
+qG <- exp(-exp(-(x - beta)/alpha))
+
+#qx and qG are the final outputs
+biggest$exceedance_prob <- 1 - qx
+
+#non-exceedance probability plot
+plot(x = x, y = qx, type = 'p', col = "blue",
+     xlab = "Annual maximum 1-hr rainfall, X' (mm)",
+     ylab = "Non-exceedance probability, F(X')")
+#exceedance probability plot
+plot(x, 1- qx, type = 'p', col = "blue",
+     xlab = "Cells flowing",
+     ylab = "Exceedance probability, F(X')")
+
+#return period by return period
+plot(1/(1-qx), x, type = 'p', col = "blue",
+     xlab = "Return Period, Treturn (y)",
+     ylab = "Annual maximum 1-hr rainfall, X' (mm)")
+points(1/(1-qG), x, type = 'l', col = "orange", lwd = 2)
+
+#reduced variate values -log(-log(x)) 
+plot(-log(-log(qx)), x, type = 'p', col = "blue",
+     xlab = "Reduced variate, -ln(-ln(F(X')))",
+     ylab = "Annual maximum 1-hr rainfall, X' (mm)")
+points(-log(-log(qG)), x, type = 'l', col = "orange", lwd = 2)
+
+
+#to make gumbel space tick marks:
+#ticks <- -log(-log(#list of exceedance probabilities))
+
+ticks <- -log(-log(c(0.09, 0.333,0.50,0.6667,0.80,0.90,0.96,0.98,0.99)))
+labels <- signif(1/(1-c(0.09, 0.333,0.50,0.6667,0.80,0.90,0.96,0.98,0.99)), digits = 2)
+
+
+#return period in gumbel space
+plot(-log(-log(qx)), x, type = 'p', col = "blue",
+     xlab = "Return Period, Treturn (y)",
+     ylab = "Annual maximum 1-hr rainfall, X' (mm)",
+     xaxt = 'n')
+axis(1, at = ticks, labels = labels)
+points(-log(-log(qG)), x, type = 'l', col = "orange", lwd = 2)
+
+#final plot
+plot(-log(-log(qG)), x, type = 'l', col = "blue",
+     xlab = "Return Period, Treturn (y)",
+     ylab = "Annual maximum 1-hr rainfall, X' (mm)",
+     xaxt = 'n',
+     ylim = c(0, max(x)))
+axis(1, at = ticks, labels = labels)
+
+#3a
+beta - (alpha * log(-log(1 - (1/200))))
+
+
+```
+  
+  
+```{r}
+#for loop to conduct exceedance probability calculation for all of the watersheds
+#exceedance probability calculation for just one site
+w3_szn <- filter(growing_szn, WS == 3)
+w3_szn[which.max(w3_szn$Cells_flowing),]
+biggest <- arrange(w3_szn, desc(Cells_flowing))
+
+exceedance <- function(df_Cells_flowing_column){
+  x <- df_Cells_flowing_column
+  i <- rank(x, ties.method = "average")
+
+  N <- length(i)
+  #quantiles of measured values; Cunnae Formula
+  qx <- (i - 0.4) / (N + 0.2)
+
+  #1st probability weighted moment
+  b1 <- sum((i - 1) * x ) * (1/(N * (N - 1)))
+
+  #2nd l moment
+  l2 <- 2 * b1 - mean(x)
+
+  #estimate of alpha
+  alpha <- l2 / log(2)
+
+  #estimate of beta
+  beta <- mean(x) - 0.5772 * alpha
+
+  #quantiles of the Gumbel distribution
+  qG <- exp(-exp(-(x - beta)/alpha))
+
+  #qx and qG are the final outputs
+  exceedance_prob <- 1 - qx
+  return(exceedance_prob)
+}
+
+t <- exceedance(biggest$Cells_flowing)
+biggest$exceedance_prob <- t
+
+#exceedance probability plot
+plot(biggest$Cells_flowing, biggest$exceedance_prob, type = 'p', col = "blue",
+     xlab = "Cells flowing",
+     ylab = "Exceedance probability, F(X')")
+#normalize cells flowing by total cells
+#make a list with the areas for each watershed, and maybe include in earlier for loop
+
+
+#for loop to calculate exceedance probability for each watershed
+for(i in 1:length(shed_numbers)){
+  
+  szn <- filter(growing_szn, WS == shed_numbers[i])
+  biggest <- arrange(szn, desc(Cells_flowing))
+  
+  t <- exceedance(biggest$Cells_flowing)
+  biggest$exceedance_prob <- t
+  
+  if(i == 1) final_df <- biggest
+  if(i > 1) final_df <- rbind(final_df, biggest)
+}
+final_df$cells_flowing_byArea <- final_df$Cells_flowing / final_df$Area
+#final_df should be the final dataframe, with calculated exceedance probabilities
+
+#make a plot showing the exceedance curves for each watershed
+#close to being a finalized figure to send to JP and Kevin
+final_df$log_cells_flowing_byArea <- log(final_df$cells_flowing_byArea)
+final_df$log_exceedance_prob <- log(final_df$exceedance_prob)
+
+colors <- c("#001219",
+            "#005F73",
+            "#0A9396",
+            "#94D2BD",
+            "#E9D8A6",
+            "#EE9B00",
+            "#CA6702",
+            "#BB3E03",
+            "#AE2012"
+  )
+
+ggplot(final_df)+
+  geom_line(aes(x = cells_flowing_byArea, 
+                 y = exceedance_prob,
+                color = as.factor(WS)))+
+  labs(title = "Exceedance probabilities by Watershed",
+       x = "Cells flowing per km^2",
+       y = "exceedance probability")+
+  scale_y_continuous(breaks=c(0.001, 0.01, 0.1, 0.5, 1),
+                     labels = c("0.001","0.01", "0.1", "0.5", "1.0"))+
+  scale_x_continuous(breaks=c(100, 1000, 10000, 40000),
+                     labels = c("100", "1,000", "10,000", "40,000"))+
+
+  scale_color_manual(values = colors, 
+                     name = "Watershed")+
+  theme_classic()+ 
+  coord_trans(x="log10", y="log10")
+  
+  
+
+```
+
+  
+```{r}
+final_df$numberDate <- as.numeric(final_df$Date)
+final_df$Cells_flowing <- as.numeric(final_df$Cells_flowing)
+
+threshed <- filter(final_df, exceedance_prob > 0.01)
+chaff <- filter(final_df, exceedance_prob <= 0.01) 
+
+chaff$year <- year(chaff$Date)
+counts <- chaff %>% 
+  count(year, WS)
+  
+
+
+#add sen's slope
+#Sen's slope
+
+p_load(mblm)
+sen <- function(formula, dataframe, weights = NULL) {
+  mblm::mblm(formula, dataframe)
+}
+test <- c(as.numeric(final_df$Date))
+
+#sen(test, as.numeric(cells_flowing_byArea), final_df)
+
+tr <- filter(counts, WS == 3)
+fit <- mblm(n ~ year, dataframe = tr)
+fit2 <- sen(n ~ year, tr)
+fit <- mblm(Cells_flowing ~ numberDate, dataframe = tr)
+
+#plot of counts through time
+counts %>% ggplot(aes(x = year, y = n))+
+  geom_point()+
+  facet_wrap(~WS)+
+  geom_smooth(method = sen)+
+  theme_classic()
+
+
+ggplot(chaff)+
+  geom_density_ridges(aes(x = year, 
+                  y = WS))+
+  labs(title = "Number of network expansions during the growing season through time",
+       x = "Date",
+       y = "Cells flowing per km^2")+
+  #lims(y = c(0, 1))+
+  #scale_color_brewer(palette = "Set1")+
+  #facet_wrap(~WS)+
+  #scale_y_log10()+
+  theme_classic()#+
+  annotate("text",
+           x=-2,y=1,
+           label=(paste0("slope==",coef(lm(df$y~df$x))[2])),parse=TRUE)
+  
+  ggplot(chaff, aes(x = year, y = as.factor(WS))) + 
+    geom_density_ridges(stat = "binline",
+                        bins = 20, scale = 0.95, 
+                        draw_baseline = FALSE)
+
+
+#I dont think boxplot is the way
+more_than_average$year <- year(more_than_average$Date)
+more_than_average$rounded_year <- signif(more_than_average$year, digits = 3)
+ggplot(more_than_average)+
+  geom_boxplot(aes(x = Date, y = Cells_flowing, group = rounded_year))+
+  theme_classic()
+
+
+#in the morning, do this for every watershed, and make a faceted plot like the one below but for every watershed to see if the number of summer times that the full network expands is increasing in time
+
+```
+
+```{r}
+chaff <- filter(final_df, exceedance_prob <= 0.01) 
+
+chaff$year <- year(chaff$Date)
+counts <- chaff %>% 
+  count(year, WS)
+
+counts_lm <- counts %>%
+  group_by(WS) %>%
+  nest() %>%
+  # Fit linear model
+  mutate(Mod = map(data, ~lm(year ~ n, data = .x))) %>%
+  #mutate(Mod2 = map(data, ~mblm(year ~ n, data = .x))) %>% 
+  # Get the R2
+  mutate(R2 = map_dbl(Mod, ~round(summary(.x)$r.squared, 3))) #%>% 
+  #mutate(R2 = map_dbl(Mod, ~round(summary(.x)$r.squared, 3)))
+
+
+counts %>% ggplot(aes(x = year, y = n))+
+  geom_point(shape = 1)+
+  facet_wrap(~WS)+
+  #geom_smooth(method = sen, se = FALSE, color = "black", linetype = 1)+
+  geom_smooth(method = lm, se = FALSE, color = "black", linetype = 2)+
+  geom_label(data = counts_lm, 
+             aes(x = Inf, y = Inf, 
+                 label = paste("r^2 = ", R2, sep = " ")),
+             hjust = 1, vjust = 1) +
+  theme_classic()+
+  lims(y = c(0, max(counts$n)))+
+  labs(title = "Full network expansions by Watershed",
+       x = " ",
+       y = "Number of times network fully expanded")
+
+```
+
+```{r}
+#find when each watershed is at its normal extent- which I defined as 0.01 exceedance prob
+
+getmode <- function(v) {
+   uniqv <- unique(v)
+   uniqv[which.max(tabulate(match(v, uniqv)))]
+}
+
+norms <- final_df %>% 
+  group_by(WS) %>% 
+  summarise("Median" = median(Cells_flowing),
+            "Mean" = mean(Cells_flowing),
+            "Mode" = getmode(Cells_flowing))
+
+
+
+```
+
+
+```{r}
+willit <- function(input_logtwi, inputQ){
+  #b0, or intercept from Kevin's email from Carrie, might need to redo regression
+  b0 <- -35.43
+  #all ofther coefs from Jensen et al. 2018
+  twi_coef <- 15.57
+  flow_coef <- 0.12
+
+  b1x1 <- flow_coef * inputQ
+  b2x2 <- twi_coef * input_logtwi
+
+  #logistic regression from Jensen et al. 2018
+  p <- exp(b0 + b1x1 + b2x2)/(1 + exp(b0 + b1x1 + b2x2))
+  return(p)
+}
+
+test <- willit(log(twi3), 30)
+
+test2 <- as.data.frame(test, xy = TRUE) %>%
+  na.omit()
+
+ggplot() +  
+  geom_raster(data=test2, aes(x=x, y=y, fill=layer))+
+  scale_fill_viridis_c()+
+    theme_void()+
+    theme(legend.position = "bottom")+
+  coord_equal()
+
+test3 <- test2
+test3$layer[test3$layer < 0.9] <- 0
+test3$layer[test3$layer >= 0.9] <- 1
+
+binary <- c("#001219",
+            "#94D2BD"
+  )
+
+
+ggplot() +  
+  geom_raster(data=test3, aes(x=x, y=y, fill=as.factor(layer)))+
+  scale_fill_manual(values = binary,
+                    labels = c("No flow", "flowing"),
+                    name = "")+
+    theme_void()+
+    theme(legend.position = "bottom")+
+  coord_equal()
+  
+
+```
