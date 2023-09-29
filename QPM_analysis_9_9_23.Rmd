@@ -210,6 +210,7 @@ ggplot(final2)+
 
 ```
 ```{r}
+#dont run
 #the actual analysis, testing on W3
 w3 <- sheds %>% filter(WS == "WS3")
 #plot(w3)
@@ -256,6 +257,7 @@ sum(g_df$layer)
 
 ```
 ```{r}
+#dont run
 #try to do it in parallel
 #succeed in running in parallel for one shed, now do it for all of them
 
@@ -288,6 +290,7 @@ results <- data.frame("Q" = w3_q$Streamflow,
 write.csv(results, "./twi_model_rasters/w3_flowing_days.csv")
 ```
 ```{r}
+#dont run
 #the actual analysis, testing on W3
 #plot(w3)
 #clipping DEM by W3 boundary
@@ -389,6 +392,7 @@ growing_szn <- all_results %>%
 ```
 
 ```{r}
+#dont run
 #exceedance probability calculation for just one site
 x <- biggest$Cells_flowing
 i <- rank(x, ties.method = "average")
@@ -564,6 +568,136 @@ ggplot(final_df)+
   
 
 ```
+```{r}
+#Calculate how exceedance probability of different sized expansions has changed through time
+#group by every year, every 5 years, and every 10 years
+
+#first, do for one year in one watershed
+w3_szn <- filter(growing_szn, WS == 3)
+w3_szn[which.max(w3_szn$Cells_flowing),]
+biggest <- arrange(w3_szn, desc(Cells_flowing))
+
+#modify function to return value at a certain exceedance probability
+exceedance_desired <- function(df_Cells_flowing_column, desired_prob){
+  x <- df_Cells_flowing_column
+  i <- rank(x, ties.method = "average")
+
+  N <- length(i)
+  #quantiles of measured values; Cunnae Formula
+  qx <- (i - 0.4) / (N + 0.2)
+
+  #1st probability weighted moment
+  b1 <- sum((i - 1) * x ) * (1/(N * (N - 1)))
+
+  #2nd l moment
+  l2 <- 2 * b1 - mean(x)
+
+  #estimate of alpha
+  alpha <- l2 / log(2)
+
+  #estimate of beta
+  beta <- mean(x) - 0.5772 * alpha
+
+  #quantiles of the Gumbel distribution
+  qG <- exp(-exp(-(x - beta)/alpha))
+
+  #qx and qG are the final outputs
+  exceedance_prob <- 1 - qx
+  
+  your.number <- desired_prob
+  target.index <- which(abs(exceedance_prob - your.number) == min(abs(exceedance_prob - your.number)))
+  
+  cells_flowing_at_exceedance_desired <- unique(df_Cells_flowing_column[target.index])
+  return(cells_flowing_at_exceedance_desired)
+}
+
+exceedance_desired(biggest$Cells_flowing, 0.5)
+biggest$exceedance_prob <- t
+
+grease <- filter(final_df, WS == 3)
+your.number <- 0.5
+
+target.index <- which(abs(grease$exceedance_prob - your.number) == min(abs(grease$exceedance_prob - your.number)))
+unique(grease$Cells_flowing[target.index])
+#Test 1 was a success- I can input a desired exceedance probability, and produce the cells flowing
+#test to make sure I can use this in a summarize function
+
+final_df$year <- year(final_df$Date)
+
+desired <- final_df %>% 
+  group_by(WS, year) %>% 
+  summarise("p0.5" = exceedance_desired(cells_flowing_byArea, 0.5),
+            "p0.01" = exceedance_desired(cells_flowing_byArea, 0.01))
+
+
+
+
+colors <- c("#001219",
+            "#005F73",
+            "#0A9396",
+            "#94D2BD",
+            "#E9D8A6",
+            "#EE9B00",
+            "#CA6702",
+            "#BB3E03",
+            "#AE2012"
+  )
+
+counts_lm_p0.5 <- desired %>%
+  group_by(WS) %>%
+  nest() %>%
+  # Fit linear model
+  mutate(Mod = map(data, ~lm(year ~ p0.5, data = .x))) %>%
+  #mutate(Mod2 = map(data, ~mblm(year ~ n, data = .x))) %>% 
+  # Get the R2
+  mutate(R2 = map_dbl(Mod, ~round(summary(.x)$r.squared, 3))) #%>% 
+  #mutate(R2 = map_dbl(Mod, ~round(summary(.x)$r.squared, 3)))
+
+ggplot(desired, aes(x = year, 
+                 y = p0.5))+
+  geom_point(shape = 1)+
+  facet_wrap(~WS)+
+  labs(title = "50% Exceedance probabilities through time",
+       x = " ",
+       y = "Cells/km^2 flowing")+
+    geom_smooth(method = lm, se = FALSE, color = "darkblue", linetype = 1)+
+  geom_label(data = counts_lm_p0.5, 
+             aes(x = Inf, y = Inf, 
+                 label = paste("r^2 = ", R2, sep = " ")),
+             hjust = 1, vjust = 1, size = 3) +
+  theme_classic()
+
+
+  
+  
+
+```
+```{r}
+#1% exceedance probabilities through time
+counts_lm_p0.01 <- desired %>%
+  group_by(WS) %>%
+  nest() %>%
+  # Fit linear model
+  mutate(Mod = map(data, ~lm(year ~ p0.01, data = .x))) %>%
+  #mutate(Mod2 = map(data, ~mblm(year ~ n, data = .x))) %>% 
+  # Get the R2
+  mutate(R2 = map_dbl(Mod, ~round(summary(.x)$r.squared, 3))) #%>% 
+  #mutate(R2 = map_dbl(Mod, ~round(summary(.x)$r.squared, 3)))
+
+ggplot(desired, aes(x = year, 
+                 y = p0.01))+
+  geom_point(shape = 1)+
+  facet_wrap(~WS)+
+  labs(title = "1% Exceedance probabilities through time",
+       x = " ",
+       y = "Cells/km^2 flowing")+
+    geom_smooth(method = lm, se = FALSE, color = "darkblue", linetype = 1)+
+  geom_label(data = counts_lm_p0.01, 
+             aes(x = Inf, y = Inf, 
+                 label = paste("r^2 = ", R2, sep = " ")),
+             hjust = 1, vjust = 1, size = 3) +
+  theme_classic()
+```
 
   
 ```{r}
@@ -593,7 +727,6 @@ test <- c(as.numeric(final_df$Date))
 tr <- filter(counts, WS == 3)
 fit <- mblm(n ~ year, dataframe = tr)
 fit2 <- sen(n ~ year, tr)
-fit <- mblm(Cells_flowing ~ numberDate, dataframe = tr)
 
 #plot of counts through time
 counts %>% ggplot(aes(x = year, y = n))+
@@ -637,6 +770,7 @@ ggplot(more_than_average)+
 ```
 
 ```{r}
+#final figure for exceedance expansions through time
 chaff <- filter(final_df, exceedance_prob <= 0.01) 
 
 chaff$year <- year(chaff$Date)
@@ -662,14 +796,86 @@ counts %>% ggplot(aes(x = year, y = n))+
   geom_label(data = counts_lm, 
              aes(x = Inf, y = Inf, 
                  label = paste("r^2 = ", R2, sep = " ")),
-             hjust = 1, vjust = 1) +
+             hjust = 1, vjust = 1, size = 3) +
   theme_classic()+
   lims(y = c(0, max(counts$n)))+
-  labs(title = "Full network expansions by Watershed",
+  labs(title = "1% Exceedance Expansion events through time by Watershed",
        x = " ",
        y = "Number of times network fully expanded")
 
 ```
+
+```{r}
+#expansions that were bigger than the median value
+#final figure for exceedance expansions through time
+chaff <- filter(final_df, exceedance_prob <= 0.5) 
+
+chaff$year <- year(chaff$Date)
+counts <- chaff %>% 
+  count(year, WS)
+
+counts_lm <- counts %>%
+  group_by(WS) %>%
+  nest() %>%
+  # Fit linear model
+  mutate(Mod = map(data, ~lm(year ~ n, data = .x))) %>%
+  #mutate(Mod2 = map(data, ~mblm(year ~ n, data = .x))) %>% 
+  # Get the R2
+  mutate(R2 = map_dbl(Mod, ~round(summary(.x)$r.squared, 3))) #%>% 
+  #mutate(R2 = map_dbl(Mod, ~round(summary(.x)$r.squared, 3)))
+
+
+counts %>% ggplot(aes(x = year, y = n))+
+  geom_point(shape = 1)+
+  facet_wrap(~WS)+
+  #geom_smooth(method = sen, se = FALSE, color = "black", linetype = 1)+
+  geom_smooth(method = lm, se = FALSE, color = "black", linetype = 2)+
+  geom_label(data = counts_lm, 
+             aes(x = Inf, y = Inf, 
+                 label = paste("r^2 = ", R2, sep = " ")),
+             hjust = 1, vjust = 1, size = 3) +
+  theme_classic()+
+  lims(y = c(0, max(counts$n)))+
+  labs(title = "Network Expansions through time by Watershed",
+       x = " ",
+       y = "Number of times network fully expanded beyond Median")
+```
+
+```{r}
+#network retractions through time
+chaff <- filter(final_df, exceedance_prob >= 0.75) 
+
+chaff$year <- year(chaff$Date)
+counts <- chaff %>% 
+  count(year, WS)
+
+counts_lm <- counts %>%
+  group_by(WS) %>%
+  nest() %>%
+  # Fit linear model
+  mutate(Mod = map(data, ~lm(year ~ n, data = .x))) %>%
+  #mutate(Mod2 = map(data, ~mblm(year ~ n, data = .x))) %>% 
+  # Get the R2
+  mutate(R2 = map_dbl(Mod, ~round(summary(.x)$r.squared, 3))) #%>% 
+  #mutate(R2 = map_dbl(Mod, ~round(summary(.x)$r.squared, 3)))
+
+
+plot <- counts %>% ggplot(aes(x = year, y = n))+
+  geom_point(shape = 1)+
+  facet_wrap(~WS)+
+  #geom_smooth(method = sen, se = FALSE, color = "black", linetype = 1)+
+  geom_smooth(method = lm, se = FALSE, color = "black", linetype = 2)+
+  geom_label(data = counts_lm, 
+             aes(x = Inf, y = Inf, 
+                 label = paste("r^2 = ", R2, sep = " ")),
+             hjust = 1, vjust = 1, size = 3) +
+  theme_classic()+
+  lims(y = c(0, max(counts$n)))+
+  labs(title = "Network Retractions through time by Watershed",
+       x = " ",
+       y = "Number of times network fully expanded beyond Median")
+```
+
 
 ```{r}
 #find when each watershed is at its normal extent- which I defined as 0.01 exceedance prob
@@ -685,8 +891,367 @@ norms <- final_df %>%
             "Mean" = mean(Cells_flowing),
             "Mode" = getmode(Cells_flowing))
 
+oneshed <- final_df %>% 
+  filter(WS == 1) %>% 
+  filter(Cells_flowing == median(Cells_flowing))
+mean(oneshed$Q)
+
+test <- final_df %>% 
+  group_by(WS) %>% 
+  filter(Cells_flowing == median(Cells_flowing)) %>% 
+  summarise("Median" = median(Q),
+            "Min" = min(Q),
+            "Max" = max(Q))
+
+#for loop to make an image of the extent of the network at the average discharge conditions
+
+for(i in 1:length(test$WS)){
+  watershed <- sheds %>% filter(WSHEDS0_ID == test$WS[i])
+
+  dem_crop <- crop(twi, watershed)
+  twi_crop <- mask(dem_crop, watershed)
+
+  out <- willit(log(twi_crop), test$Median[i])
+  
+    out[out < 0.9] <- 0
+    out[out >= 0.9] <- 1
+
+    g_df <- out %>%
+      rasterToPoints %>%
+      as.data.frame()
+    
+    g_df$WS <- test$WS[i]
+    
+    if(i == 1) median_extents <- g_df
+  if(i > 1) median_extents <- rbind(median_extents, g_df)
+}
+
+#dem_crop <- crop(twi, w3)
+#w3_twi <- mask(dem_crop, w3)
+
+binary <- c("#001219",
+            "#94D2BD"
+  )
+
+ggplot() +  
+  geom_raster(data=median_extents, aes(x=x, y=y, fill=as.factor(layer)))+
+  scale_fill_manual(values = binary,
+                    labels = c("No flow", "flowing"),
+                    name = "")+
+  facet_wrap(~WS)+
+    theme_void()+
+    theme(legend.position = "bottom")+
+  coord_equal()
 
 
+##DELETE LATER
+watershed <- sheds %>% filter(WSHEDS0_ID == 1)
+watershed2 <- sheds %>% filter(WSHEDS0_ID == 9)
+
+dem_crop <- crop(twi, watershed)
+twi_crop <- mask(dem_crop, watershed)
+dem_crop2 <- crop(twi, watershed2)
+twi_crop2 <- mask(dem_crop2, watershed2)
+
+out <- willit(log(twi_crop), test$Median[1])
+  
+    out[out < 0.9] <- 0
+    out[out >= 0.9] <- 1
+
+wbt_raster_to_vector_lines(
+    out, 
+    shapefile
+)
+
+g_df <- twi_crop %>%
+      rasterToPoints %>%
+      as.data.frame()
+g_df$shed <- 1
+g_df2 <- twi_crop2 %>%
+      rasterToPoints %>%
+      as.data.frame()
+g_df2$shed <- 9
+
+
+g_all <- rbind(g_df, g_df2)
+
+
+ggplot() +  
+  geom_tile(data=g_all, aes(x=x, y=y, fill=twi))+
+  facet_wrap(~shed)+
+  theme(legend.position = "bottom")+
+    coord_equal()
+
+#no matter the combination of different settings I try, I cannot get ggplot to do this. Will do it manually with patchwork
+W1 <- ggplot() +  
+  geom_tile(data=g_df, aes(x=x, y=y, fill=twi))+
+  theme(legend.position = "none")+
+    coord_equal()
+
+W9 <- ggplot() +  
+  geom_tile(data=g_df2, aes(x=x, y=y, fill=twi))+
+  theme(legend.position = "right")+
+    coord_equal()
+
+W1 + W9 + plot_layout(guides = 'collect')
+```
+  
+```{r}
+#Figure showing median extension of each stream network
+test <- final_df %>% 
+  group_by(WS) %>% 
+  filter(Cells_flowing == median(Cells_flowing)) %>% 
+  summarise("Median" = median(Q),
+            "Min" = min(Q),
+            "Max" = max(Q))
+
+
+binary_shed <- function(shed_number, medial, minimum, maximum) {
+  watershed <- sheds %>% filter(WSHEDS0_ID == shed_number)
+  dem_crop <- crop(twi, watershed)
+  twi_crop <- mask(dem_crop, watershed)
+  
+  out <- willit(log(twi_crop), medial)
+  
+  out[out < 0.9] <- 0
+  out[out >= 0.9] <- 1
+  
+  g_df <- out %>%
+    rasterToPoints %>%
+    as.data.frame()
+  
+  g_df$WS <- shed_number
+  #calculate range of discharges
+  
+  
+  ggplot() +
+    geom_raster(data = g_df, aes(x = x, y = y, fill = as.factor(layer))) +
+    theme(legend.position = "right") +
+    scale_fill_manual(values = binary,
+                    labels = c("Not Flowing", "Flowing"),
+                    name = "")+
+    #theme_void()+
+    labs(title = paste0("WS", shed_number),
+         caption = paste0("Q = ", signif(minimum, 2), " - ", signif(maximum, 2), " mm/d"))+
+    theme(plot.caption=element_text(size=6),
+          title=element_text(size=8),
+          axis.line=element_blank(),axis.text.x=element_blank(),
+          axis.text.y=element_blank(),axis.ticks=element_blank(),
+          axis.title.x=element_blank(),
+          axis.title.y=element_blank(),
+          panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
+          panel.grid.minor=element_blank(),plot.background=element_blank())+
+    coord_equal()
+}
+
+w1 <- binary_shed(test$WS[1], test$Median[1], test$Min[1], test$Max[1])
+w2 <- binary_shed(test$WS[2], test$Median[2], test$Min[2], test$Max[2])
+w3 <- binary_shed(test$WS[3], test$Median[3], test$Min[3], test$Max[3])
+w4 <- binary_shed(test$WS[4], test$Median[4], test$Min[4], test$Max[4])
+w5 <- binary_shed(test$WS[5], test$Median[5], test$Min[5], test$Max[5])
+w6 <- binary_shed(test$WS[6], test$Median[6], test$Min[6], test$Max[6])
+w7 <- binary_shed(test$WS[7], test$Median[7], test$Min[7], test$Max[7])
+w8 <- binary_shed(test$WS[8], test$Median[8], test$Min[8], test$Max[8])
+w9 <- binary_shed(test$WS[9], test$Median[9], test$Min[9], test$Max[9])
+
+all_sheds <- (w1 + w2 + w3 )/ (w4 + w5 + w6) / (w7 + w8 + w9) + plot_layout(guides = 'collect')+
+  plot_annotation(
+    title = 'Median flowing extent for each watershed'
+)
+#make plot with average extension, then different percentiles of extension
+#ggsave("all_sheds.png", all_sheds)
+all_sheds
+
+
+```
+
+```{r}
+#figure showing 1% exceedance probability expansion
+
+final_df$floored_exceedance <- signif(final_df$exceedance_prob, 1)
+onePer_norms <- final_df %>% 
+  group_by(WS) %>% 
+  filter(floored_exceedance == 0.01) %>% 
+  summarise("Median" = median(Q),
+            "Mean" = mean(Q),
+            "Mode" = getmode(Q),
+            "Min" = min(Q),
+            "Max" = max(Q))
+
+
+
+w1 <- binary_shed(onePer_norms$WS[1], onePer_norms$Median[1], onePer_norms$Min[1], onePer_norms$Max[1])
+w2 <- binary_shed(onePer_norms$WS[2], onePer_norms$Median[2], onePer_norms$Min[2], onePer_norms$Max[2])
+w3 <- binary_shed(onePer_norms$WS[3], onePer_norms$Median[3], onePer_norms$Min[3], onePer_norms$Max[3])
+w4 <- binary_shed(onePer_norms$WS[4], onePer_norms$Median[4], onePer_norms$Min[4], onePer_norms$Max[4])
+w5 <- binary_shed(onePer_norms$WS[5], onePer_norms$Median[5], onePer_norms$Min[5], onePer_norms$Max[5])
+w6 <- binary_shed(onePer_norms$WS[6], onePer_norms$Median[6], onePer_norms$Min[6], onePer_norms$Max[6])
+w7 <- binary_shed(onePer_norms$WS[7], onePer_norms$Median[7], onePer_norms$Min[7], onePer_norms$Max[7])
+w8 <- binary_shed(onePer_norms$WS[8], onePer_norms$Median[8], onePer_norms$Min[8], onePer_norms$Max[8])
+w9 <- binary_shed(onePer_norms$WS[9], onePer_norms$Median[9], onePer_norms$Min[9], onePer_norms$Max[9])
+
+all_sheds <- (w1 + w2 + w3 )/ (w4 + w5 + w6) / (w7 + w8 + w9) + plot_layout(guides = 'collect')+
+  plot_annotation(
+    title = 'Median flowing extent for each watershed, 1% exceedance probability'
+)
+#make plot with average extension, then different percentiles of extension
+ggsave("all_sheds_1percent.png", all_sheds)
+
+
+
+tmap_mode("view")
+## tmap mode set to plotting
+tm_shape(tyrs)+
+    tm_raster(palette = "Greys", colorNA = NULL, style = "cont")
+```
+
+```{r}
+tyrs <- willit(log(twi3), 14.9)
+tyrs[tyrs < 0.9] <- 0
+tyrs[tyrs] <- 1
+
+g_df <- tyrs %>%
+    rasterToPoints %>%
+    as.data.frame()
+
+ggplot() +
+    geom_raster(data = g_df, aes(x = x, y = y, fill = as.factor(layer))) +
+    theme(legend.position = "right") +
+    scale_fill_manual(values = binary,
+                    labels = c("Not Flowing", "Flowing"),
+                    name = "")+
+    theme_void()+
+    coord_equal()
+
+e3 <- ggplot() +
+    geom_raster(data = g_df, aes(x = x, y = y, fill = as.factor(layer))) +
+    theme(legend.position = "right") +
+    scale_fill_manual(values = binary,
+                    labels = c("Not Flowing", "Flowing"),
+                    name = "")+
+    #theme_void()+
+    labs(title = paste0("WS", 3, "; 1% Exceedance Probability"),
+         caption = paste0("Q = ", signif(onePer_norms$Min[3], 2)," - ", signif(onePer_norms$Max[3],2) , "mm/d"))+
+    theme(plot.caption=element_text(size=12),
+          title=element_text(size=16),
+          axis.line=element_blank(),axis.text.x=element_blank(),
+          axis.text.y=element_blank(),axis.ticks=element_blank(),
+          axis.title.x=element_blank(),
+          axis.title.y=element_blank(),
+          panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
+          panel.grid.minor=element_blank(),plot.background=element_blank())+
+    coord_equal()
+e3
+
+
+```
+
+```{r}
+#Median network expansion
+tyrs <- willit(log(twi3), 0.456)
+tyrs[tyrs < 0.9] <- 0
+tyrs[tyrs] <- 1
+
+g_df <- tyrs %>%
+    rasterToPoints %>%
+    as.data.frame()
+
+ggplot() +
+    geom_raster(data = g_df, aes(x = x, y = y, fill = as.factor(layer))) +
+    theme(legend.position = "right") +
+    scale_fill_manual(values = binary,
+                    labels = c("Not Flowing", "Flowing"),
+                    name = "")+
+    theme_void()+
+    coord_equal()
+
+e3 <- ggplot() +
+    geom_raster(data = g_df, aes(x = x, y = y, fill = as.factor(layer))) +
+    theme(legend.position = "right") +
+    scale_fill_manual(values = binary,
+                    labels = c("Not Flowing", "Flowing"),
+                    name = "")+
+    #theme_void()+
+    labs(title = paste0("WS", 3, "; Median flow extent; 50% Exceedance Probability"),
+         caption = paste0("Q = ", signif(test$Min[3], 2)," - ", signif(test$Max[3],2) , "mm/d"))+
+    theme(plot.caption=element_text(size=12),
+          title=element_text(size=16),
+          axis.line=element_blank(),axis.text.x=element_blank(),
+          axis.text.y=element_blank(),axis.ticks=element_blank(),
+          axis.title.x=element_blank(),
+          axis.title.y=element_blank(),
+          panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
+          panel.grid.minor=element_blank(),plot.background=element_blank())+
+    coord_equal()
+e3
+
+
+
+
+```
+  
+```{r}
+#99% percent exceedance extent
+NNPer_norms <- final_df %>% 
+  group_by(WS) %>% 
+  filter(floored_exceedance == 0.8) %>% 
+  summarise("Median" = median(Q),
+            "Mean" = mean(Q),
+            "Mode" = getmode(Q),
+            "Min" = min(Q),
+            "Max" = max(Q))
+
+tyrs <- willit(log(twi3), 0.071)
+tyrs[tyrs < 0.9] <- 0
+tyrs[tyrs] <- 1
+
+g_df <- tyrs %>%
+    rasterToPoints %>%
+    as.data.frame()
+
+ggplot() +
+    geom_raster(data = g_df, aes(x = x, y = y, fill = as.factor(layer))) +
+    theme(legend.position = "right") +
+    scale_fill_manual(values = binary,
+                    labels = c("Not Flowing", "Flowing"),
+                    name = "")+
+    theme_void()+
+    coord_equal()
+
+e3 <- ggplot() +
+    geom_raster(data = g_df, aes(x = x, y = y, fill = as.factor(layer))) +
+    theme(legend.position = "right") +
+    scale_fill_manual(values = binary,
+                    labels = c("Not Flowing", "Flowing"),
+                    name = "")+
+    #theme_void()+
+    labs(title = paste0("WS", 3, "; 99% Exceedance Probability"),
+         caption = paste0("Q = ", signif(onePer_norms$Min[3], 2)," - ", signif(onePer_norms$Max[3],2) , "mm/d"))+
+    theme(plot.caption=element_text(size=12),
+          title=element_text(size=16),
+          axis.line=element_blank(),axis.text.x=element_blank(),
+          axis.text.y=element_blank(),axis.ticks=element_blank(),
+          axis.title.x=element_blank(),
+          axis.title.y=element_blank(),
+          panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
+          panel.grid.minor=element_blank(),plot.background=element_blank())+
+    coord_equal()
+e3
+
+
+```
+
+
+
+```{r}
+tmap_mode("view")
+## tmap mode set to plotting
+tm_shape(out)+
+  tm_raster(palette = "Greys", colorNA = NULL, style = "cont")
+#could run analysis to see if the frequency of different sized extensions has changed through time!
+
+#determine if the average number of flowing cells per year is changing through time
+#plot that is average or median cells per year
 ```
 
 
@@ -728,7 +1293,7 @@ binary <- c("#001219",
 
 
 ggplot() +  
-  geom_raster(data=test3, aes(x=x, y=y, fill=as.factor(layer)))+
+  geom_raster(data=test2, aes(x=x, y=y, fill=as.factor(layer)))+
   scale_fill_manual(values = binary,
                     labels = c("No flow", "flowing"),
                     name = "")+
