@@ -1,0 +1,30 @@
+---
+title: "QPM_analysis_9_29_23"
+author: "John Morgan"
+date: "2023-09-29"
+output: html_document
+---
+After meeting with Kevin and JP, I am doing an analysis that will be more useful for everyone else at Hubbard Brook. Things I need to do:
+- Define a normal channel for each watershed
+  - Start with W3, use known extent to develop an area threshold, then use that on other watersheds
+- Determine how frequently streams connect with biogeochemical hotspots (rocky areas, shallow soils)
+  - Use BOSS to get rocky areas and shallow soils
+  - How often does the channel expand up into these areas?
+  - What stream expansion threshold connects with hotspots?
+- How much does stream area change during the growing season?
+  - Map of stream channel, color scale by log(days flowing)
+  - What area of stream is flowing over time? How does this translate to biogeochemical fluxes (CO2) from the flowing surface of water?
+    - Find CO2 fluxes in NE headwater streams
+- The streams are dynamic in the middle ranges- how do I express this? (Less important than others)
+
+```{r}
+#defining a normal channel
+
+```
+
+```{r}
+#find where expanded channels reach into rocky outcrops and shallow soil
+
+```
+
+

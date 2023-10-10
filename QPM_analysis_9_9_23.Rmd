@@ -1303,3 +1303,12 @@ ggplot() +
   
 
 ```
+
+```{r}
+ws3 <- final_df %>% 
+  filter(WS == 3)
+ggplot(ws3)+
+  geom_point(aes(x = Q, y = cells_flowing_byArea))+
+  theme_classic()
+```
+
