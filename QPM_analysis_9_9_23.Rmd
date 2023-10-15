@@ -127,7 +127,7 @@ plot(test)
 q_data <- read.csv("./HB/HBEF_DailyStreamflow_1956-2022.csv")
 q_data$DATE <- ymd(q_data$DATE)
 
-sheds <- readOGR(dsn='C:/Users/John/Documents/VT Research/HBTopModel/HB/hbef_wsheds',layer = 'hbef_wsheds')
+sheds <- readOGR(dsn='./HB/hbef_wsheds')
 w3 <- sheds %>% filter(WS == "WS3")
 #plot(w3)
 #clipping DEM by W3 boundary
@@ -384,7 +384,7 @@ all_results$Date <- ymd(all_results$Date)
 growing_szn <- all_results %>% 
   filter(Date >= as.Date(paste(year(Date), 05, 01, sep = "-")),
          Date <= as.Date(paste(year(Date), 10, 01, sep = "-")))
-
+write.csv(growing_szn, "growing_szn.csv")
 #earlier analysis- to find the biggest flowing extent, from just testing on one watershed
 #growing_szn[which.max(growing_szn$Cells_flowing),]
 #biggest <- arrange(growing_szn, desc(Cells_flowing))

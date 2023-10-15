@@ -112,6 +112,7 @@ new_model <- list(
 )
 #YES! SUCCESS!!!!!!! of course it would be so easy! DynatopGIS does make an easy object, in the RDS format
 new_model <- readRDS("./dynatopTest/new_model.rds")
+new_model$hillslope$atb_bar[new_model$hillslope$atb_bar < 0] <- 0
 dynatop$new(new_model)
 ###########################
 #Dynatop test 2/7/23

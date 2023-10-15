@@ -18,13 +18,299 @@ After meeting with Kevin and JP, I am doing an analysis that will be more useful
 - The streams are dynamic in the middle ranges- how do I express this? (Less important than others)
 
 ```{r}
-#defining a normal channel
-
+#setup chunk
+library(pacman)
+p_load(tidyverse, raster, rgdal, sp, sf, mapview,
+       rgeos, spdplyr, tmap, stars,
+       lubridate, gganimate, animation, patchwork,
+       whitebox, grid, scales, ggthemes, viridis,
+       parallel, future.apply) 
 ```
+
+
+```{r}
+#defining a normal channel
+#threshold drainage area, based on shapefiles of channel locations that Scott provided
+#uaa calculated in script QPM_analysis_9_9_23.Rmd
+flowacc_path <- "./HB/5m hydro enforced DEM/TWI_andotherlayers/flowacc.tif"
+flowacc <- raster(flowacc_path)
+crs(flowacc) <- 26919
+crs(flowacc)
+
+#watershed 3 shape
+sheds <- readOGR(dsn='./HB/hbef_wsheds')
+w3 <- sheds %>% filter(WS == "WS3")
+
+#reading in streams as rasters datasets, created in arcgis
+w3_rast <- raster("./HB/hbstream/w3_5m.tif")
+fb_rast <- raster("./HB/hbstream/fb_5m.tif")
+zz_rast <- raster("./HB/hbstream/zz_5m.tif")
+#use this layer, flow accumulation of 3500 m2 from 1m DEM of the whole valley
+whole <- raster("./HB/hbstream/wholeValley1m_3500m2Thresh.tif")
+
+stream <- st_read("./HB/hbstream/hb42_master_startend.shp")
+fb <- st_read("./HB/hbstream/FB_subcatchment_flowlines.shp")
+zz <- st_read("./HB/hbstream/ZZ_subcatchment_flowlines.shp")
+#st_crs(stream)
+
+st_crs(stream) <- 26919
+st_crs(fb) <- 26919
+st_crs(zz) <- 26919
+
+
+#past method of making the crs of stream match that of a raster
+#now should use the method above
+#stream_p <- spTransform(stream, crs(flowacc))
+#st_crs(stream_p)
+
+
+plot(flowacc)
+
+#could sub in a more sophisticated method later
+```
+  
+```{r}
+#clip to extent of watershed 3
+flo_crop <- crop(flowacc, w3)
+flo_mask <- mask(flo_crop, w3)
+test3 <- flo_mask
+test3$flowacc[test3$flowacc < 1000] <- 0
+test3$flowacc[test3$flowacc >= 1000] <- 1
+
+binary <- c("#001219",
+            "#94D2BD"
+  )
+test <- as.data.frame(test3, xy = TRUE) %>%
+  na.omit()
+plot(stream)
+ggplot() +  
+  geom_raster(data=test, aes(x=x, y=y, fill=as.factor(flowacc)))+
+  scale_fill_manual(values = binary,
+                    labels = c("No flow", "flowing"),
+                    name = "")+
+    theme_void()+
+    theme(legend.position = "bottom")+
+  coord_equal()
+
+tmap_mode("view")
+## tmap mode set to plotting
+tm_shape(out)+
+  tm_raster(palette = "Greys", colorNA = NULL, style = "cont")
+```
+```{r}
+#flo_crop <- crop(flowacc, w3)
+#flo_mask <- mask(flo_crop, w3)
+test3 <- flowacc
+test3$flowacc[test3$flowacc < 600] <- 0
+test3$flowacc[test3$flowacc >= 600] <- 1
+#using a critical drainage area of 600 * 5 m^2? or just 600 m^2
+
+tmap_mode("view")
+## tmap mode set to plotting
+tm_shape(test3)+
+  tm_raster() +
+  tm_shape(stream) +
+  tm_lines(scale = 3)+
+  tm_shape(fb) +
+  tm_lines(scale = 3) +
+  tm_shape(zz) +
+  tm_lines(scale = 3)
+  
+  # tm_shape(w2_points) +
+  #   tm_dots(col = "black", scale = 1) +
+  #   tm_facets(along = "time")+
+  #   tm_legend(show = FALSE)
+
+
+tmap_mode("view")
+## tmap mode set to plotting
+w3 <- sheds %>% filter(WS == "WS3")
+whole[is.na(whole[])] <- 0 
+
+whole_crop <- crop(whole, w3)
+w3_net <- mask(whole_crop, w3)
+
+test <- willit(log(twi3), 30)
+test[test < 0.9] <- 0
+test[test >= 0.9] <- 1
+r.new = resample(w3_net, test, "bilinear")
+
+
+tm_shape(r.new)+
+  tm_raster()+
+tm_shape(test)+
+  tm_raster()
+```
+
 
 ```{r}
 #find where expanded channels reach into rocky outcrops and shallow soil
 
+
+#read in soil model
+soil_map_path <- "./HB/HBsoils.tif"
+#twi calculated in script topmodel_fromscratch_2_23_23.Rmd
+soil <- raster(soil_map_path)
+crs(soil) <- 26919
+
+
+
 ```
 
+```{r}
+growing_szn <- read_csv("growing_szn.csv")
+growing_szn <- growing_szn[,3:7]
+
+w3 <- sheds %>% filter(WS == "WS3")
+dem_crop <- crop(twi, w3)
+w3_twi <- mask(dem_crop, w3)
+
+#function to calculate probability of flow raster
+willit <- function(input_logtwi, inputQ){
+  #b0, or intercept from Kevin's email from Carrie, might need to redo regression
+  b0 <- -35.43
+  #all ofther coefs from Jensen et al. 2018
+  twi_coef <- 15.57
+  flow_coef <- 0.12
+
+  b1x1 <- flow_coef * inputQ
+  b2x2 <- twi_coef * input_logtwi
+
+  #logistic regression from Jensen et al. 2018
+  p <- exp(b0 + b1x1 + b2x2)/(1 + exp(b0 + b1x1 + b2x2))
+  return(p)
+}
+
+test <- willit(log(twi3), 30)
+plot(test)
+test[test < 0.9] <- NA
+test[test >= 0.9] <- 1
+
+plot(test)
+r.new = resample(w3_rast, test, "bilinear")
+
+
+diff <- w3_rast + test
+plot(r.new)
+
+```
+```{r}
+#just do watersheds 3, 6, 7, 8
+twi_output <- "./HB/5m hydro enforced DEM/TWI_andotherlayers/twi.tif"
+twi <- raster(twi_output)
+
+w3 <- sheds %>% filter(WS == "WS3")
+whole[is.na(whole[])] <- 0 
+whole_crop <- crop(whole, w3)
+w3_net <- mask(whole_crop, w3)
+twi_crop <- crop(twi, w3)
+w3_twi <- mask(twi_crop, w3)
+
+w6 <- sheds %>% filter(WS == "WS6")
+whole[is.na(whole[])] <- 0 
+whole_crop <- crop(whole, w6)
+w6_net <- mask(whole_crop, w6)
+twi_crop <- crop(twi, w6)
+w6_twi <- mask(twi_crop, w6)
+
+w7 <- sheds %>% filter(WS == "WS7")
+whole[is.na(whole[])] <- 0 
+whole_crop <- crop(whole, w7)
+w7_net <- mask(whole_crop, w7)
+twi_crop <- crop(twi, w7)
+w7_twi <- mask(twi_crop, w7)
+
+w8 <- sheds %>% filter(WS == "WS8")
+whole[is.na(whole[])] <- 0 
+whole_crop <- crop(whole, w8)
+w8_net <- mask(whole_crop, w8)
+twi_crop <- crop(twi, w8)
+w8_twi <- mask(twi_crop, w8)
+
+
+#symbology for soils
+labels <- c("Bh Podzol",
+            "Bhs Podzol",
+            "Bimodal Podzol",
+            "E Podzol",
+            "Wetland Histosol",
+            "Aquept",
+             "Bedrock Histosol",
+            
+            
+            "Typical Podzol"
+            
+            
+            
+            )
+colors <- c("#55FF00",
+            "#734C00",
+            "#267300",
+            "#CCCCCC",
+            "black",
+            "#004DA8",
+            "#00C5FF",
+            
+                        "#FFFF73"
+            )
+breaks <- c(1,2,3,4,5,6,7,8)
+tm_shape(soil)+
+  tm_raster(palette = colors, labels = labels)
+```
+
+```{r}
+w3 <- sheds %>% filter(WS == "WS8")
+whole[is.na(whole[])] <- 0 
+whole_crop <- crop(whole, w3)
+w3_net <- mask(whole_crop, w3)
+twi_crop <- crop(twi, w3)
+w3_twi <- mask(twi_crop, w3)
+
+test <- willit(log(w3_twi), 30)
+test[test < 0.9] <- NA
+test[test >= 0.9] <- 1
+#r.new = resample(w3_net, test, "bilinear")
+
+
+
+  tm_shape(soil)+
+  tm_raster(palette = colors, labels = labels, breaks = breaks)+
+    tm_shape(test)+
+
+  tm_raster(palette = "red")
+#w3- anything above 40
+#ws6- anything above 45
+#ws7- anything above 50
+#ws8- anything above 30
+```
+
+```{r}
+data3 <- growing_szn %>% filter(WS == 3) %>% 
+  filter(Q >= 40)
+data6 <- growing_szn %>% filter(WS == 6) %>% 
+  filter(Q >= 45)
+data7 <- growing_szn %>% filter(WS == 7) %>% 
+  filter(Q >= 50)
+data8 <- growing_szn %>% filter(WS == 8) %>% 
+  filter(Q >= 30)
+
+data_all <- rbind(data3, data6)
+data_all <- rbind(data_all, data7)
+data_all <- rbind(data_all, data8) %>% 
+  mutate(year = year(Date)) %>% 
+  group_by(year, WS)%>%
+    summarise(Count = n())
+
+ggplot(data_all)+
+  geom_hist(aes(x = year, y = Count))+
+  facet_wrap(~WS, )+
+  labs(title = "Number of times streams lick rocks per year")+
+  theme_classic()
+
+
+
+```
+10/13/23, just had meeting with JP and kevin
+- make figure showing percentage of time flowing or log duration of flow in hours for each stream based on model, do for each growing season and see if there are noticeable changes through time
+-     Channels might have changed over this time scale
 

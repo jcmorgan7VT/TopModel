@@ -62,11 +62,23 @@ plot(twi)
 
 Show topographic wetness index
 ```{r}
-thresh <- 13
+thresh <- 11
 twi_threshold <- twi
 twi_threshold[twi_threshold < thresh] <- NA
 
-plot(twi_threshold)
+hist(twi, breaks = 50)
+plot(twi_threshold, col = "blue")
+
+twi_frame <- getValues(twi)
+twi_frame <- twi_frame[!is.na(twi_frame)]
+m <- mean(twi_frame)
+n <- length(twi_frame)
+
+
+Fmax <- length(twi_frame[twi_frame >= m])/n
+Fmax * exp(-0.5 * m)
+
+
 ```
 
 Now actually build model
@@ -89,29 +101,83 @@ A <- raster_area #area in meters
 
 Lambda <- (1/A) * cellStats(twi, "sum") * A
 
-#parameters
-Ac <- 0 #variable contributing area; rain falling on this immediately becomes overland flow
-io <- 0 #constant leakage rate from S2 to S3
-i <- 0 #rainfall rate, input to S2 unless i > imax = io + b/S2
-imax <- 0 #maximum rainfall rate
+twi_frame <- getValues(twi)
+twi_frame <- twi_frame[!is.na(twi_frame)]
+
+
 Excess_rainfall <- i - imax
+er <- 0 #potential ET once S1 is depleted
+m <- 0 #constant affecting the storage of S3
 
 
 #stores
-S1 <- 0 #interception store
-S2 <- 0 #infiltration store
-S3 <- 0 #saturated zone store
-ch <- 0 #channel flow
+S1 <- 0 #interception store [mm3]
+S2 <- 0 #infiltration store [mm3]
+S3 <- 0 #saturated zone store [mm3]
+ch <- 0 #channel flow [mm3]
 
 #fluxes
 SD <- 0 #max value of S1, must fill before infiltration, loss from interception to evaporation
-SC <- 0 #loss from infiltration to evaporation
+Sc <- 0 #loss from infiltration to evaporation
 P <- 0 #input from precipitation
-qof <- 0 #quick return flow
-qo <- 0 #baseflow
+qof <- i * Ac #quick return flow [mm2 hr-1]
+qo <- if(S3 == 0) 10 else 0 #base flow
 qb <- qo * ln(S3 / m) #delayed flow
+ea <- er * S2 / Sc #actual evaporation from infiltration store, evaporation at a decreasing rate due to S2
+Si <- 0 #relative storage [mm]
 
+precip <- read.csv() #file containing precip record
+timestep <- 1 #hr
+duration <- 7 * 24 #hr, can also be length of precip record
+time <- seq(1, duration, timestep)
 
-Qout <- Through_fall
+#using values from Beven and Kirkby to start
+parms <- c(
+  2.5, #SD, max value of S1, must fill before infiltration, loss from interception to evaporation
+  1, #Sc, loss from infiltration to evaporation
+  15, #io, constant leakage rate from S2 to S3
+  0, #b, a parameter controlling when S2 stops contributing to subsurface and when it starts running off the surface
+  100, #m, a constant affecting the storage of S3
+  10000 #basin area in m2
+)
+
+topmodel <- function(t, states, parms, precip, twi){ 
+  #states: how much is in each store at this time step
+  S1 <- states[1] #interception [mm]
+  S2 <- states[2] #infiltration [mm]
+  S3 <- states[3] #saturated zone store [mm]
+  quick <- states[4] 
+  delayed <- states[5]
+  
+  #parameters
+  SD <- parms[1] #max value of S1
+  Sc <- parms[2] #loss from infiltration to evaporation
+  io <- parms[3] #constant leakage rate from S2 to S3
+  b <- parms[4]
+  m <- parms[5] #constant affecting the storage of S3
+  A <- parms[6] #area of entire basin
+  ST <- parms[7] #local maximum storage area value [mm], capacity
+
+  i <- precip #rainfall rate [mm/hr], input to S2 unless i > imax = io + b/S2
+  imax <- max(precip) #maximum rainfall rate
+  
+  Ac <- length(twi[twi > ST/m]) #variable contributing area; rain    falling on this immediately becomes overland flow
+  P <- (A - Ac)  #non-active area
+  
+  #flux equations
+  precipitation <- precip
+  evaporation <- evap
+  interception <- if(S1 < SD) P - Sc else 0
+  infiltration <- if(i > imax & i == io + b/S2) 0 else interception
+  saturatedZone <- 0
+  
+  #derivatives
+  dS1_dt <- precipitation - evaporation - Ac
+  dS2_dt <- infiltration - evaporation - Ac
+  dS3_dt <- saturatedZone - evaporation
+  
+  
+}
+
 ```
 
