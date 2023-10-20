@@ -3,6 +3,8 @@ title: "QPM_analysis_9_29_23"
 author: "John Morgan"
 date: "2023-09-29"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 After meeting with Kevin and JP, I am doing an analysis that will be more useful for everyone else at Hubbard Brook. Things I need to do:
 - Define a normal channel for each watershed
@@ -82,7 +84,6 @@ binary <- c("#001219",
   )
 test <- as.data.frame(test3, xy = TRUE) %>%
   na.omit()
-plot(stream)
 ggplot() +  
   geom_raster(data=test, aes(x=x, y=y, fill=as.factor(flowacc)))+
   scale_fill_manual(values = binary,
@@ -91,56 +92,185 @@ ggplot() +
     theme_void()+
     theme(legend.position = "bottom")+
   coord_equal()
-
-tmap_mode("view")
-## tmap mode set to plotting
-tm_shape(out)+
-  tm_raster(palette = "Greys", colorNA = NULL, style = "cont")
 ```
+
+Figuring out how to determine if stream within a predefined channel is flowing:
 ```{r}
-#flo_crop <- crop(flowacc, w3)
-#flo_mask <- mask(flo_crop, w3)
-test3 <- flowacc
-test3$flowacc[test3$flowacc < 600] <- 0
-test3$flowacc[test3$flowacc >= 600] <- 1
-#using a critical drainage area of 600 * 5 m^2? or just 600 m^2
-
-tmap_mode("view")
-## tmap mode set to plotting
-tm_shape(test3)+
-  tm_raster() +
-  tm_shape(stream) +
-  tm_lines(scale = 3)+
-  tm_shape(fb) +
-  tm_lines(scale = 3) +
-  tm_shape(zz) +
-  tm_lines(scale = 3)
-  
-  # tm_shape(w2_points) +
-  #   tm_dots(col = "black", scale = 1) +
-  #   tm_facets(along = "time")+
-  #   tm_legend(show = FALSE)
-
-
-tmap_mode("view")
-## tmap mode set to plotting
+#before function, create inputs
+#clipped flow accumulation raster
 w3 <- sheds %>% filter(WS == "WS3")
-whole[is.na(whole[])] <- 0 
-
-whole_crop <- crop(whole, w3)
-w3_net <- mask(whole_crop, w3)
-
-test <- willit(log(twi3), 30)
-test[test < 0.9] <- 0
-test[test >= 0.9] <- 1
-r.new = resample(w3_net, test, "bilinear")
 
 
-tm_shape(r.new)+
-  tm_raster()+
-tm_shape(test)+
-  tm_raster()
+flo_crop <- crop(flowacc, w3)
+flo_mask <- mask(flo_crop, w3)
+
+
+#threshold flow accumulation raster
+flo_mask$flowacc[flo_mask$flowacc < 700] <- NA
+flo_mask$flowacc[flo_mask$flowacc >= 700] <- 1
+#using a critical drainage area of 700 * 5 m^2, or 3500 m^2 by     default
+
+#function to calculate probability of flow raster
+willit <- function(input_logtwi, inputQ){
+  #b0, or intercept from Kevin's email from Carrie, might need to redo regression
+  b0 <- -35.43
+  #all ofther coefs from Jensen et al. 2018
+  twi_coef <- 15.57
+  flow_coef <- 0.12
+
+  b1x1 <- flow_coef * inputQ
+  b2x2 <- twi_coef * input_logtwi
+
+  #logistic regression from Jensen et al. 2018
+  p <- exp(b0 + b1x1 + b2x2)/(1 + exp(b0 + b1x1 + b2x2))
+  return(p)
+}
+
+#twi for w3
+twi_output <- "./HB/5m hydro enforced DEM/TWI_andotherlayers/twi.tif"
+twi <- raster(twi_output)
+
+twi_crop <- crop(twi, w3)
+w3_twi <- mask(twi_crop, w3)
+
+#function that takes discharge as single input
+q_data <- read.csv("./HB/HBEF_DailyStreamflow_1956-2022.csv")
+q_data$DATE <- ymd(q_data$DATE)
+w3_q <- filter(q_data, WS == 3)
+
+
+qlist <- w3_q %>% 
+  dplyr::select(DATE, Streamflow)
+
+probable_flow_extent <- function(qlist){
+  out <- willit(log(w3_twi), qlist$Streamflow)
+  crs(out) <- 26919
+
+  out[out < 0.9] <- 0
+  out[out >= 0.9] <- 1
+  
+  #removes values that are not within pre-defined channel
+  masked <- mask(out, flo_mask)
+
+  g_df <- masked %>%
+    rasterToPoints %>%
+    as.data.frame() %>% 
+    mutate(Date = qlist$DATE)
+
+  return(g_df)
+}
+
+output <- probable_flow_extent(qlist[6,])
+write.csv(results, "./twi_model_rasters/days_flowing/test.csv")
+
+head(output)
+ggplot(output)+
+    geom_tile(aes(x = x, y = y, fill = layer))+
+    theme_void()+
+    coord_equal()
+
 ```
+
+Use parallel processing and the procedure developed in the previous chunk to determine 
+```{r}
+#dont run
+#modifying parallel part of script from QPM_analsis_9_9_23 to create a raster or df with the number of days flowing through the entire record
+
+#function that will calculate prob, then produce how much was likely flowing
+#rasList <- paste0("./twi_model_rasters/w3_", dates, ".tif")
+qlist <- w3_q$Streamflow
+probable_flow_extent <- function(qlist){
+  out <- willit(log(w3_twi), qlist)
+  
+  out[out < 0.9] <- 0
+  out[out >= 0.9] <- 1
+
+
+  g_df <- out %>%
+    rasterToPoints %>%
+    as.data.frame()
+
+  flowing_area <- sum(g_df$layer)
+  return(flowing_area)
+}
+
+probable_flow_extent(qlist[6])
+
+plan(multicore, workers = detectCores() - 1)
+outStat <- future_lapply(qlist, probable_flow_extent)
+
+results <- data.frame("Q" = w3_q$Streamflow, 
+                      "Date" = w3_q$DATE,
+                      "Cells_flowing" = unlist(outStat))
+write.csv(results, "./twi_model_rasters/w3_flowing_days.csv")
+```
+
+Trying JP method: convert raster of channel to points, then find log(twi) at each point, determine threshold to flow, then I am in dataframe land
+```{r}
+#pull in raster that defines pre-existing channel
+w3 <- sheds %>% filter(WS == "WS3")
+flo_crop <- crop(flowacc, w3)
+flo_mask <- mask(flo_crop, w3)
+#threshold flow accumulation raster
+flo_mask$flowacc[flo_mask$flowacc < 700] <- NA
+flo_mask$flowacc[flo_mask$flowacc >= 700] <- 1
+#using a critical drainage area of 700 * 5 m^2, or 3500 m^2 by     default
+
+#convert channel raster into a df
+#OR convert twi raster to df once it has been masked by 
+twi <- raster("./HB/5m hydro enforced DEM/TWI_andotherlayers/twi.tif")
+
+twi_crop <- crop(twi, w3)
+w3_twi <- mask(twi_crop, w3)
+
+masked <- mask(log(w3_twi), flo_mask)
+
+  mask_logtwi <- masked %>%
+    rasterToPoints %>%
+    as.data.frame() 
+ggplot(mask_logtwi)+
+    geom_tile(aes(x = x, y = y, fill = layer))+
+    theme_void()+
+    coord_equal()
+  
+  
+mask_logtwi$prob <- willit(mask_logtwi$layer, 10)
+ggplot(mask_logtwi)+
+    geom_tile(aes(x = x, y = y, fill = prob))+
+    theme_void()+
+    coord_equal()
+
+  out[out < 0.9] <- 0
+  out[out >= 0.9] <- 1
+
+
+  g_df <- out %>%
+    rasterToPoints %>%
+    as.data.frame()
+
+
+
+#function that takes discharge as single input
+q_data <- read.csv("./HB/HBEF_DailyStreamflow_1956-2022.csv")
+q_data$DATE <- ymd(q_data$DATE)
+w3_q <- filter(q_data, WS == 3)
+
+
+qlist <- w3_q %>% 
+  dplyr::select(DATE, Streamflow)
+
+```
+
+
+Attempt to quantify how CO2 evasion is changing based on changing surface area
+```{r}
+#4.0 g C/m2-yr of CO2 evaded from streams, from
+# Fahey, T.J., Siccama, T.G., Driscoll, C.T. et al. The Biogeochemistry of Carbon at Hubbard Brook. Biogeochemistry 75, 109–176 (2005). https://doi-org.ezproxy.lib.vt.edu/10.1007/s10533-004-6321-y
+
+
+
+```
+
 
 
 ```{r}
@@ -161,25 +291,7 @@ crs(soil) <- 26919
 growing_szn <- read_csv("growing_szn.csv")
 growing_szn <- growing_szn[,3:7]
 
-w3 <- sheds %>% filter(WS == "WS3")
-dem_crop <- crop(twi, w3)
-w3_twi <- mask(dem_crop, w3)
 
-#function to calculate probability of flow raster
-willit <- function(input_logtwi, inputQ){
-  #b0, or intercept from Kevin's email from Carrie, might need to redo regression
-  b0 <- -35.43
-  #all ofther coefs from Jensen et al. 2018
-  twi_coef <- 15.57
-  flow_coef <- 0.12
-
-  b1x1 <- flow_coef * inputQ
-  b2x2 <- twi_coef * input_logtwi
-
-  #logistic regression from Jensen et al. 2018
-  p <- exp(b0 + b1x1 + b2x2)/(1 + exp(b0 + b1x1 + b2x2))
-  return(p)
-}
 
 test <- willit(log(twi3), 30)
 plot(test)
@@ -194,6 +306,7 @@ diff <- w3_rast + test
 plot(r.new)
 
 ```
+  
 ```{r}
 #just do watersheds 3, 6, 7, 8
 twi_output <- "./HB/5m hydro enforced DEM/TWI_andotherlayers/twi.tif"
@@ -236,26 +349,25 @@ labels <- c("Bh Podzol",
             "Wetland Histosol",
             "Aquept",
              "Bedrock Histosol",
-            
-            
             "Typical Podzol"
-            
-            
-            
             )
+
 colors <- c("#55FF00",
             "#734C00",
             "#267300",
             "#CCCCCC",
-            "black",
             "#004DA8",
             "#00C5FF",
-            
-                        "#FFFF73"
+            "black",
+            "#FFFF73"
             )
+
+
 breaks <- c(1,2,3,4,5,6,7,8)
-tm_shape(soil)+
-  tm_raster(palette = colors, labels = labels)
+tmap_mode("view")
+tm_shape(soil, raster.downsample = FALSE)+
+  tm_raster(style = "cat", #fixed problem by specifying style
+            palette = colors, labels = labels, breaks = breaks)
 ```
 
 ```{r}
@@ -265,11 +377,14 @@ whole_crop <- crop(whole, w3)
 w3_net <- mask(whole_crop, w3)
 twi_crop <- crop(twi, w3)
 w3_twi <- mask(twi_crop, w3)
-
+plot(w3_net)
 test <- willit(log(w3_twi), 30)
 test[test < 0.9] <- NA
 test[test >= 0.9] <- 1
-#r.new = resample(w3_net, test, "bilinear")
+r.new = resample(w3_net, test, "bilinear")
+
+x <- mask(B, A)
+
 
 
 
@@ -284,6 +399,7 @@ test[test >= 0.9] <- 1
 #ws8- anything above 30
 ```
 
+Number of times streams lick rocks per year
 ```{r}
 data3 <- growing_szn %>% filter(WS == 3) %>% 
   filter(Q >= 40)
@@ -302,7 +418,7 @@ data_all <- rbind(data_all, data8) %>%
     summarise(Count = n())
 
 ggplot(data_all)+
-  geom_hist(aes(x = year, y = Count))+
+  geom_col(aes(x = year, y = Count), fill = "black")+
   facet_wrap(~WS, )+
   labs(title = "Number of times streams lick rocks per year")+
   theme_classic()
@@ -313,4 +429,9 @@ ggplot(data_all)+
 10/13/23, just had meeting with JP and kevin
 - make figure showing percentage of time flowing or log duration of flow in hours for each stream based on model, do for each growing season and see if there are noticeable changes through time
 -     Channels might have changed over this time scale
+- Develop a more sophisticated way to determine when the channel intersects with shallow rocky soil
+
+```{r}
+
+```
 

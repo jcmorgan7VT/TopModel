@@ -1022,7 +1022,7 @@ binary_shed <- function(shed_number, medial, minimum, maximum) {
   
   g_df$WS <- shed_number
   #calculate range of discharges
-  
+
   
   ggplot() +
     geom_raster(data = g_df, aes(x = x, y = y, fill = as.factor(layer))) +
@@ -1043,6 +1043,79 @@ binary_shed <- function(shed_number, medial, minimum, maximum) {
           panel.grid.minor=element_blank(),plot.background=element_blank())+
     coord_equal()
 }
+
+w1 <- binary_shed(test$WS[1], test$Median[1], test$Min[1], test$Max[1])
+w2 <- binary_shed(test$WS[2], test$Median[2], test$Min[2], test$Max[2])
+w3 <- binary_shed(test$WS[3], test$Median[3], test$Min[3], test$Max[3])
+w4 <- binary_shed(test$WS[4], test$Median[4], test$Min[4], test$Max[4])
+w5 <- binary_shed(test$WS[5], test$Median[5], test$Min[5], test$Max[5])
+w6 <- binary_shed(test$WS[6], test$Median[6], test$Min[6], test$Max[6])
+w7 <- binary_shed(test$WS[7], test$Median[7], test$Min[7], test$Max[7])
+w8 <- binary_shed(test$WS[8], test$Median[8], test$Min[8], test$Max[8])
+w9 <- binary_shed(test$WS[9], test$Median[9], test$Min[9], test$Max[9])
+
+all_sheds <- (w1 + w2 + w3 )/ (w4 + w5 + w6) / (w7 + w8 + w9) + plot_layout(guides = 'collect')+
+  plot_annotation(
+    title = 'Median flowing extent for each watershed'
+)
+#make plot with average extension, then different percentiles of extension
+#ggsave("all_sheds.png", all_sheds)
+all_sheds
+
+
+```
+
+Median extent of all watersheds without losting resolution, just 3, 6, 7, 8
+```{r}
+#Figure showing median extension of each stream network
+fly <- final_df %>% 
+  group_by(WS) %>% 
+  filter(Cells_flowing == median(Cells_flowing)) %>% 
+  summarise("Median" = median(Q),
+            "Min" = min(Q),
+            "Max" = max(Q))
+
+
+binary_shed <- function(shed_number, medial, minimum, maximum) {
+  watershed <- sheds %>% filter(WSHEDS0_ID == shed_number)
+  dem_crop <- crop(twi, watershed)
+  twi_crop <- mask(dem_crop, watershed)
+  
+  out <- willit(log(twi_crop), medial)
+  
+  out[out < 0.9] <- 0
+  out[out >= 0.9] <- 1
+  
+  g_df <- out %>%
+    rasterToPoints %>%
+    as.data.frame()
+  
+  g_df$WS <- shed_number
+  #calculate range of discharges
+  return(g_df)
+}
+
+w3 <- binary_shed(fly$WS[3], fly$Median[3], fly$Min[3], fly$Max[3])
+
+  ggplot() +
+    geom_raster(data = w3, aes(x = x, y = y, fill = as.factor(layer))) +
+    theme(legend.position = "right") +
+    scale_fill_manual(values = binary,
+                    labels = c("Not Flowing", "Flowing"),
+                    name = "")+
+    #theme_void()+
+    labs(title = "WS3",
+         caption = paste0("Q = ", signif(fly$Min[3], 2), " - ", signif(fly$Max[3], 2), " mm/d"))+
+    theme(plot.caption=element_text(size=6),
+          title=element_text(size=8),
+          axis.line=element_blank(),axis.text.x=element_blank(),
+          axis.text.y=element_blank(),axis.ticks=element_blank(),
+          axis.title.x=element_blank(),
+          axis.title.y=element_blank(),
+          panel.background=element_blank(),panel.border=element_blank(),panel.grid.major=element_blank(),
+          panel.grid.minor=element_blank(),plot.background=element_blank())+
+    coord_equal()
+
 
 w1 <- binary_shed(test$WS[1], test$Median[1], test$Min[1], test$Max[1])
 w2 <- binary_shed(test$WS[2], test$Median[2], test$Min[2], test$Max[2])
@@ -1148,7 +1221,11 @@ e3
 
 ```{r}
 #Median network expansion
-tyrs <- willit(log(twi3), 0.456)
+ watershed <- sheds %>% filter(WSHEDS0_ID == 3)
+  dem_crop <- crop(twi, watershed)
+  twi3 <- mask(dem_crop, watershed)
+
+tyrs <- willit(log(twi3), 0.62)
 tyrs[tyrs < 0.9] <- 0
 tyrs[tyrs] <- 1
 
