@@ -225,39 +225,158 @@ w3_twi <- mask(twi_crop, w3)
 
 masked <- mask(log(w3_twi), flo_mask)
 
-  mask_logtwi <- masked %>%
+#convert raster to points
+mask_logtwi <- masked %>%
     rasterToPoints %>%
     as.data.frame() 
-ggplot(mask_logtwi)+
-    geom_tile(aes(x = x, y = y, fill = layer))+
-    theme_void()+
-    coord_equal()
+
   
-  
+#calculating probability that the cell is flowing  
 mask_logtwi$prob <- willit(mask_logtwi$layer, 10)
 ggplot(mask_logtwi)+
     geom_tile(aes(x = x, y = y, fill = prob))+
     theme_void()+
     coord_equal()
 
-  out[out < 0.9] <- 0
-  out[out >= 0.9] <- 1
+mask_logtwi$binary <- 0
+mask_logtwi$binary[mask_logtwi$prob < 0.9] <- 0
+mask_logtwi$binary[mask_logtwi$prob >= 0.9] <- 1
+
+length(mask_logtwi$layer)
+length(unique(mask_logtwi$layer))
+
+#write the inverse/logit function
+logit <- function(p) {
+  log(p / (1 - p))
+}
 
 
-  g_df <- out %>%
+#function where I input twi and probability, and it gives me the discharge!
+logit <- function(prob, input_logtwi) {
+  inverse <- log(prob / (1 - prob))
+#b0, or intercept from Kevin's email from Carrie, might need to redo regression
+  b0 <- -35.43
+  #all ofther coefs from Jensen et al. 2018
+  twi_coef <- 15.57
+  b1 <- 0.12
+
+    b2x2 <- twi_coef * input_logtwi
+  
+  x1 <- (inverse - b2x2 - b0) / b1
+  
+return(x1)
+
+}
+
+#testing logit function
+mask_logtwi$logit <- logit(mask_logtwi$prob, mask_logtwi$layer)
+
+
+head(mask_logtwi[mask_logtwi$binary == 1,])
+head(mask_logtwi)
+
+#now apply logit function to each cell in channel with 0.9 prob
+mask_logtwi2 <- masked %>%
     rasterToPoints %>%
     as.data.frame()
 
+#this column in the dataframe is the discharge required for that cell to flow
+mask_logtwi2$Q_required <- logit(0.9, mask_logtwi2$layer)
+head(mask_logtwi2)
+head(mask_logtwi2[mask_logtwi2$Q_req <= 10,])
+mask_logtwi2[mask_logtwi2$Q_req == min(mask_logtwi2$Q_req),]
 
 
-#function that takes discharge as single input
-q_data <- read.csv("./HB/HBEF_DailyStreamflow_1956-2022.csv")
-q_data$DATE <- ymd(q_data$DATE)
-w3_q <- filter(q_data, WS == 3)
+#now, count how many times that discharge is reached for each cell, then convert to percent
 
+#read in discharge
+#growing_szn is discharge filtered to just the growing season
+growing_szn <- read_csv("growing_szn.csv")
+growing_szn <- growing_szn[,3:7]
 
+#q_data <- read.csv("./HB/HBEF_DailyStreamflow_1956-2022.csv")
+#q_data$DATE <- ymd(q_data$DATE)
+w3_q <- filter(growing_szn, WS == 3)
 qlist <- w3_q %>% 
-  dplyr::select(DATE, Streamflow)
+  dplyr::select(Date, Q)
+qlist$year <- year(qlist$Date)
+
+howManyQ <- function(Q_req){
+  length(qlist$Q[qlist$Q >= Q_req])
+}
+
+mask_logtwi2$count <- as.numeric(lapply(mask_logtwi2$Q_required, howManyQ))
+mask_logtwi2$percent_time_flowing <- mask_logtwi2$count / length(qlist$Date)
+head(mask_logtwi2)
+
+#I don't need to turn it back into a raster, keep it as a df for plotting purposes
+ggplot(mask_logtwi2)+
+    geom_tile(aes(x = x, y = y, fill = percent_time_flowing * 100))+
+    theme_void()+
+  scale_fill_viridis(trans = "log",
+                     breaks = c(100, 10, 1),
+                     labels = c("100", "10", "1"))+
+  coord_equal()+
+  labs(fill='Percent of time flowing (days)')
+#make this plot for each watershed
+
+#see if it is changing through time
+#group them by decade
+qlist <- qlist %>% mutate(decade = floor(year/10)*10)
+howManyQ2 <- function(Q_req){
+  length(qlist2$Q[qlist2$Q >= Q_req])
+}
+#for each decade, calculate percentage of time flowing
+qlist2 <- filter(qlist, decade == 1950)
+mask_logtwi2$y1950 <- as.numeric(lapply(mask_logtwi2$Q_required, howManyQ2)) / length(qlist2$Date)
+qlist2 <- filter(qlist, decade == 1960)
+mask_logtwi2$y1960 <- as.numeric(lapply(mask_logtwi2$Q_required, howManyQ2)) / length(qlist2$Date)
+qlist2 <- filter(qlist, decade == 1970)
+mask_logtwi2$y1970 <- as.numeric(lapply(mask_logtwi2$Q_required, howManyQ2)) / length(qlist2$Date)
+qlist2 <- filter(qlist, decade == 1980)
+mask_logtwi2$y1980 <- as.numeric(lapply(mask_logtwi2$Q_required, howManyQ2)) / length(qlist2$Date)
+qlist2 <- filter(qlist, decade == 1990)
+mask_logtwi2$y1990 <- as.numeric(lapply(mask_logtwi2$Q_required, howManyQ2)) / length(qlist2$Date)
+qlist2 <- filter(qlist, decade == 2000)
+mask_logtwi2$y2000 <- as.numeric(lapply(mask_logtwi2$Q_required, howManyQ2)) / length(qlist2$Date)
+qlist2 <- filter(qlist, decade == 2010)
+mask_logtwi2$y2010 <- as.numeric(lapply(mask_logtwi2$Q_required, howManyQ2)) / length(qlist2$Date)
+qlist2 <- filter(qlist, decade == 2020)
+mask_logtwi2$y2020 <- as.numeric(lapply(mask_logtwi2$Q_required, howManyQ2)) / length(qlist2$Date)
+head(mask_logtwi2)
+
+mapping <- dplyr::select(mask_logtwi2, -Q_required, -count) %>% 
+  gather(key = "year", value = "value", c(-x, -y, -layer))
+
+#plot of all of the decades to compare
+ggplot(mapping)+
+    geom_tile(aes(x = x, y = y, fill = value * 100))+
+  facet_wrap(~year)+
+    theme_void()+
+  scale_fill_viridis(trans = "log",
+                     breaks = c(100, 10, 1),
+                     labels = c("100", "10", "1"))+
+  coord_equal()+
+  labs(fill='Percent of time flowing (days)')
+
+#make plot of all of the decades subtracted from the all time record
+mapping <- dplyr::select(mask_logtwi2, -Q_required, -count) %>% 
+  gather(key = "year", value = "value", c(-x, -y, -layer))
+
+diffs <- mapping %>% 
+  group_by(year) %>% 
+  mutate(difference = mask_logtwi2$percent_time_flowing - value)
+
+ggplot(diffs)+
+    geom_tile(aes(x = x, y = y, fill = difference * 100))+
+  facet_wrap(~year)+
+    theme_void()+
+  scale_fill_viridis(trans = "log",
+                     breaks = c(10, 1, 0.1),
+                     labels = c("10", "1", "0.1"),
+                     option = "plasma")+
+  coord_equal()+
+  labs(fill='Difference in flowing (days)')
 
 ```
 
@@ -267,8 +386,12 @@ Attempt to quantify how CO2 evasion is changing based on changing surface area
 #4.0 g C/m2-yr of CO2 evaded from streams, from
 # Fahey, T.J., Siccama, T.G., Driscoll, C.T. et al. The Biogeochemistry of Carbon at Hubbard Brook. Biogeochemistry 75, 109–176 (2005). https://doi-org.ezproxy.lib.vt.edu/10.1007/s10533-004-6321-y
 
-
-
+#I already have how many cells are flowing at each time step for each watershed
+ws3 <- final_df %>% 
+  filter(WS == 3)
+ggplot(ws3)+
+  geom_point(aes(x = Q, y = cells_flowing_byArea))+
+  theme_classic()
 ```
 
 
