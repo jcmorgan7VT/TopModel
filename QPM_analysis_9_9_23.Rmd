@@ -716,7 +716,7 @@ counts <- chaff %>%
 #add sen's slope
 #Sen's slope
 
-p_load(mblm)
+p_load(mblm, Kendall)
 sen <- function(formula, dataframe, weights = NULL) {
   mblm::mblm(formula, dataframe)
 }

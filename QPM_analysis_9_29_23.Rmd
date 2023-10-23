@@ -363,20 +363,31 @@ ggplot(mapping)+
 mapping <- dplyr::select(mask_logtwi2, -Q_required, -count) %>% 
   gather(key = "year", value = "value", c(-x, -y, -layer))
 
+#remove the least interesting decades
+mapping <- dplyr::select(mask_logtwi2, -Q_required, -count, -y1960, -y2000, -y2010, 
+                         -y1990) %>% 
+  gather(key = "year", value = "value", c(-x, -y, -layer))
+
 diffs <- mapping %>% 
   group_by(year) %>% 
-  mutate(difference = mask_logtwi2$percent_time_flowing - value)
+  mutate(difference = mask_logtwi2$percent_time_flowing - value) %>% 
+  filter(year != "percent_time_flowing")
+  #removing all but most interesting years
+
+diffs$year <- sub('.', '', diffs$year)
 
 ggplot(diffs)+
     geom_tile(aes(x = x, y = y, fill = difference * 100))+
-  facet_wrap(~year)+
+  facet_grid(~year)+
     theme_void()+
   scale_fill_viridis(trans = "log",
                      breaks = c(10, 1, 0.1),
                      labels = c("10", "1", "0.1"),
                      option = "plasma")+
   coord_equal()+
-  labs(fill='Difference in flowing (days)')
+  labs(fill='% More time of flow from average')+
+  theme(legend.position = "bottom",
+        text=element_text(size=21))
 
 ```
 
@@ -386,14 +397,125 @@ Attempt to quantify how CO2 evasion is changing based on changing surface area
 #4.0 g C/m2-yr of CO2 evaded from streams, from
 # Fahey, T.J., Siccama, T.G., Driscoll, C.T. et al. The Biogeochemistry of Carbon at Hubbard Brook. Biogeochemistry 75, 109–176 (2005). https://doi-org.ezproxy.lib.vt.edu/10.1007/s10533-004-6321-y
 
-#I already have how many cells are flowing at each time step for each watershed
-ws3 <- final_df %>% 
-  filter(WS == 3)
+#I already have how many cells are flowing at each time step for each watershed,
+#just need to calculate a surface area and emissions based on surface area through time
+ws3 <- growing_szn %>% 
+  filter(WS == 3) %>% 
+  mutate(CO2 = Cells_flowing * 20/365)
+
+ws3[,"cum_CO2"] <- cumsum(ws3$CO2)
+
 ggplot(ws3)+
-  geom_point(aes(x = Q, y = cells_flowing_byArea))+
+  geom_point(aes(x = Q, y = CO2))+
   theme_classic()
+
+ws3[which.max(ws3$Cells_flowing),]
+
+ws3 <- ws3[-(which(ws3$Date == "1973-06-30")),]
+
+
+ws3_yearsums <- ws3 %>% 
+  group_by(year(Date)) %>% 
+  mutate(yearly_sum = sum(CO2)) %>% 
+  as.data.frame()
+
+
+
+#should remove June 30, 1973 from dataset- it is a freakish outlier and breaks the model
+#(ws3_yearsums[ws3_yearsums$Cells_flowing == max(ws3_yearsums$Cells_flowing),])
+ws3_yearsums[which.max(ws3_yearsums$Cells_flowing),]
+
+#also exclude first and last years
+ws3_yearsums <- ws3_yearsums[-1,]
+ws3_yearsums <- ws3_yearsums[-(which(ws3_yearsums[,8] == 2022)),]
+ws3_yearsums$year <- year(ws3_yearsums$Date)
+#plot of yearly CO2 evasion for W3
+
+
+#adding sens slope
+p_load(mblm, Kendall)
+sen <- function(formula, dataframe, weights = NULL) {
+  mblm::mblm(formula, dataframe)
+}
+#problem was having duplicate years
+blest <- ws3_yearsums %>% 
+  dplyr::select(year, yearly_sum) %>% 
+  unique()
+#sen(test, as.numeric(cells_flowing_byArea), final_df)
+MannKendall(blest$yearly_sum)
+
+fit <- mblm(year ~ yearly_sum, dataframe = blest)
+fit2 <- sen(n ~ year, tr)
+
+ggplot(blest,
+       aes(x = year, y = yearly_sum)) +
+  geom_line() +
+  geom_point(size = 2) +
+  theme_classic() +
+  geom_smooth(method = sen, se = FALSE)+#, aes(color = "blue")) +
+  #scale_colour_manual(name=" ", values=c("blue"),labels = "Sen's Slope")+
+
+  labs(title = expression("Yearly CO"["2"]~" evasion, W3"),
+       subtitle = "p = 0.0053",
+       x = "Year",
+       y = expression(CO[2] ~ " (g)"))
+
+#Successfully made CO2 estimate for W3, now do it for the other ones
 ```
 
+Making CO2 evasion estimates and graphs for watersheds 3, 6, 7, 8
+```{r}
+#doing the same thing as above, but using all four and group by
+ws3 <- growing_szn %>% 
+  filter(WS %in% c(3, 6, 7, 8)) %>% 
+  group_by(WS) %>% 
+  mutate(CO2 = Cells_flowing * 20/365)
+#removing freak event on jun 30, 1973
+ws3 <- ws3[-(which(ws3$Date == "1973-06-30")),]
+
+ws3$year <- year(ws3$Date)
+
+ws3_yearsums <- ws3 %>% 
+  group_by(WS, year) %>% 
+  mutate(yearly_sum = sum(CO2))
+
+
+
+#should remove June 30, 1973 from dataset- it is a freakish outlier and breaks the model
+#(ws3_yearsums[ws3_yearsums$Cells_flowing == max(ws3_yearsums$Cells_flowing),])
+ws3_yearsums[which.max(ws3_yearsums$Cells_flowing),]
+
+#also exclude first and last years
+ws3_yearsums <- ws3_yearsums[-(which(ws3$Date == "1957-10-01")),]
+ws3_yearsums <- ws3_yearsums[-(which(ws3_yearsums$year == 2022)),]
+#plot of yearly CO2 evasion for W3
+
+
+#adding sens slope
+p_load(mblm, Kendall)
+sen <- function(formula, dataframe, weights = NULL) {
+  mblm::mblm(formula, dataframe)
+}
+#problem was having duplicate years
+blest <- ws3_yearsums %>% 
+  dplyr::select(WS, year, yearly_sum) %>% 
+  unique()
+
+ggplot(blest,
+       aes(x = year, y = yearly_sum)) +
+  geom_line() +
+  geom_point(size = 2) +
+  theme_classic() +
+  facet_wrap(~WS, scales = "free_y")+
+  geom_smooth(method = sen, se = FALSE)+#, aes(color = "blue")) +
+  #scale_colour_manual(name=" ", values=c("blue"),labels = "Sen's Slope")+
+
+  labs(title = expression("Yearly CO"["2"]~" evasion, W3"),
+       subtitle = "p = ",
+       x = "Year",
+       y = expression(CO[2] ~ " (g)"))
+
+```
 
 
 ```{r}
