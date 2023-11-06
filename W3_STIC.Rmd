@@ -61,15 +61,21 @@ ggplot(wet_filt)+
 Read in data for all locations using for loop
 ```{r}
 #inputs: folder, ws, deployment
-read_deployment <- function(folder, wshed, deployment){
+read_deployment <- function(folder, wshed1, deployment1){
 #file location
+# folder = "./W3loggers_9_19_23/"
+# wshed1 = "W3"
+# deployment1 = 2
 files <- list.files(folder, pattern = ".csv")
 #deployment info
 deploy <- read.csv("./Fieldwork_formatted_summer23/All_deployments.csv")
-w3 <- filter(deploy, wshed == wshed, deployment == deployment)
+#filter values must have different names than colnames
+w3 <- filter(deploy, wshed == wshed1 & deployment == deployment1)
 w3_n <- na.omit(w3)
 w3_n$start <- mdy_hm(w3_n$start)
 w3_n$end <- mdy_hm(w3_n$end)
+
+
 
 for(i in 1:length(files)){
   chosen <- paste0(folder, files[i])
@@ -97,8 +103,12 @@ return(readout)
 }
 
 w3_1 <- read_deployment(folder = "./W3loggers_7_18_23/", 
-                        wshed = "W3",
-                        deployment = 1)
+                        wshed1 = "W3",
+                        deployment1 = 1)
+#got error, was due to spreadsheet having a duplicate record. For trouble shooting in the future- if a for loop fails, if i leave the index as the variable the loop is using, I can try to run each component of the loop on the one that failed.
+w3_2 <- read_deployment(folder = "./W3loggers_9_19_23/", 
+                        wshed1 = "W3",
+                        deployment1 = 2)
 #for loop to read in and combine all points
 ```
 
