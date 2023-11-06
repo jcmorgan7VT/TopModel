@@ -1,0 +1,109 @@
+---
+title: "W3_network_STIC"
+author: "John Morgan"
+date: "2023-11-02"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r}
+#setup
+library(pacman)
+p_load(tidyverse, raster, rgdal, sp, mapview,
+       rgeos, spdplyr, tmap, stars, STICr,
+       lubridate, gganimate, animation, patchwork)
+```
+
+```{r}
+#analysis of W1 and W2 stic sensors
+deploy <- read.csv("./Fieldwork_formatted_summer23/All_deployments.csv")
+head(deploy)
+w3 <- filter(deploy, wshed == "W3", deployment == 1)
+w3_n <- na.omit(w3)
+w3_n$start <- mdy_hm(w3_n$start)
+w3_n$end <- mdy_hm(w3_n$end)
+head(w3_n)
+
+#folder called W3loggers_7_18_23, W3loggers_9_19_23
+#went through folders, found duplicates and removed them
+files <- list.files("./W3loggers_7_18_23", pattern = ".csv")
+files
+test <- read.csv(paste0("./W3loggers_7_18_23/", files[1]), skip = 1)
+test$Datetime <- mdy_hms(test$Date.Time..GMT.04.00)
+plot(test$Datetime, test$Intensity..lum.ft...LGR.S.N..20011654..SEN.S.N..20011654.)
+
+#calibration curves
+cal.list2 <- list.files("./CalibratingConductivity_9_20_23", pattern = ".csv")
+cal.list <- list.files("./CalibratingConductivity_9_19_23", pattern = ".csv")
+cal1 <- read.csv(paste0("./CalibratingConductivity_9_19_23/", cal.list[2]), skip = 1)
+cal1$Datetime <- mdy_hms(cal1$Date.Time..GMT.04.00)
+plot(cal1$Datetime, cal1$Intensity..lum.ft...LGR.S.N..20011677..SEN.S.N..20011677.)
+
+#for now maybe just use absolute method
+chosen <- paste0("./W3loggers_7_18_23/", files[1])
+sensor_num <- substr(chosen, 21, 28)
+#subset deployment information
+deployment_info <- filter(w3_n, sensor == sensor_num)
+
+data <- tidy_hobo_data(chosen)
+wet <- classify_wetdry(data, classify_var = "condUncal", method = "absolute", threshold = 10)
+#remove dates before and after start and end date of deployment
+wet_filt <- filter(wet, datetime >= deployment_info$start) %>% 
+  filter(datetime <= deployment_info$end)
+
+ggplot(wet_filt)+
+  geom_point(aes(x = datetime, y = tempC, color = wetdry))+
+  theme_classic()
+
+#It should be much better if I can develop a method of filtering flowing and not flowing based on diurnal patterns as well
+```
+
+Read in data for all locations using for loop
+```{r}
+#inputs: folder, ws, deployment
+read_deployment <- function(folder, wshed, deployment){
+#file location
+files <- list.files(folder, pattern = ".csv")
+#deployment info
+deploy <- read.csv("./Fieldwork_formatted_summer23/All_deployments.csv")
+w3 <- filter(deploy, wshed == wshed, deployment == deployment)
+w3_n <- na.omit(w3)
+w3_n$start <- mdy_hm(w3_n$start)
+w3_n$end <- mdy_hm(w3_n$end)
+
+for(i in 1:length(files)){
+  chosen <- paste0(folder, files[i])
+  sensor_num <- substr(chosen, 21, 28)
+  #subset deployment information
+  deployment_info <- filter(w3_n, sensor == sensor_num)
+
+  data <- tidy_hobo_data(chosen)
+  wet <- classify_wetdry(data,
+                         classify_var = "condUncal",
+                         method = "absolute",
+                         threshold = 10)
+  #remove dates before and after start and end date of deployment
+  wet_filt <- filter(wet, datetime >= deployment_info$start) %>%
+    filter(datetime <= deployment_info$end) %>% 
+    bind_cols(deployment_info)
+
+  if(i == 1) alldat <- wet_filt
+  if(i > 1) alldat <- rbind(alldat, wet_filt)
+}
+
+readout <- alldat %>% dplyr::select(-start, -end)
+
+return(readout)
+}
+
+w3_1 <- read_deployment(folder = "./W3loggers_7_18_23/", 
+                        wshed = "W3",
+                        deployment = 1)
+#for loop to read in and combine all points
+```
+
+Do this for the second deployment in w3, and then combine the two. Or make a function to read it in for each folder of data
+```{r}
+
+```
+

@@ -66,8 +66,6 @@ st_crs(zz) <- 26919
 #st_crs(stream_p)
 
 
-plot(flowacc)
-
 #could sub in a more sophisticated method later
 ```
   
@@ -76,8 +74,8 @@ plot(flowacc)
 flo_crop <- crop(flowacc, w3)
 flo_mask <- mask(flo_crop, w3)
 test3 <- flo_mask
-test3$flowacc[test3$flowacc < 1000] <- 0
-test3$flowacc[test3$flowacc >= 1000] <- 1
+test3$flowacc[test3$flowacc < 700] <- 0
+test3$flowacc[test3$flowacc >= 700] <- 1
 
 binary <- c("#001219",
             "#94D2BD"
@@ -160,52 +158,30 @@ probable_flow_extent <- function(qlist){
   return(g_df)
 }
 
-output <- probable_flow_extent(qlist[6,])
-write.csv(results, "./twi_model_rasters/days_flowing/test.csv")
+output <- probable_flow_extent(qlist[21824 ,])
+output <- probable_flow_extent(qlist[23656  ,])
+
+#write.csv(results, "./twi_model_rasters/days_flowing/test.csv")
+qlist[(which(qlist$Streamflow >= 30)),]
+
+binary <- c("#001011",
+            "#6ccff6"
+  )
 
 head(output)
 ggplot(output)+
-    geom_tile(aes(x = x, y = y, fill = layer))+
+    geom_tile(aes(x = x, y = y, fill = as.factor(layer)))+
+  scale_fill_manual(values = binary,
+                    labels = c("Not Flowing", "Flowing"),
+                    name = "")+
     theme_void()+
-    coord_equal()
+    coord_equal()+
+  labs(title = unique(output$Date))
 
 ```
 
-Use parallel processing and the procedure developed in the previous chunk to determine 
-```{r}
-#dont run
-#modifying parallel part of script from QPM_analsis_9_9_23 to create a raster or df with the number of days flowing through the entire record
 
-#function that will calculate prob, then produce how much was likely flowing
-#rasList <- paste0("./twi_model_rasters/w3_", dates, ".tif")
-qlist <- w3_q$Streamflow
-probable_flow_extent <- function(qlist){
-  out <- willit(log(w3_twi), qlist)
-  
-  out[out < 0.9] <- 0
-  out[out >= 0.9] <- 1
-
-
-  g_df <- out %>%
-    rasterToPoints %>%
-    as.data.frame()
-
-  flowing_area <- sum(g_df$layer)
-  return(flowing_area)
-}
-
-probable_flow_extent(qlist[6])
-
-plan(multicore, workers = detectCores() - 1)
-outStat <- future_lapply(qlist, probable_flow_extent)
-
-results <- data.frame("Q" = w3_q$Streamflow, 
-                      "Date" = w3_q$DATE,
-                      "Cells_flowing" = unlist(outStat))
-write.csv(results, "./twi_model_rasters/w3_flowing_days.csv")
-```
-
-Trying JP method: convert raster of channel to points, then find log(twi) at each point, determine threshold to flow, then I am in dataframe land
+JP Method works!: convert raster of channel to points, then find log(twi) at each point, determine threshold to flow, then I am in dataframe land
 ```{r}
 #pull in raster that defines pre-existing channel
 w3 <- sheds %>% filter(WS == "WS3")
@@ -376,18 +352,207 @@ diffs <- mapping %>%
 
 diffs$year <- sub('.', '', diffs$year)
 
+#problem with the way it was calculated, trying again
+summary((mask_logtwi2$y1970 - mask_logtwi2$percent_time_flowing)*100)
+
 ggplot(diffs)+
     geom_tile(aes(x = x, y = y, fill = difference * 100))+
   facet_grid(~year)+
     theme_void()+
-  scale_fill_viridis(trans = "log",
-                     breaks = c(10, 1, 0.1),
-                     labels = c("10", "1", "0.1"),
+  scale_fill_viridis(#breaks = c(),
+                     #labels = c("10", "1", "0.1"),
                      option = "plasma")+
   coord_equal()+
   labs(fill='% More time of flow from average')+
   theme(legend.position = "bottom",
         text=element_text(size=21))
+
+```
+
+Figure of percentage of time flowing for each watershed
+```{r}
+#perhaps write a function where the watershed is the input, and then it filters sheds shapefile and discharge record, produces my desired plot or at least the data for desired plot
+#pull in raster that defines pre-existing channel
+WS <- 3
+time_flowing <- function(WS){
+  #WS must be in format "3", "6", etc.
+  t <- paste0("WS",WS)
+  shed <- sheds %>% filter(WS == t)
+  #plot(shed)
+  flo_crop <- crop(flowacc, shed)
+  flo_mask <- mask(flo_crop, shed)
+  #threshold flow accumulation raster
+  flo_mask$flowacc[flo_mask$flowacc < 700] <- NA
+  flo_mask$flowacc[flo_mask$flowacc >= 700] <- 1
+#using a critical drainage area of 700 * 5 m^2, or 3500 m^2 by     default
+
+#convert channel raster into a df
+#OR convert twi raster to df once it has been masked by 
+twi <- raster("./HB/5m hydro enforced DEM/TWI_andotherlayers/twi.tif")
+
+twi_crop <- crop(twi, shed)
+shed_twi <- mask(twi_crop, shed)
+
+masked <- mask(log(shed_twi), flo_mask)
+
+#function where I input twi and probability, and it gives me the discharge!
+logit <- function(prob, input_logtwi) {
+  inverse <- log(prob / (1 - prob))
+#b0, or intercept from Kevin's email from Carrie, might need to redo regression
+  b0 <- -35.43
+  #all ofther coefs from Jensen et al. 2018
+  twi_coef <- 15.57
+  b1 <- 0.12
+
+    b2x2 <- twi_coef * input_logtwi
+  
+  x1 <- (inverse - b2x2 - b0) / b1
+  
+return(x1)
+
+}
+
+
+#now apply logit function to each cell in channel with 0.9 prob
+mask_logtwi2 <- masked %>%
+    rasterToPoints %>%
+    as.data.frame()
+
+#this column in the dataframe is the discharge required for that cell to flow
+mask_logtwi2$Q_required <- logit(0.9, mask_logtwi2$layer)
+
+
+
+#now, count how many times that discharge is reached for each cell, then convert to percent
+
+#read in discharge
+
+w3_q <- filter(growing_szn, WS == WS)
+qlist <- w3_q %>% 
+  dplyr::select(Date, Q)
+qlist$year <- year(qlist$Date)
+
+howManyQ <- function(Q_req){
+  length(qlist$Q[qlist$Q >= Q_req])
+}
+
+mask_logtwi2$count <- as.numeric(lapply(mask_logtwi2$Q_required, howManyQ))
+mask_logtwi2$percent_time_flowing <- mask_logtwi2$count / length(qlist$Date)
+
+  return(mask_logtwi2)
+}
+
+ws3_flowing <- time_flowing(3)
+ws6_flowing <- time_flowing(6)
+ws7_flowing <- time_flowing(7)
+ws8_flowing <- time_flowing(8)
+
+#I don't need to turn it back into a raster, keep it as a df for plotting purposes
+ggplot(ws3_flowing)+
+    geom_tile(aes(x = x, y = y, fill = percent_time_flowing * 100))+
+    theme_void()+
+  scale_fill_viridis(trans = "log",
+                     breaks = c(100, 10, 1),
+                     labels = c("100", "10", "1"))+
+  coord_equal()+
+  labs(fill='Percentage of days flowing')+
+  theme(legend.position = "none")
+ggplot(ws6_flowing)+
+    geom_tile(aes(x = x, y = y, fill = percent_time_flowing * 100))+
+    theme_void()+
+  scale_fill_viridis(trans = "log",
+                     breaks = c(100, 10, 1),
+                     labels = c("100", "10", "1"))+
+  coord_equal()+
+  labs(fill='Percentage of days flowing')
+
+ggplot(ws7_flowing)+
+    geom_tile(aes(x = x, y = y, fill = percent_time_flowing * 100))+
+    theme_void()+
+  scale_fill_viridis(trans = "log",
+                     breaks = c(100, 10, 1),
+                     labels = c("100", "10", "1"))+
+  coord_equal()+
+  labs(fill='Percentage of days flowing')+
+  theme(legend.position = "none")
+ggplot(ws8_flowing)+
+    geom_tile(aes(x = x, y = y, fill = percent_time_flowing * 100))+
+    theme_void()+
+  scale_fill_viridis(trans = "log",
+                     breaks = c(100, 10, 1),
+                     labels = c("100", "10", "1"))+
+  coord_equal()+
+  labs(fill='Percentage of days flowing')
+
+
+```
+
+Make mini watersheds for presentation organization
+```{r}
+#0d3b66
+#ff6663
+#57a773
+#8e9dcc
+  l <- sheds %>% filter(WS == "WS8")
+par(new=TRUE)
+plot(sheds, col = c("white","#0d3b66", "white", "white", "white",
+                    "#ff6663", "white", "white",
+                    "#8e9dcc",
+                    "#57a773",
+                    "white"))
+plot(l, col = "#8e9dcc")  
+
+```
+
+Graph of surface area through time, averaged for each year
+Could also make graph of max and min surface area for each year
+```{r}
+growing_szn <- read_csv("growing_szn.csv")
+growing_szn <- growing_szn[,3:7]
+growing_szn <- growing_szn[-(which(growing_szn$Date == "1973-06-30")),]
+
+ws3 <- growing_szn %>% 
+  filter(WS %in% c(3,6,7,8)) %>% 
+  group_by(WS) %>% 
+  mutate(normalized_m2 = (Cells_flowing * 5),
+         year = year(Date))
+
+ws3_yearsums <- ws3 %>% 
+  group_by(year, WS) %>% 
+  mutate(mean = mean(normalized_m2)) %>% 
+  as.data.frame()
+
+ws3_yearsums <- ws3_yearsums[-1,]
+ws3_yearsums <- ws3_yearsums[-(which(ws3_yearsums$year == 2022)),]
+
+ggplot(ws3_yearsums)+
+  geom_line(aes(x = year, y = mean, color = as.character(WS)))+
+  theme_classic()
+
+
+blest <- ws3_yearsums %>% 
+  filter(WS == 3) %>% 
+  dplyr::select(year, mean) %>% 
+  unique()
+MannKendall(blest$mean)
+
+#w3 = 0.005137
+#w6 = 0.15972
+#w7 = 0.83102
+#w8 = 0.73146
+
+ggplot(blest,
+       aes(x = year, y = mean)) +
+  geom_line() +
+  geom_point(size = 2) +
+  theme_classic() +
+  geom_smooth(method = sen, se = FALSE)+#, aes(color = "blue")) +
+  scale_colour_manual(name=" ", values=c("blue"),labels = "Sen's Slope")+
+
+  labs(title = expression("Yearly Mean Surface Area, W3"),
+       subtitle = "p = 0.005137",
+       x = "Year",
+       y = "Surface area (m^2)")
 
 ```
 
@@ -403,15 +568,16 @@ ws3 <- growing_szn %>%
   filter(WS == 3) %>% 
   mutate(CO2 = Cells_flowing * 20/365)
 
+growing_szn <- growing_szn[-(which(growing_szn$Date == "1973-06-30")),]
+
+
+
 ws3[,"cum_CO2"] <- cumsum(ws3$CO2)
 
-ggplot(ws3)+
-  geom_point(aes(x = Q, y = CO2))+
-  theme_classic()
+
 
 ws3[which.max(ws3$Cells_flowing),]
 
-ws3 <- ws3[-(which(ws3$Date == "1973-06-30")),]
 
 
 ws3_yearsums <- ws3 %>% 
@@ -445,18 +611,17 @@ blest <- ws3_yearsums %>%
 MannKendall(blest$yearly_sum)
 
 fit <- mblm(year ~ yearly_sum, dataframe = blest)
-fit2 <- sen(n ~ year, tr)
 
 ggplot(blest,
        aes(x = year, y = yearly_sum)) +
   geom_line() +
   geom_point(size = 2) +
   theme_classic() +
-  geom_smooth(method = sen, se = FALSE)+#, aes(color = "blue")) +
+  #geom_smooth(method = sen, se = FALSE)+#, aes(color = "blue")) +
   #scale_colour_manual(name=" ", values=c("blue"),labels = "Sen's Slope")+
 
-  labs(title = expression("Yearly CO"["2"]~" evasion, W3"),
-       subtitle = "p = 0.0053",
+  labs(title = expression("Yearly CO"["2"]~" evasion, W8"),
+       subtitle = "p = 0.74272",
        x = "Year",
        y = expression(CO[2] ~ " (g)"))
 
@@ -465,11 +630,14 @@ ggplot(blest,
 
 Making CO2 evasion estimates and graphs for watersheds 3, 6, 7, 8
 ```{r}
+growing_szn <- read_csv("growing_szn.csv")
+growing_szn <- growing_szn[,3:7]
 #doing the same thing as above, but using all four and group by
 ws3 <- growing_szn %>% 
   filter(WS %in% c(3, 6, 7, 8)) %>% 
   group_by(WS) %>% 
-  mutate(CO2 = Cells_flowing * 20/365)
+  mutate(CO2 = Cells_flowing * 20/365,
+         flowing_area_m2 = Cells_flowing * 5) 
 #removing freak event on jun 30, 1973
 ws3 <- ws3[-(which(ws3$Date == "1973-06-30")),]
 
@@ -528,7 +696,33 @@ soil_map_path <- "./HB/HBsoils.tif"
 soil <- raster(soil_map_path)
 crs(soil) <- 26919
 
+#symbology for soils
+labels <- c("Bh Podzol",
+            "Bhs Podzol",
+            "Bimodal Podzol",
+            "E Podzol",
+            "Wetland Histosol",
+            "Aquept",
+             "Bedrock Histosol",
+            "Typical Podzol"
+            )
 
+colors <- c("#55FF00",
+            "#734C00",
+            "#267300",
+            "#CCCCCC",
+            "#004DA8",
+            "#00C5FF",
+            "black",
+            "#FFFF73"
+            )
+
+
+breaks <- c(1,2,3,4,5,6,7,8)
+tmap_mode("view")
+tm_shape(soil, raster.downsample = FALSE)+
+  tm_raster(style = "cat", #fixed problem by specifying style
+            palette = colors, labels = labels, breaks = breaks)
 
 ```
 
@@ -586,33 +780,7 @@ twi_crop <- crop(twi, w8)
 w8_twi <- mask(twi_crop, w8)
 
 
-#symbology for soils
-labels <- c("Bh Podzol",
-            "Bhs Podzol",
-            "Bimodal Podzol",
-            "E Podzol",
-            "Wetland Histosol",
-            "Aquept",
-             "Bedrock Histosol",
-            "Typical Podzol"
-            )
 
-colors <- c("#55FF00",
-            "#734C00",
-            "#267300",
-            "#CCCCCC",
-            "#004DA8",
-            "#00C5FF",
-            "black",
-            "#FFFF73"
-            )
-
-
-breaks <- c(1,2,3,4,5,6,7,8)
-tmap_mode("view")
-tm_shape(soil, raster.downsample = FALSE)+
-  tm_raster(style = "cat", #fixed problem by specifying style
-            palette = colors, labels = labels, breaks = breaks)
 ```
 
 ```{r}
@@ -623,6 +791,7 @@ w3_net <- mask(whole_crop, w3)
 twi_crop <- crop(twi, w3)
 w3_twi <- mask(twi_crop, w3)
 plot(w3_net)
+
 test <- willit(log(w3_twi), 30)
 test[test < 0.9] <- NA
 test[test >= 0.9] <- 1
@@ -668,7 +837,16 @@ ggplot(data_all)+
   labs(title = "Number of times streams lick rocks per year")+
   theme_classic()
 
-
+ks8 <- filter(data_all, WS == 8)
+#run ks test to see if it is evenly distributed through time
+ks.test(ks8$year, "punif", min=1969, max=2021)
+#pvalue is greater than 0.05, accept the null hypothesis that it is evenly distributed through time
+ks3 <- filter(data_all, WS == 3)
+ks.test(ks3$year, "punif", min=1969, max=2021)
+ks7 <- filter(data_all, WS == 7)
+ks.test(ks7$year, "punif", min=1969, max=2021)
+ks6 <- filter(data_all, WS == 6)
+ks.test(ks6$year, "punif", min=1969, max=2021)
 
 ```
 10/13/23, just had meeting with JP and kevin
@@ -677,6 +855,31 @@ ggplot(data_all)+
 - Develop a more sophisticated way to determine when the channel intersects with shallow rocky soil
 
 ```{r}
+
+```
+
+10/31/2023
+Creating dataset for my brother to analyze
+```{r}
+head(mask_logtwi2)
+head(ws3_flowing)
+head(ws3)
+head(ws3_yearsums)
+head(blest)
+
+ws3_orig <- ws3
+ws3 <- ws3_orig
+#sending ws3 dataset, and maybe 
+ws3 <- ws3[-(which(ws3$Date == "1957-10-01")),]
+ws3$year <- year(ws3$Date)
+ws3 <- ws3[-(which(ws3$year == 2022)),]
+
+#send matt blest and ws3 in its current form
+ws3 <- dplyr::select(ws3, -Cells_flowing, -Area, -CO2)
+ws3 <- dplyr::select(ws3, -Q)
+
+write.csv(blest, "yearlyCO2sum.csv")
+write.csv(ws3, "dailyFlowingArea.csv")
 
 ```
 
