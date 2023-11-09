@@ -109,11 +109,146 @@ w3_1 <- read_deployment(folder = "./W3loggers_7_18_23/",
 w3_2 <- read_deployment(folder = "./W3loggers_9_19_23/", 
                         wshed1 = "W3",
                         deployment1 = 2)
-#for loop to read in and combine all points
+
+all_w3 <- rbind(w3_1, w3_2)
+
 ```
 
-Do this for the second deployment in w3, and then combine the two. Or make a function to read it in for each folder of data
+How do we visualize this information?
 ```{r}
+#watershed 3 shape
+sheds <- readOGR(dsn='./HB/hbef_wsheds')
+w3 <- sheds %>% filter(WS == "WS3")
+stream <- st_read("./HB/hbstream/hb42_master_startend.shp")
+w3_rast <- raster("./HB/hbstream/w3_5m.tif")
+w3_rast2 <- projectRaster(w3_rast, crs = 4326)
+test <- as.data.frame(w3_rast2, xy = TRUE) %>%
+  na.omit()
+
+data <- filter(all_w3, datetime == "2023-08-03 16:30:00")
+
+binary <- c("red",
+            "blue"
+  )
+
+ggplot()+
+  geom_tile(data=test, aes(x=x, y=y), fill = "lightgrey")+
+  geom_point(data = data, aes(x = long, y = lat, color = wetdry), size = 2)+
+  scale_color_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c("dry", "wet"),
+                    labels = c("No flow", "flowing"),
+                    name = ""
+                    )+
+  #geom_text(data = data, aes(x = long, y = lat,label = ID), hjust=0, vjust=0)+
+  theme_void()+
+  coord_equal()
+
 
 ```
 
+
+```{r}
+#make animation of august 6 to august 27th
+data <- filter(all_w3, datetime >= "2023-08-06 00:00:00") %>% 
+               filter(datetime <= "2023-08-20 23:00:00")
+
+data <- filter(all_w3, datetime >= "2023-07-19 00:00:00") %>% 
+               filter(datetime <= "2023-07-22 23:00:00")
+x <- ggplot(data)+
+  geom_tile(data=test, aes(x=x, y=y), fill = "lightgrey")+
+  geom_point(aes(x = long, y = lat, color = wetdry), size = 2)+
+  scale_color_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c("dry", "wet"),
+                    labels = c("No flow", "flowing"),
+                    name = ""
+                    )+
+
+   theme_classic()+ 
+  transition_manual(datetime) +
+  labs(title = "Date and Time: {current_frame}")
+
+
+
+animate(x, 
+        fps = 6,
+        nframes = 600,         # fewer frames for simplification
+        device = "png")
+
+anim_save("ws3_aug_storm.gif", x,
+          fps = 6,
+          nframes = 300)
+
+saveHTML(animate(x, 
+                 fps = 6,
+                 nframes = 600,         # fewer frames for simplification
+                 device = "png"), 
+         navigator = ani.options("nmax") <= 100 && ani.options("interval") >= 0.05,
+         img.name = "tryingtoanimate.png", 
+         htmlfile = "tryingtoanimate.html")
+```
+
+
+```{r}
+#find all unique combinations of wet and dry sensors
+hush <- dplyr::select(data, datetime, wetdry_binary, ID) 
+hush2 <- pivot_wider(hush, names_from = ID, values_from = wetdry_binary)
+
+xy.list <- as.list(as.data.frame(t(hush2[,-1])))
+length(xy.list)
+length(unique(data$datetime))
+#unique combinations of flow
+length(unique(xy.list))
+
+
+
+```
+
+```{r}
+#6/21/23 adding discharge and precip data
+#read in data
+q_raw <- read.csv("ws3_Q_6_21_2023.csv", skip = 2)
+p_raw <- read.csv("ws3_P_6_21_2023.csv", skip = 3)
+#remove dates outside of the extent of STIC deployment
+q_raw$date.and.time <- mdy_hm(q_raw$date.and.time)
+p_raw$date.time <- mdy_hm(p_raw$date.time)
+
+
+q_date <- filter(q_raw, date.and.time >= "2023-06-06 14:00:00") %>% 
+  filter(date.and.time <= "2023-06-14 11:00:00") %>% 
+  rename("datetime" = "date.and.time")
+
+p_date <- filter(p_raw, date.time >= "2023-06-06 14:00:00") %>% 
+  filter(date.time <= "2023-06-14 11:00:00")
+#convert inches to mm
+p_date$mm <- p_date$inches * 25.4
+p_date$day <- date(p_date$date.time)
+
+p2 <- p_date %>% 
+  group_by(day) %>% 
+  summarise(daily_mmhr = sum(mm)/24)
+
+
+
+ggplot(p2, aes(x = day, y = daily_mmhr))+
+  geom_bar(stat = "identity")+
+  theme_classic()+
+  #transition_time(day) +
+  labs(x = "", y = "Precip (mm/hr)", title = "Precipitation from June 6 to June 14")
+
+ggplot(q_date, aes(x = datetime, y = mm.hr))+
+  geom_line()+
+  theme_classic()+
+  labs(x = "Date", y = "Discharge (mm/hr)", title = "Discharge from June 6 to June 14")
+q_date2 <- q_date
+q_date2$datetime <- as.Date(q_date$datetime)
+
+
+ggplot()+
+  geom_bar(data = p2, aes(x = day, y = daily_mmhr), stat = "identity")+
+  geom_line(data = q_date2, aes(x = datetime, y = mm.hr))+
+  theme_classic()+
+  #transition_time(day) +
+  labs(x = "", y = "mm/hr", title = "Discharge and Precip from June 6 to June 14")
+```
