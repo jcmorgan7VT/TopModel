@@ -140,14 +140,14 @@ ggplot()+
                     labels = c("No flow", "flowing"),
                     name = ""
                     )+
-  #geom_text(data = data, aes(x = long, y = lat,label = ID), hjust=0, vjust=0)+
+  geom_text(data = data, aes(x = long, y = lat,label = ID), hjust=-0.00025, vjust=0.00025)+
   theme_void()+
   coord_equal()
 
 
 ```
 
-
+Animation for whole record and subset
 ```{r}
 #make animation of august 6 to august 27th
 data <- filter(all_w3, datetime >= "2023-08-06 00:00:00") %>% 
@@ -189,6 +189,10 @@ saveHTML(animate(x,
          htmlfile = "tryingtoanimate.html")
 ```
 
+Flow routing
+```{r}
+routes <- read.csv("w3_flowrouting.csv")
+```
 
 ```{r}
 #find all unique combinations of wet and dry sensors

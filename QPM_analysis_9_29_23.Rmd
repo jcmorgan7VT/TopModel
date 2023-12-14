@@ -881,5 +881,93 @@ ws3 <- dplyr::select(ws3, -Q)
 write.csv(blest, "yearlyCO2sum.csv")
 write.csv(ws3, "dailyFlowingArea.csv")
 
+
+```
+
+Statistics with Matt 12/4/23
+```{r}
+stream <- read.csv("./Data4Matt/yearlyCO2sum.csv")
+sa <- read.csv("./Data4Matt/dailyFlowingArea.csv")
+sa$Date <- ymd(sa$Date)
+sa$WS <- as.factor(sa$WS)
+#should remove June 30, 1973 from dataset- it is a freakish outlier and breaks the model
+#(ws3_yearsums[ws3_yearsums$Cells_flowing == max(ws3_yearsums$Cells_flowing),])
+sa[sa$Date == "2011-08-28",]
+sa[sa$Date == "1973-06-30",]
+
+sa[which.max(sa$flowing_area_m2),]
+#2011-08-28
+sa1 <- sa[-(which(sa$Date == "2011-08-28")),]
+sa1[which.max(sa1$flowing_area_m2),]
+#1973-06-30
+sa2 <- sa1[-(which(sa1$Date == "1973-06-30")),]
+
+sa2$month <- month(sa2$Date)
+yearly_avg <- sa2 %>% 
+  group_by(WS, year, month) %>% 
+  mutate(avg = mean(flowing_area_m2)) %>% 
+  ungroup()
+
+ggplot(yearly_avg)+
+  geom_line(aes(x = Date, y = avg, color = WS))+
+  facet_wrap(~WS, scales = "free_y")+
+  theme_classic()+
+  labs(x = "Date", 
+       y = "Stream Surface Area (m^2)",
+       title = "Monthly average Stream surface area through time by watershed")
+
+
+ggplot(sa2)+
+  geom_line(aes(x = Date, y = flowing_area_m2, color = WS))+
+  facet_wrap(~WS, scales = "free_y")+
+  theme_classic()+
+  scale_colour_manual(name=" ", values=c("#662C91",
+                                         "#17A398",
+                                         "#F58A07",
+                                         "#BB342F"))+#,labels = "Sen's Slope")
+  labs(x = "Date", 
+       y = "Stream Surface Area (m^2)",
+       title = "Stream surface area through time by watershed")
+  
+
+#base r method
+ws3 <- sa2[sa2$WS == 3,]
+length(ws3$year[ws3$year == "1958"])
+#make into time series
+p_load(tsibble)
+ts3 <- as.ts(ws3[,c(2,4)])
+
+
+
+
+#tidyverse method
+ws3 <- dplyr::filter(stream, WS == "3")
+
+ws3 <- stream[stream$WS == 3,]
+ws6 <- stream[stream$WS == 6,]
+ws7 <- stream[stream$WS == 7,]
+ws8 <- stream[stream$WS == 8,]
+
+#ts(vector, start=, end=, frequency=) 
+ts3 <- ts(ws3$yearly_sum, start = 1958, end = 2021)
+ts6 <- ts(ws6$yearly_sum, start = 1963, end = 2021)
+ts7 <- ts(ws7$yearly_sum, start = 1965, end = 2021)
+ts8 <- ts(ws8$yearly_sum, start = 1968, end = 2021)
+
+
+#PLOT OF JUST ONE YEAR OF DATA
+one_year <- filter(sa2, year == 2000)
+ggplot(one_year)+
+  geom_line(aes(x = Date, y = flowing_area_m2, color = WS))+
+  facet_wrap(~WS, scales = "free_y")+
+  theme_classic()+
+  scale_colour_manual(name=" ", values=c("#662C91",
+                                         "#17A398",
+                                         "#F58A07",
+                                         "#BB342F"))+#,labels = "Sen's Slope")
+  labs(x = "Date", 
+       y = "Stream Surface Area (m^2)",
+       title = "Stream surface area through time by watershed")
+
 ```
 
