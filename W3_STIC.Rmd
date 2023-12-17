@@ -59,13 +59,16 @@ ggplot(wet_filt)+
 ```
 
 Read in data for all locations using for loop
+12/17/23- successfully made more flexible function, produces error message if sensor data (.csv) is missing from the folder containing the data for that deployment.
 ```{r}
+
 #inputs: folder, ws, deployment
 read_deployment <- function(folder, wshed1, deployment1){
 #file location
-# folder = "./W3loggers_9_19_23/"
+# folder = "./HBLoggers_11_14_23/"
 # wshed1 = "W3"
-# deployment1 = 2
+# deployment1 = 3
+# i = 1
 files <- list.files(folder, pattern = ".csv")
 #deployment info
 deploy <- read.csv("./Fieldwork_formatted_summer23/All_deployments.csv")
@@ -75,15 +78,22 @@ w3_n <- na.omit(w3)
 w3_n$start <- mdy_hm(w3_n$start)
 w3_n$end <- mdy_hm(w3_n$end)
 
+sensor_ids <- as.character(w3_n$sensor)
+sensor_num <- (substr(files, 1, 8))
 
+# r <- c(sensor_ids, sensor_num)
+# r
+# length(unique(r))
 
-for(i in 1:length(files)){
-  chosen <- paste0(folder, files[i])
-  sensor_num <- substr(chosen, 21, 28)
+for(i in 1:length(sensor_ids)){
+  chosen <- paste0(sensor_ids[i], ".csv") #line to add i
+  tryCatch({
+  path_to_chosen <- paste0(folder, chosen)
+  data <- tidy_hobo_data(path_to_chosen)
+
   #subset deployment information
-  deployment_info <- filter(w3_n, sensor == sensor_num)
+  deployment_info <- filter(w3_n, sensor == sensor_ids[i])
 
-  data <- tidy_hobo_data(chosen)
   wet <- classify_wetdry(data,
                          classify_var = "condUncal",
                          method = "absolute",
@@ -95,6 +105,7 @@ for(i in 1:length(files)){
 
   if(i == 1) alldat <- wet_filt
   if(i > 1) alldat <- rbind(alldat, wet_filt)
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
 }
 
 readout <- alldat %>% dplyr::select(-start, -end)
@@ -105,14 +116,62 @@ return(readout)
 w3_1 <- read_deployment(folder = "./W3loggers_7_18_23/", 
                         wshed1 = "W3",
                         deployment1 = 1)
-#got error, was due to spreadsheet having a duplicate record. For trouble shooting in the future- if a for loop fails, if i leave the index as the variable the loop is using, I can try to run each component of the loop on the one that failed.
 w3_2 <- read_deployment(folder = "./W3loggers_9_19_23/", 
                         wshed1 = "W3",
                         deployment1 = 2)
+#got error, was due to spreadsheet having a duplicate record. For trouble shooting in the future- if a for loop fails, if i leave the index as the variable the loop is using, I can try to run each component of the loop on the one that failed.
+w3_3 <- read_deployment(folder = "./HBLoggers_11_14_23/", 
+                        wshed1 = "W3",
+                        deployment1 = 3)
 
-all_w3 <- rbind(w3_1, w3_2)
+all_w3 <- rbind(w3_1, w3_2, w3_3)
 
 ```
+
+Reading in loggers in Falls Brook and Zig Zag
+```{r}
+fb_1 <- read_deployment(folder = "./FBloggers_7_19_23/", 
+                        wshed1 = "FB",
+                        deployment1 = 1)
+fb_2 <- read_deployment(folder = "./FBloggers_9_20_23/", 
+                        wshed1 = "FB",
+                        deployment1 = 2)
+fb_3 <- read_deployment(folder = "./HBLoggers_11_14_23/", 
+                        wshed1 = "FB",
+                        deployment1 = 3)
+
+all_fb <- rbind(fb_1, fb_2, fb_3)
+
+
+zz_1 <- read_deployment(folder = "./ZZloggers_7_20_23/", 
+                        wshed1 = "ZZ",
+                        deployment1 = 1)
+zz_2 <- read_deployment(folder = "./ZZloggers_9_21_23/", 
+                        wshed1 = "ZZ",
+                        deployment1 = 2)
+zz_3 <- read_deployment(folder = "./HBLoggers_11_14_23/", 
+                        wshed1 = "ZZ",
+                        deployment1 = 3)
+
+all_fb <- rbind(fb_1, fb_2, fb_3)
+```
+
+
+
+```{r}
+w3_1 <- read_deployment(folder = "./W3loggers_7_18_23/", 
+                        wshed1 = "W3",
+                        deployment1 = 1)
+w3_2 <- read_deployment(folder = "./W3loggers_9_19_23/", 
+                        wshed1 = "W3",
+                        deployment1 = 2)
+w3_3 <- read_deployment(folder = "./HBLoggers_11_14_23/", 
+                        wshed1 = "W3",
+                        deployment1 = 3)
+
+all_w3 <- rbind(w3_1, w3_2)
+```
+
 
 How do we visualize this information?
 ```{r}
@@ -146,6 +205,48 @@ ggplot()+
 
 
 ```
+
+Map of study watersheds for committee meeting
+```{r}
+sheds <- readOGR(dsn='./HB/hbef_wsheds')
+w3 <- sheds %>% filter(WS == "WS3")
+stream <- st_read("./HB/hbstream/hb42_master_startend.shp")
+w3_rast <- raster("./HB/hbstream/w3_5m.tif")
+w3_rast2 <- projectRaster(w3_rast, crs = 4326)
+test <- as.data.frame(w3_rast2, xy = TRUE) %>%
+  na.omit()
+
+#study streams and whole network
+w3_rast <- raster("./HB/hbstream/w3_5m.tif")
+fb_rast <- raster("./HB/hbstream/fb_5m.tif")
+zz_rast <- raster("./HB/hbstream/zz_5m.tif")
+#use this layer, flow accumulation of 3500 m2 from 1m DEM of the whole valley
+whole <- raster("./HB/hbstream/wholeValley1m_3500m2Thresh.tif")
+test <- as.data.frame(whole, xy = TRUE) %>%
+  na.omit()
+
+stream <- st_read("./HB/hbstream/hb42_master_startend.shp")
+fb <- st_read("./HB/hbstream/FB_subcatchment_flowlines.shp")
+zz <- st_read("./HB/hbstream/ZZ_subcatchment_flowlines.shp")
+#st_crs(stream)
+
+st_crs(stream) <- 26919
+st_crs(fb) <- 26919
+st_crs(zz) <- 26919
+
+data <- filter(all_w3, datetime == "2023-08-03 16:30:00")
+
+binary <- c("red",
+            "blue"
+  )
+
+ggplot()+
+  geom_polygon(data = whole, aes(x = long, y = lat, group = group), colour = "black", fill = NA)
+  #geom_text(data = data, aes(x = long, y = lat,label = ID), hjust=-0.00025, vjust=0.00025)+
+  theme_void()+
+  coord_equal()
+```
+
 
 Animation for whole record and subset
 ```{r}
