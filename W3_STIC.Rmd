@@ -99,14 +99,20 @@ for(i in 1:length(sensor_ids)){
                          method = "absolute",
                          threshold = 10)
   #remove dates before and after start and end date of deployment
-  wet_filt <- filter(wet, datetime >= deployment_info$start) %>%
-    filter(datetime <= deployment_info$end) %>% 
+  wet_filt <- filter(wet, datetime > deployment_info$start) %>%
+    filter(datetime < deployment_info$end) %>% 
     bind_cols(deployment_info)
+
 
   if(i == 1) alldat <- wet_filt
   if(i > 1) alldat <- rbind(alldat, wet_filt)
   }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
 }
+
+#create new column that indicates if every sensor is deployed or not
+alldat$all_deployed <- 0
+
+alldat$all_deployed[alldat$datetime >= max(alldat$start) & alldat$datetime <= min(alldat$end)] <- 1
 
 readout <- alldat %>% dplyr::select(-start, -end)
 
@@ -125,6 +131,8 @@ w3_3 <- read_deployment(folder = "./HBLoggers_11_14_23/",
                         deployment1 = 3)
 
 all_w3 <- rbind(w3_1, w3_2, w3_3)
+all_w3$datetime <- with_tz(all_w3$datetime, "US/Eastern")
+
 
 ```
 
@@ -153,25 +161,23 @@ zz_3 <- read_deployment(folder = "./HBLoggers_11_14_23/",
                         wshed1 = "ZZ",
                         deployment1 = 3)
 
-all_fb <- rbind(fb_1, fb_2, fb_3)
+all_zz <- rbind(zz_1, zz_2, zz_3)
+
+all_sheds <- rbind(all_w3, all_fb, all_zz)
+
+qlist[(which(qlist$Streamflow >= 30)),]
+all_sheds[which.max(all_sheds$tempC),]
+
+all_sheds2 <- all_sheds[-(which(all_sheds$sensor == 20011664)),]
+all_sheds2[which.max(all_sheds2$tempC),]
+
+#convert temperature to degreese celsius, read in as farenheit from hoboware
+all_sheds2$tempC <- (all_sheds2$tempC - 32) * 5/9
+
+#create spreadsheet containing all of the data to send to Danielle Hare
+#write.csv(all_sheds2, "./DataForDanielle/HB_stic.csv")
+data <- read_csv("./DataForDanielle/HB_stic.csv")
 ```
-
-
-
-```{r}
-w3_1 <- read_deployment(folder = "./W3loggers_7_18_23/", 
-                        wshed1 = "W3",
-                        deployment1 = 1)
-w3_2 <- read_deployment(folder = "./W3loggers_9_19_23/", 
-                        wshed1 = "W3",
-                        deployment1 = 2)
-w3_3 <- read_deployment(folder = "./HBLoggers_11_14_23/", 
-                        wshed1 = "W3",
-                        deployment1 = 3)
-
-all_w3 <- rbind(w3_1, w3_2)
-```
-
 
 How do we visualize this information?
 ```{r}
@@ -184,7 +190,11 @@ w3_rast2 <- projectRaster(w3_rast, crs = 4326)
 test <- as.data.frame(w3_rast2, xy = TRUE) %>%
   na.omit()
 
-data <- filter(all_w3, datetime == "2023-08-03 16:30:00")
+all_flowing <- filter(all_w3, all_deployed == 1)
+
+plot_test <- filter(all_w3, 
+               datetime == "2023-07-03 16:10:00.00",
+               wshed == "W3")
 
 binary <- c("red",
             "blue"
@@ -192,19 +202,163 @@ binary <- c("red",
 
 ggplot()+
   geom_tile(data=test, aes(x=x, y=y), fill = "lightgrey")+
-  geom_point(data = data, aes(x = long, y = lat, color = wetdry), size = 2)+
+  geom_point(data = plot_test, aes(x = long, y = lat, color = wetdry), size = 2)+
   scale_color_manual(drop = FALSE,
                      values = binary,
                     breaks = c("dry", "wet"),
                     labels = c("No flow", "flowing"),
                     name = ""
                     )+
-  geom_text(data = data, aes(x = long, y = lat,label = ID), hjust=-0.00025, vjust=0.00025)+
+  geom_text(data = plot_test, aes(x = long, y = lat,label = ID), hjust=-0.00025, vjust=0.00025)+
   theme_void()+
   coord_equal()
 
+wettest <- filter(all_w3, datetime == "2023-07-03 16:10:00")
 
 ```
+
+
+Make plots for the wettest time and the driest time in all 3 watersheds
+```{r}
+#make binary columns for wet and dry
+all_w3$binary <- 1
+all_w3$binary[all_w3$wetdry == "dry"] <- 0
+
+spots_flowing <- all_w3 %>% 
+  group_by(datetime) %>% 
+  summarise("percent_flowing" = sum(binary)/length(binary))
+
+#maximum percentage of sensors flowing is 100%
+max(spots_flowing$percent_flowing)
+#times when stream was at it's maximum extent
+spots_flowing$datetime[spots_flowing$percent_flowing == max(spots_flowing$percent_flowing)]
+#minimum extent times
+min(spots_flowing$percent_flowing)
+
+spots_flowing$datetime[spots_flowing$percent_flowing == min(spots_flowing$percent_flowing)]
+
+#plots for the wettest times for each watershed
+plot_test <- filter(all_w3, 
+               datetime == "2023-07-03 15:20:00 EDT")
+
+ggplot()+
+  geom_tile(data=test, aes(x=x, y=y), fill = "lightgrey")+
+  geom_point(data = plot_test, aes(x = long, y = lat, color = wetdry), size = 2)+
+  scale_color_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c("dry", "wet"),
+                    labels = c("No flow", "flowing"),
+                    name = ""
+                    )+
+  geom_text(data = plot_test, aes(x = long, y = lat,label = ID), hjust=-0.00025, vjust=0.00025)+
+  theme_void()+
+  labs(title = "Wettest extent in W3")+
+  coord_equal()
+#plot of the driest extent in W3
+
+plot_test <- filter(all_w3, 
+               datetime == "2023-09-21 16:00:00 EDT")
+ggplot()+
+  geom_tile(data=test, aes(x=x, y=y), fill = "lightgrey")+
+  geom_point(data = plot_test, aes(x = long, y = lat, color = wetdry), size = 2)+
+  scale_color_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c("dry", "wet"),
+                    labels = c("No flow", "flowing"),
+                    name = ""
+                    )+
+  geom_text(data = plot_test, aes(x = long, y = lat,label = ID), hjust=-0.00025, vjust=0.00025)+
+  theme_void()+
+  labs(title = "Driest extent in W3")+
+  coord_equal()
+```
+
+instead of making plots for the wettest and driest times, make raster grid plots showing all times
+```{r}
+plot_test <- filter(all_w3, deployment == 1)
+spots_flowing <- plot_test %>% 
+  group_by(datetime) %>% 
+  summarise("percent_flowing" = sum(binary)/length(binary))
+
+ggplot(plot_test)+
+  geom_tile(aes(x = datetime, y = ID, fill = wetdry))+
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c("dry", "wet"),
+                    labels = c("No flow", "flowing"),
+                    name = ""
+                    )
+#ways to make better
+#order points by distance to outlet
+#change colors
+#add discharge and precipitation
+```
+
+
+Chunk not formatted yet- determine number of combinations of flowing points
+```{r}
+#find all unique combinations of wet and dry sensors
+hush <- dplyr::select(data, datetime, wetdry_binary, ID) 
+hush2 <- pivot_wider(hush, names_from = ID, values_from = wetdry_binary)
+
+xy.list <- as.list(as.data.frame(t(hush2[,-1])))
+length(xy.list)
+length(unique(data$datetime))
+#unique combinations of flow
+length(unique(xy.list))
+```
+
+
+12/20/23
+Make some quick figures for meeting with Danielle
+```{r}
+#watershed 3 shape
+
+w3_rast <- raster("./HB/hbstream/w3_5m.tif")
+fb_rast <- raster("./HB/hbstream/fb_5m.tif")
+zz_rast <- raster("./HB/hbstream/zz_5m.tif")
+
+w3_rast2 <- projectRaster(w3_rast, crs = 4326)
+fb_rast2 <- projectRaster(fb_rast, crs = 4326)
+zz_rast2 <- projectRaster(zz_rast, crs = 4326)
+
+w3_df <- as.data.frame(w3_rast2, xy = TRUE) %>%
+  na.omit()
+fb_df <- as.data.frame(fb_rast2, xy = TRUE) %>%
+  na.omit()
+zz_df <- as.data.frame(zz_rast2, xy = TRUE) %>%
+  na.omit()
+
+data_w3 <- unique(all_w3 %>% 
+  dplyr::select(ID, deployment, lat, long))
+data_fb <- unique(all_fb %>% 
+  dplyr::select(ID, deployment, lat, long))
+data_zz <- unique(all_zz %>% 
+  dplyr::select(ID, deployment, lat, long))
+
+
+ggplot()+
+  geom_tile(data = w3_df, aes(x=x, y=y), fill = "lightgrey")+
+  geom_point(data = data_w3, aes(x = long, y = lat, color = as.factor(deployment)), size = 2)+
+  geom_text(data = data_w3, aes(x = long, y = lat,label = ID), hjust=-0.00025, vjust=0.00025)+
+  theme_void()+
+  coord_equal()
+
+ggplot()+
+  geom_tile(data = fb_df, aes(x=x, y=y), fill = "lightgrey")+
+  geom_point(data = data_fb, aes(x = long, y = lat, color = as.factor(deployment)), size = 2)+
+  geom_text(data = data_fb, aes(x = long, y = lat,label = ID), hjust=-0.00025, vjust=0.00025)+
+  theme_void()+
+  coord_equal()
+
+ggplot()+
+  geom_tile(data = zz_df, aes(x=x, y=y), fill = "lightgrey")+
+  geom_point(data = data_zz, aes(x = long, y = lat, color = as.factor(deployment)), size = 2)+
+  geom_text(data = data_zz, aes(x = long, y = lat,label = ID), hjust=-0.00025, vjust=0.00025)+
+  theme_void()+
+  coord_equal()
+```
+
 
 Map of study watersheds for committee meeting
 ```{r}
@@ -241,7 +395,7 @@ binary <- c("red",
   )
 
 ggplot()+
-  geom_polygon(data = whole, aes(x = long, y = lat, group = group), colour = "black", fill = NA)
+  geom_polygon(data = test, aes(x = x, y = y), colour = "black", fill = NA)
   #geom_text(data = data, aes(x = long, y = lat,label = ID), hjust=-0.00025, vjust=0.00025)+
   theme_void()+
   coord_equal()

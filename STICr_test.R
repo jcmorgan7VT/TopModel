@@ -567,7 +567,7 @@ m1 <- tm_shape(w1_0) +
   tm_dots(col = c("red", "blue")
           , size = 10,
           breaks = c("dry", "wet"))+
-  tm_facets(by = c(free.scales.symbol.size = FALSE, nrow=1,ncol=1)
+  tm_facets(by = c(free.scales.symbol.size = FALSE, nrow=1,ncol=1))
 m1
 
 tmap_animation(m1, delay=40)
