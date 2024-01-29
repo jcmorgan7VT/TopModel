@@ -11,7 +11,8 @@ editor_options:
 library(pacman)
 p_load(tidyverse, raster, rgdal, sp, mapview,
        rgeos, spdplyr, tmap, stars, STICr,
-       lubridate, gganimate, animation, patchwork)
+       lubridate, gganimate, animation, patchwork, ggrepel)
+
 ```
 
 ```{r}
@@ -165,7 +166,7 @@ all_zz <- rbind(zz_1, zz_2, zz_3)
 
 all_sheds <- rbind(all_w3, all_fb, all_zz)
 
-qlist[(which(qlist$Streamflow >= 30)),]
+#qlist[(which(qlist$Streamflow >= 30)),]
 all_sheds[which.max(all_sheds$tempC),]
 
 all_sheds2 <- all_sheds[-(which(all_sheds$sensor == 20011664)),]
@@ -176,7 +177,7 @@ all_sheds2$tempC <- (all_sheds2$tempC - 32) * 5/9
 
 #create spreadsheet containing all of the data to send to Danielle Hare
 #write.csv(all_sheds2, "./DataForDanielle/HB_stic.csv")
-data <- read_csv("./DataForDanielle/HB_stic.csv")
+#data <- read_csv("./DataForDanielle/HB_stic.csv")
 ```
 
 How do we visualize this information?
@@ -275,19 +276,33 @@ ggplot()+
 
 instead of making plots for the wettest and driest times, make raster grid plots showing all times
 ```{r}
-plot_test <- filter(all_w3, deployment == 1)
-spots_flowing <- plot_test %>% 
+binary <- c("#754668",
+            "#17BEBB"
+  )
+
+#remove measurements from first deployment that are not every 30 mins
+plot_test <- filter(all_w3, deployment == 1)%>%
+ slice(which(row_number() %% 3 == 0))
+head(plot_test)
+
+plot_test2 <- filter(all_zz, deployment != 1) #%>% rbind(plot_test)
+dates <- unique(plot_test2$datetime)
+
+spots_flowing <- plot_test2 %>% 
   group_by(datetime) %>% 
   summarise("percent_flowing" = sum(binary)/length(binary))
 
-ggplot(plot_test)+
+ggplot(plot_test2)+
   geom_tile(aes(x = datetime, y = ID, fill = wetdry))+
+  #facet_grid(~deployment, scales = "free") + 
   scale_fill_manual(drop = FALSE,
                      values = binary,
                     breaks = c("dry", "wet"),
                     labels = c("No flow", "flowing"),
                     name = ""
-                    )
+                    )+
+  labs(title = "Streamflow permanence in ZZ")+
+  theme_classic()
 #ways to make better
 #order points by distance to outlet
 #change colors
@@ -511,3 +526,225 @@ ggplot()+
   #transition_time(day) +
   labs(x = "", y = "mm/hr", title = "Discharge and Precip from June 6 to June 14")
 ```
+
+```{r}
+#1/29/24
+#Doing analysis from warix et al. 2021
+#calculate seasonal flow permanence for each watershed
+list <- c("W3", "FB", "ZZ")
+out <- seq(1, 3, 1)
+
+for(i in 1:length(list)){
+one_shed <- filter(all_sheds2, 
+               wshed == list[i])
+#seasonal flow permanence of whole watershed for
+perc_flow <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+out[i] <- perc_flow
+}
+
+percent_seasonal_flow <- data.frame("shed" = list,
+                                       "perc_flow" = out)
+```
+
+```{r}
+#seasonal flow permanence at each point
+#make binary columns for wet and dry
+all_sheds2$binary <- 1
+all_sheds2$binary[all_sheds2$wetdry == "dry"] <- 0
+
+
+shed <- "W3"
+#point_seasonal <- function(shed){
+  one_shed <- filter(all_sheds2, 
+               wshed == shed)
+  IDs <- unique(one_shed$ID)
+
+  w3_flowing <- one_shed %>% 
+  group_by(ID)  %>% 
+  reframe("percent_flowing" = sum(binary)/length(binary),
+            "lat" = unique(lat),
+            "long" = unique(long))
+shed <- "FB"
+#point_seasonal <- function(shed){
+  one_shed <- filter(all_sheds2, 
+               wshed == shed)
+  IDs <- unique(one_shed$ID)
+
+  fb_flowing <- one_shed %>% 
+  group_by(ID)  %>% 
+  reframe("percent_flowing" = sum(binary)/length(binary),
+            "lat" = unique(lat),
+            "long" = unique(long))
+  
+shed <- "ZZ"
+#point_seasonal <- function(shed){
+  one_shed <- filter(all_sheds2, 
+               wshed == shed)
+  IDs <- unique(one_shed$ID)
+
+  zz_flowing <- one_shed %>% 
+  group_by(ID)  %>% 
+  reframe("percent_flowing" = sum(binary)/length(binary),
+            "lat" = unique(lat),
+            "long" = unique(long))
+  
+#watershed 3 shape
+
+w3_rast <- raster("./HB/hbstream/w3_5m.tif")
+fb_rast <- raster("./HB/hbstream/fb_5m.tif")
+zz_rast <- raster("./HB/hbstream/zz_5m.tif")
+
+w3_rast2 <- projectRaster(w3_rast, crs = 4326)
+fb_rast2 <- projectRaster(fb_rast, crs = 4326)
+zz_rast2 <- projectRaster(zz_rast, crs = 4326)
+
+w3_df <- as.data.frame(w3_rast2, xy = TRUE) %>%
+  na.omit()
+fb_df <- as.data.frame(fb_rast2, xy = TRUE) %>%
+  na.omit()
+zz_df <- as.data.frame(zz_rast2, xy = TRUE) %>%
+  na.omit()
+
+data_w3 <- unique(all_w3 %>% 
+  dplyr::select(ID, deployment, lat, long))
+data_fb <- unique(all_fb %>% 
+  dplyr::select(ID, deployment, lat, long))
+data_zz <- unique(all_zz %>% 
+  dplyr::select(ID, deployment, lat, long))
+
+
+ggplot()+
+  geom_tile(data = w3_df, aes(x=x, y=y), fill = "lightgrey")+
+  geom_point(data = w3_flowing, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  geom_text_repel(data = w3_flowing, aes(x = long, y = lat,label = signif(percent_flowing, 2)))+
+  scale_color_viridis_c()+
+  theme_void()+
+  labs(title = "Seasonal Flow Permanence: W3")+
+  coord_equal()
+
+ggplot()+
+  geom_tile(data = fb_df, aes(x=x, y=y), fill = "lightgrey")+
+  geom_point(data = fb_flowing, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  geom_text_repel(data = fb_flowing, aes(x = long, y = lat,label = signif(percent_flowing, 2)))+
+  scale_color_viridis_c()+
+  theme_void()+
+  labs(title = "Seasonal Flow Permanence: FB")+
+  coord_equal()
+
+
+ggplot()+
+  geom_tile(data = zz_df, aes(x=x, y=y), fill = "lightgrey")+
+  geom_point(data = zz_flowing, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  geom_text_repel(data = zz_flowing, aes(x = long, y = lat,label = signif(percent_flowing, 2)))+
+  scale_color_viridis_c()+
+  theme_void()+
+  labs(title = "Seasonal Flow Permanence: ZZ")+
+  coord_equal()
+
+
+```
+
+```{r}
+#Now randomly subset the sensors by 10%, 50%, and 90% fewer sensors randomly. See how much the percentages change
+
+#filter to just one watershed
+boot <- function(shed, iterations, percent_retained){
+  out <- seq(1, iterations, 1)
+
+  one_shed <- filter(all_sheds2, 
+                     wshed == shed)
+  #for loop to bootstrap n = iterations times
+  for(i in 1:iterations){
+  
+    IDs <- unique(one_shed$ID)
+    set.seed(i)
+    sampled <- sample(IDs, round(percent_retained * length(IDs)))
+  
+    pruned <- one_shed %>% 
+      filter(ID %in% sampled)
+
+    #seasonal flow permanence of whole watershed for
+    perc_flow <- length(pruned$wetdry[pruned$wetdry == "wet"]) / length(pruned$wetdry)
+    out[i] <- perc_flow
+  }
+
+  avg <- mean(out)
+  sd <- sd(out)
+
+final <- paste0(signif(avg, 2)," +/- ",signif(sd, 2))
+}
+
+w3_boot <- boot("W3", 100, 0.9)
+fb_boot <- boot("FB", 100, 0.9)
+zz_boot <- boot("ZZ", 100, 0.9)
+
+w3_boot <- boot("W3", 100, 0.5)
+fb_boot <- boot("FB", 100, 0.5)
+zz_boot <- boot("ZZ", 100, 0.5)
+
+w3_boot <- boot("W3", 100, 0.1)
+fb_boot <- boot("FB", 100, 0.1)
+zz_boot <- boot("ZZ", 100, 0.1)
+
+
+list <- c("W3", "FB", "ZZ")
+ninety <- data.frame("shed" = list, "perc_flow" = c(w3_boot, fb_boot, zz_boot))
+
+#final calculation should be difference between the actual and the randomly sampled/reduced
+```
+
+```{r}
+boot2 <- function(shed, iterations, percent_retained){
+  out <- seq(1, iterations, 1)
+
+  one_shed <- filter(all_sheds2, 
+                     wshed == shed)
+  #for loop to bootstrap n = iterations times
+  for(i in 1:iterations){
+  
+    IDs <- unique(one_shed$ID)
+    set.seed(i)
+    sampled <- sample(IDs, round(percent_retained * length(IDs)))
+  
+    pruned <- one_shed %>% 
+      filter(ID %in% sampled)
+
+    #seasonal flow permanence of whole watershed for
+    perc_flow <- length(pruned$wetdry[pruned$wetdry == "wet"]) / length(pruned$wetdry)
+    out[i] <- perc_flow
+  }
+
+  avg <- mean(out)
+  sd <- sd(out)
+
+final <- paste0(signif(avg, 2)," +/- ",signif(sd, 2))
+}
+
+  
+
+shed <- "ZZ"
+#point_seasonal <- function(shed){
+  one_shed <- filter(all_sheds2, 
+               wshed == shed)
+  IDs <- unique(one_shed$ID)
+  
+  sampled <- sample(IDs, round(0.5 * length(IDs)))
+
+
+  zz_flowing <- one_shed %>% 
+  filter(ID %in% sampled) %>% 
+  group_by(ID)  %>% 
+  reframe("percent_flowing" = sum(binary)/length(binary),
+            "lat" = unique(lat),
+            "long" = unique(long))
+  
+ggplot()+
+  geom_tile(data = zz_df, aes(x=x, y=y), fill = "lightgrey")+
+  geom_point(data = zz_flowing, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  geom_text_repel(data = zz_flowing, aes(x = long, y = lat,label = signif(percent_flowing, 2)))+
+  scale_color_viridis_c()+
+  theme_void()+
+  labs(title = "Seasonal Flow Permanence: ZZ, 50% of sensors")+
+  coord_equal()
+```
+
