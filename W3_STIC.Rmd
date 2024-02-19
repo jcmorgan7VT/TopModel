@@ -9,55 +9,13 @@ editor_options:
 ```{r}
 #setup
 library(pacman)
-p_load(tidyverse, raster, rgdal, sp, mapview,
+p_load(tidyverse, sp, mapview,
        rgeos, spdplyr, tmap, stars, STICr,
-       lubridate, gganimate, animation, patchwork, ggrepel)
-
+       lubridate, gganimate, animation, patchwork, ggrepel, whitebox,
+       terra)
+install.packages("rgdal")
 ```
 
-```{r}
-#analysis of W1 and W2 stic sensors
-deploy <- read.csv("./Fieldwork_formatted_summer23/All_deployments.csv")
-head(deploy)
-w3 <- filter(deploy, wshed == "W3", deployment == 1)
-w3_n <- na.omit(w3)
-w3_n$start <- mdy_hm(w3_n$start)
-w3_n$end <- mdy_hm(w3_n$end)
-head(w3_n)
-
-#folder called W3loggers_7_18_23, W3loggers_9_19_23
-#went through folders, found duplicates and removed them
-files <- list.files("./W3loggers_7_18_23", pattern = ".csv")
-files
-test <- read.csv(paste0("./W3loggers_7_18_23/", files[1]), skip = 1)
-test$Datetime <- mdy_hms(test$Date.Time..GMT.04.00)
-plot(test$Datetime, test$Intensity..lum.ft...LGR.S.N..20011654..SEN.S.N..20011654.)
-
-#calibration curves
-cal.list2 <- list.files("./CalibratingConductivity_9_20_23", pattern = ".csv")
-cal.list <- list.files("./CalibratingConductivity_9_19_23", pattern = ".csv")
-cal1 <- read.csv(paste0("./CalibratingConductivity_9_19_23/", cal.list[2]), skip = 1)
-cal1$Datetime <- mdy_hms(cal1$Date.Time..GMT.04.00)
-plot(cal1$Datetime, cal1$Intensity..lum.ft...LGR.S.N..20011677..SEN.S.N..20011677.)
-
-#for now maybe just use absolute method
-chosen <- paste0("./W3loggers_7_18_23/", files[1])
-sensor_num <- substr(chosen, 21, 28)
-#subset deployment information
-deployment_info <- filter(w3_n, sensor == sensor_num)
-
-data <- tidy_hobo_data(chosen)
-wet <- classify_wetdry(data, classify_var = "condUncal", method = "absolute", threshold = 10)
-#remove dates before and after start and end date of deployment
-wet_filt <- filter(wet, datetime >= deployment_info$start) %>% 
-  filter(datetime <= deployment_info$end)
-
-ggplot(wet_filt)+
-  geom_point(aes(x = datetime, y = tempC, color = wetdry))+
-  theme_classic()
-
-#It should be much better if I can develop a method of filtering flowing and not flowing based on diurnal patterns as well
-```
 
 Read in data for all locations using for loop
 12/17/23- successfully made more flexible function, produces error message if sensor data (.csv) is missing from the folder containing the data for that deployment.
@@ -409,11 +367,6 @@ binary <- c("red",
             "blue"
   )
 
-ggplot()+
-  geom_polygon(data = test, aes(x = x, y = y), colour = "black", fill = NA)
-  #geom_text(data = data, aes(x = long, y = lat,label = ID), hjust=-0.00025, vjust=0.00025)+
-  theme_void()+
-  coord_equal()
 ```
 
 
@@ -591,18 +544,18 @@ shed <- "ZZ"
 #watershed 3 shape
 
 w3_rast <- raster("./HB/hbstream/w3_5m.tif")
-fb_rast <- raster("./HB/hbstream/fb_5m.tif")
-zz_rast <- raster("./HB/hbstream/zz_5m.tif")
+fb_rast <- terra::rast("./HB/hbstream/fb_5m.tif")
+zz_rast <- terra::rast("./HB/hbstream/zz_5m.tif")
 
-w3_rast2 <- projectRaster(w3_rast, crs = 4326)
-fb_rast2 <- projectRaster(fb_rast, crs = 4326)
-zz_rast2 <- projectRaster(zz_rast, crs = 4326)
+#w3_rast2 <- projectRaster(w3_rast, crs = "4326")
+#fb_rast2 <- projectRaster(fb_rast, crs = 4326)
+#zz_rast2 <- projectRaster(zz_rast, crs = 4326)
 
-w3_df <- as.data.frame(w3_rast2, xy = TRUE) %>%
+w3_df <- as.data.frame(w3_rast, xy = TRUE) %>%
   na.omit()
-fb_df <- as.data.frame(fb_rast2, xy = TRUE) %>%
+fb_df <- as.data.frame(fb_rast, xy = TRUE) %>%
   na.omit()
-zz_df <- as.data.frame(zz_rast2, xy = TRUE) %>%
+zz_df <- as.data.frame(zz_rast, xy = TRUE) %>%
   na.omit()
 
 data_w3 <- unique(all_w3 %>% 
@@ -616,8 +569,8 @@ data_zz <- unique(all_zz %>%
 ggplot()+
   geom_tile(data = w3_df, aes(x=x, y=y), fill = "lightgrey")+
   geom_point(data = w3_flowing, aes(x = long, y = lat, color = percent_flowing), size = 2)+
-  geom_text_repel(data = w3_flowing, aes(x = long, y = lat,label = signif(percent_flowing, 2)))+
-  scale_color_viridis_c()+
+ # geom_text_repel(data = w3_flowing, aes(x = long, y = lat,label = signif(percent_flowing, 2)))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
   theme_void()+
   labs(title = "Seasonal Flow Permanence: W3")+
   coord_equal()
@@ -626,7 +579,7 @@ ggplot()+
   geom_tile(data = fb_df, aes(x=x, y=y), fill = "lightgrey")+
   geom_point(data = fb_flowing, aes(x = long, y = lat, color = percent_flowing), size = 2)+
   geom_text_repel(data = fb_flowing, aes(x = long, y = lat,label = signif(percent_flowing, 2)))+
-  scale_color_viridis_c()+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
   theme_void()+
   labs(title = "Seasonal Flow Permanence: FB")+
   coord_equal()
@@ -636,7 +589,7 @@ ggplot()+
   geom_tile(data = zz_df, aes(x=x, y=y), fill = "lightgrey")+
   geom_point(data = zz_flowing, aes(x = long, y = lat, color = percent_flowing), size = 2)+
   geom_text_repel(data = zz_flowing, aes(x = long, y = lat,label = signif(percent_flowing, 2)))+
-  scale_color_viridis_c()+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
   theme_void()+
   labs(title = "Seasonal Flow Permanence: ZZ")+
   coord_equal()
@@ -740,11 +693,184 @@ shed <- "ZZ"
   
 ggplot()+
   geom_tile(data = zz_df, aes(x=x, y=y), fill = "lightgrey")+
-  geom_point(data = zz_flowing, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  geom_point(data = zz_flowing, aes(x = long, y = lat, color = -percent_flowing), size = 2)+
   geom_text_repel(data = zz_flowing, aes(x = long, y = lat,label = signif(percent_flowing, 2)))+
-  scale_color_viridis_c()+
+  #scale_color_viridis_c()+
   theme_void()+
   labs(title = "Seasonal Flow Permanence: ZZ, 50% of sensors")+
   coord_equal()
 ```
 
+From meeting 1/29/24- don't just subset sensors randomly, test different sampling schemes that someone might actually implement in a real study
+```{r}
+
+#plot to help me figure out where each sensor is
+ggplot()+
+  geom_tile(data = w3_df, aes(x=x, y=y), fill = "lightgrey")+
+  geom_point(data = w3_flowing, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+ geom_text_repel(data = w3_flowing, aes(x = long, y = lat,label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = "Seasonal Flow Permanence: W3")+
+  coord_equal()
+
+#one sensor per tributary, located centrally
+#remove sensors
+subset <- c(3, 7, 13, 16, 20, 23, 27, 28, 29, 30, 10)
+w3_flowing_subset <- filter(w3_flowing, ID %in% subset)
+
+ggplot()+
+  geom_tile(data = w3_df, aes(x=x, y=y), fill = "lightgrey")+
+  geom_point(data = w3_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+ geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat,label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+                        breaks = c(0.25, 0.5, 0.75, 1),
+                        labels = c("0.25", "0.5", "0.75", "1"),
+                        name = "% time flowing")+
+  theme_void()+
+  labs(title = "Seasonal Flow Permanence: W3")+
+  coord_equal()
+
+
+
+one_shed <- filter(all_sheds2, 
+               wshed == "W3",
+               ID %in% subset)
+
+length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+
+mean(w3_flowing_subset$percent_flowing)
+
+  
+# Is averaging the flowing percentages the same as taking all otal times that something was flowing or not flowing and dividing it by the total number of times?
+  # They are very slightly different- I am going to stick with the fully integrated idea
+
+# Sensors at the beginning and end of tribs
+subset <- c(1, 4, 5, 11, 14, 8, 15, 17, 18, 21, 22, 26, 24, 10, 29, 30)
+one_shed <- filter(all_sheds2, 
+               wshed == "W3",
+               ID %in% subset)
+w3_flowing_subset <- filter(w3_flowing, ID %in% subset)
+
+ggplot()+
+  geom_tile(data = w3_df, aes(x=x, y=y), fill = "lightgrey")+
+  geom_point(data = w3_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+ geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat,label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+                        breaks = c(0.25, 0.5, 0.75, 1),
+                        labels = c("0.25", "0.5", "0.75", "1"),
+                        name = "% time flowing")+
+  theme_void()+
+  labs(title = "Seasonal Flow Permanence: W3")+
+  coord_equal()
+length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+
+```
+
+```{r}
+# easiest to access tribs
+subset <- c(31, 24, 22, 21, 15, 14, 1)
+one_shed <- filter(all_sheds2, 
+               wshed == "W3",
+               ID %in% subset)
+w3_flowing_subset <- filter(w3_flowing, ID %in% subset)
+
+ggplot()+
+  geom_tile(data = w3_df, aes(x=x, y=y), fill = "lightgrey")+
+  geom_point(data = w3_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+ geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat,label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+                        limits = c(0,1),
+                        breaks = c(0, 0.5, 1),
+                        labels = c("0", "0.5", "1"),
+                        name = "% time flowing")+
+  theme_void()+
+  labs(title = "Seasonal Flow Permanence: W3")+
+  coord_equal()
+length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+```
+
+Geospatial analysis for Hubbard Brook study catchments
+```{r}
+#make sure terra and whitebox tools are loaded packages
+#pour point coords, easting then northing
+w3_coords <- c(281543.36, 4870433.54)
+fb_coords <- c(280406.59, 4869122.57)
+zz_coords <- c(277280.37, 4867436.63)
+
+#provide path to flow direction raster for the whole valley
+d8 <- "./HB/hbef_wsheds/5mhydro_6_10_23/D8pointer.tif"
+
+#create pour point shapefile
+#make dataframe
+pourpoint <- data.frame("easting" = c(zz_coords[1]),
+                        "northing" = c(zz_coords[2]))
+#provide crs for shapefile and rasters
+utm19nCRS <- CRS("+init=epsg:4326")
+#convert dataframe to shapefile
+r <- SpatialPointsDataFrame(pourpoint[,1:2], pourpoint[,1:2], proj4string = utm19nCRS)
+#save shapefile
+raster::shapefile(r, "MyShapefile.shp", overwrite = TRUE)
+
+#perform whitebox watershed function over 5m resolution d8 pointer, using pour point
+wbt_watershed(
+  d8_pntr = d8,
+  pour_pts = "MyShapefile.shp",
+  output = "test.tif"
+)
+
+test <- raster("test.tif")
+plot(test)
+#find the sum of values in the raster
+#first test if the raster is too big to look through in the memory
+canProcessInMemory(test)
+#size of W3 in ha- 42.1925 ha
+#fb = 30.65
+#zz = 25.25
+
+sum(values(test), na.rm=TRUE) *25 /10000
+
+
+#wbt_fill_single_cell_pits(
+#                    dem = "McDonaldHollowDEM/brushDEMsm_5m_crs.tif",
+ #                   output = "McDonaldHollowDEM/bmstationdem_filled.tif")
+
+breach_output <- "./w3_dems/w3_dem_breached.tif"
+wbt_breach_depressions_least_cost(
+  dem = dem,
+  output = breach_output,
+  dist = 5,
+  fill = TRUE)
+
+fill_output <- "./w3_dems/w3_dem_filled.tif"
+wbt_fill_depressions_wang_and_liu(
+  dem = breach_output,
+  output = fill_output
+)
+
+flowacc_output <- "./w3_dems/w3_dem_flowacc.tif"
+wbt_d_inf_flow_accumulation(input = fill_output,
+                            output = flowacc_output,
+                            out_type = "Specific Contributing Area")
+
+slope_output <- "./w3_dems/w3_dem_slope.tif"
+wbt_slope(dem = fill_output,
+          output = slope_output,
+          units = "degrees")
+
+twi_output <- "./w3_dems/w3_dem_twi.tif"
+wbt_wetness_index(sca = flowacc_output, #flow accumulation
+                  slope = slope_output,
+                  output = twi_output)
+# create pour points
+WGScoor<-  MyData
+> coordinates(WGScoor)=~long+lat
+> proj4string(WGScoor)<- CRS("+proj=longlat +datum=WGS84")
+
+
+
+twi <- raster(twi_output)
+dem <- raster(dem)
+plot(twi)
+
+```
