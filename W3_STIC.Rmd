@@ -11,7 +11,7 @@ editor_options:
 library(pacman)
 p_load(tidyverse, sp, mapview, tmap, stars,
        lubridate, gganimate, animation, patchwork, ggrepel, whitebox,
-       terra)
+       terra,  tidyterra)
 #bring in STICr function
 source("classify_wetdry.R")
 source("tidy_hobo_data.R")
@@ -167,13 +167,129 @@ knitr::kable(out, format = "pipe")
 How do we visualize this information?
 2/25/24- switching from Rgeos land to terra land
 ```{r}
-#watershed 3 shape
+#Make a simple map for each watershed to serve as the template for downsampling
 #terra uses SpatVector, read in using vect()
 sheds <- vect('./HB/hbef_wsheds')
-w3 <- sheds %>% filter(WS == "WS3")
-stream <- st_read("./HB/hbstream/hb42_master_startend.shp")
-w3_rast <- raster("./HB/hbstream/w3_5m.tif")
-w3_rast2 <- projectRaster(w3_rast, crs = 4326)
+plot(sheds)
+#method to subset shapefiles- use base r ways to subset
+w3 <- sheds[2,]
+plot(w3)
+
+#read in shapefiles for each of the streams
+w3_stream <- vect("./HB/hbstream/hb42_master_startend.shp")
+fb_stream <- vect("./HB/hbstream/FB_subcatchment_flowlines.shp")
+zz_stream <- vect("./HB/hbstream/ZZ_subcatchment_flowlines.shp")
+#project the streams to wgs84
+w3_stream_wgs <- project(w3_stream, "+proj=longlat +datum=WGS84")
+fb_stream_wgs <- project(fb_stream, "+proj=longlat +datum=WGS84")
+zz_stream_wgs <- project(zz_stream, "+proj=longlat +datum=WGS84")
+#filter data for sensors in each shed
+data_w3 <- unique(all_w3 %>% 
+  dplyr::select(ID, deployment, lat, long)) 
+data_fb <- unique(all_fb %>% 
+  dplyr::select(ID, deployment, lat, long)) 
+data_zz <- unique(all_zz %>% 
+  dplyr::select(ID, deployment, lat, long))
+#convert dataframe of sensor locations to vector data
+points_w3 <- vect(data_w3, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
+points_fb <- vect(data_fb, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
+points_zz <- vect(data_zz, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
+#make plots of stream, then add points of sensor locations
+#removed axes and labels
+plot(w3_stream_wgs, col = "blue", axes = FALSE)
+points(points_w3)
+
+ggplot()+
+  geom_spatvector(data = w3_stream_wgs, color = "blue")+
+  geom_spatvector(data = points_w3)+
+  theme_void()
+
+zz_labels <- data_zz |> 
+  select(ID, lat, long)
+
+#creating reference image of sensor locations
+#w3
+ggplot()+
+  geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_spatvector(data = points_w3)+#aes(color = percent_flowing), size = 2)+
+  geom_text_repel(data = w3_flowing, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("ideal n = ",31))+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("testw3.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
+#fb
+ggplot()+
+  geom_spatvector(data = fb_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_spatvector(data = points_fb)+#aes(color = percent_flowing), size = 2)+
+  geom_text_repel(data = fb_flowing, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("ideal n = ",30))+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("testfb.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
+#zz
+ggplot()+
+  geom_spatvector(data = zz_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_spatvector(data = points_zz)+#aes(color = percent_flowing), size = 2)+
+  geom_text_repel(data = zz_flowing, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("ideal n = ",28))+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("testzz.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
+
+
+plot(fb_stream_wgs, col = "blue", axes = FALSE)
+points(points_fb)
+
+plot(zz_stream_wgs, col = "blue", axes = FALSE)
+points(points_zz)
+
+#copy and pasted from lower down- trying to figure out the best way to plot
+#plot to help me figure out where each sensor is
+ggplot()+
+  geom_tile(data = w3_df, aes(x=x, y=y), fill = "lightgrey")+
+  geom_point(data = w3_flowing, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+ geom_text_repel(data = w3_flowing, aes(x = long, y = lat,label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = "Seasonal Flow Permanence: W3")+
+  coord_equal()
+
+#one sensor per tributary, located centrally
+#remove sensors
+subset <- c(3, 7, 13, 16, 20, 23, 27, 28, 29, 30, 10)
+w3_flowing_subset <- filter(w3_flowing, ID %in% subset)
+
+ggplot()+
+  geom_tile(data = w3_df, aes(x=x, y=y), fill = "lightgrey")+
+  geom_point(data = w3_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+ geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat,label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+                        breaks = c(0.25, 0.5, 0.75, 1),
+                        labels = c("0.25", "0.5", "0.75", "1"),
+                        name = "% time flowing")+
+  theme_void()+
+  labs(title = "Seasonal Flow Permanence: W3")+
+  coord_equal()
+
+
+
+
+
+data_w3 <- unique(all_w3 %>% 
+  dplyr::select(ID, deployment, lat, long)) 
+
+test <- vect(data_w3, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
+
+plot(data_w3$lat, data_w3$long, add = TRUE)
+#terra raster example
+w3_rast <- rast("./HB/hbstream/w3_5m.tif")
+w3_rast
+crs(w3_rast)
+plot(w3_rast, col = "blue")
+
 test <- as.data.frame(w3_rast2, xy = TRUE) %>%
   na.omit()
 
@@ -315,10 +431,11 @@ Make some quick figures for meeting with Danielle
 ```{r}
 #watershed 3 shape
 
-w3_rast <- raster("./HB/hbstream/w3_5m.tif")
-fb_rast <- raster("./HB/hbstream/fb_5m.tif")
-zz_rast <- raster("./HB/hbstream/zz_5m.tif")
-
+w3_rast <- rast("./HB/hbstream/w3_5m.tif")
+fb_rast <- rast("./HB/hbstream/fb_5m.tif")
+zz_rast <- rast("./HB/hbstream/zz_5m.tif")
+w3_rast <- 1
+plot(w3_rast)
 w3_rast2 <- projectRaster(w3_rast, crs = 4326)
 fb_rast2 <- projectRaster(fb_rast, crs = 4326)
 zz_rast2 <- projectRaster(zz_rast, crs = 4326)
@@ -729,72 +846,257 @@ ggplot()+
   coord_equal()
 ```
 
-From meeting 1/29/24- don't just subset sensors randomly, test different sampling schemes that someone might actually implement in a real study
-```{r}
+Testing different logical sampling schemes
 
+Reference plots
+```{r}
 #plot to help me figure out where each sensor is
-ggplot()+
-  geom_tile(data = w3_df, aes(x=x, y=y), fill = "lightgrey")+
-  geom_point(data = w3_flowing, aes(x = long, y = lat, color = percent_flowing), size = 2)+
- geom_text_repel(data = w3_flowing, aes(x = long, y = lat,label = ID))+
+#creating reference image of sensor locations
+#w3
+w <- ggplot()+
+  geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_spatvector(data = points_w3)+#aes(color = percent_flowing), size = 2)+
+  geom_text_repel(data = w3_flowing, aes(x = long, y = lat, label = ID))+
   scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
   theme_void()+
-  labs(title = "Seasonal Flow Permanence: W3")+
-  coord_equal()
+  labs(title = paste0("ideal n = ",31))+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+#fb
+f <- ggplot()+
+  geom_spatvector(data = fb_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_spatvector(data = points_fb)+#aes(color = percent_flowing), size = 2)+
+  geom_text_repel(data = fb_flowing, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("ideal n = ",30))+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+#zz
+z <- ggplot()+
+  geom_spatvector(data = zz_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_spatvector(data = points_zz)+#aes(color = percent_flowing), size = 2)+
+  geom_text_repel(data = zz_flowing, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("ideal n = ",28))+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+```
 
-#one sensor per tributary, located centrally
-#remove sensors
-subset <- c(3, 7, 13, 16, 20, 23, 27, 28, 29, 30, 10)
+Reference flowing percentage
+```{r}
+subset <- seq(1, 31, 1)
+one_shed <- filter(all_sheds2, 
+               wshed == "W3")
 w3_flowing_subset <- filter(w3_flowing, ID %in% subset)
+prop <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+
 
 ggplot()+
-  geom_tile(data = w3_df, aes(x=x, y=y), fill = "lightgrey")+
+  geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
   geom_point(data = w3_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
- geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat,label = ID))+
+  #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
   scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
                         breaks = c(0.25, 0.5, 0.75, 1),
                         labels = c("0.25", "0.5", "0.75", "1"),
                         name = "% time flowing")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("w3_2.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
+
+#fb
+subset <- seq(1, 30, 1)
+one_shed <- filter(all_sheds2, 
+               wshed == "FB")
+fb_flowing_subset <- filter(fb_flowing, ID %in% subset)
+prop <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+
+
+ggplot()+
+  geom_spatvector(data = fb_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_point(data = fb_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
   theme_void()+
-  labs(title = "Seasonal Flow Permanence: W3")+
-  coord_equal()
+  labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+                        breaks = c(0.25, 0.5, 0.75, 1),
+                        labels = c("0.25", "0.5", "0.75", "1"),
+                        name = "% time flowing")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("fb.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
+
+#zz
+subset <- seq(1, 28, 1)
+one_shed <- filter(all_sheds2, 
+               wshed == "ZZ")
+zz_flowing_subset <- filter(zz_flowing, ID %in% subset)
+prop <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
 
 
+ggplot()+
+  geom_spatvector(data = zz_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_point(data = zz_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+                        breaks = c(0.25, 0.5, 0.75, 1),
+                        labels = c("0.25", "0.5", "0.75", "1"),
+                        name = "% time flowing")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("zz.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
+```
 
+One sensor per tributary, centrally located
+```{r}
+#one sensor per tributary, located centrally
+#w3
+subset <- c(3, 7, 13, 16, 20, 23, 27, 28, 29, 30, 10)
 one_shed <- filter(all_sheds2, 
                wshed == "W3",
                ID %in% subset)
+w3_flowing_subset <- filter(w3_flowing, ID %in% subset)
+prop <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
 
-length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
 
-mean(w3_flowing_subset$percent_flowing)
+ggplot()+
+  geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_point(data = w3_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+                        breaks = c(0.25, 0.5, 0.75, 1),
+                        labels = c("0.25", "0.5", "0.75", "1"),
+                        name = "% time flowing")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("w3_2.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
 
-  
-# Is averaging the flowing percentages the same as taking all otal times that something was flowing or not flowing and dividing it by the total number of times?
-  # They are very slightly different- I am going to stick with the fully integrated idea
+#fb
+subset <- c(1, 2, 6, 13, 17, 20, 25, 23, 27, 31)
+one_shed <- filter(all_sheds2, 
+               wshed == "FB",
+               ID %in% subset)
+fb_flowing_subset <- filter(fb_flowing, ID %in% subset)
+prop <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
 
+
+ggplot()+
+  geom_spatvector(data = fb_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_point(data = fb_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+                        breaks = c(0.25, 0.5, 0.75, 1),
+                        labels = c("0.25", "0.5", "0.75", "1"),
+                        name = "% time flowing")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("fb.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
+
+#zz
+subset <- c(2, 4, 8, 13, 11, 17, 16, 23, 25, 26, 27)
+one_shed <- filter(all_sheds2, 
+               wshed == "ZZ",
+               ID %in% subset)
+zz_flowing_subset <- filter(zz_flowing, ID %in% subset)
+prop <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+
+
+ggplot()+
+  geom_spatvector(data = zz_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_point(data = zz_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+                        breaks = c(0.25, 0.5, 0.75, 1),
+                        labels = c("0.25", "0.5", "0.75", "1"),
+                        name = "% time flowing")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("zz.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
+```
+
+beginning and end of tribs
+```{r}
 # Sensors at the beginning and end of tribs
+#w3
 subset <- c(1, 4, 5, 11, 14, 8, 15, 17, 18, 21, 22, 26, 24, 10, 29, 30)
 one_shed <- filter(all_sheds2, 
                wshed == "W3",
                ID %in% subset)
 w3_flowing_subset <- filter(w3_flowing, ID %in% subset)
+prop <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+
 
 ggplot()+
-  geom_tile(data = w3_df, aes(x=x, y=y), fill = "lightgrey")+
+  geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
   geom_point(data = w3_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
- geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat,label = ID))+
+  #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
   scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
                         breaks = c(0.25, 0.5, 0.75, 1),
                         labels = c("0.25", "0.5", "0.75", "1"),
                         name = "% time flowing")+
-  theme_void()+
-  labs(title = "Seasonal Flow Permanence: W3")+
-  coord_equal()
-length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("w3_2.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
 
+#fb
+subset <- c(1, 2, 14, 11, 21, 20, 24, 23, 29, 22, 31)
+one_shed <- filter(all_sheds2, 
+               wshed == "FB",
+               ID %in% subset)
+fb_flowing_subset <- filter(fb_flowing, ID %in% subset)
+prop <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+
+
+ggplot()+
+  geom_spatvector(data = fb_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_point(data = fb_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+                        breaks = c(0.25, 0.5, 0.75, 1),
+                        labels = c("0.25", "0.5", "0.75", "1"),
+                        name = "% time flowing")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("fb.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
+
+#zz
+subset <- c(1, 3, 9, 12, 11, 14, 15, 21, 20, 22, 26, 25, 27, 28)
+one_shed <- filter(all_sheds2, 
+               wshed == "ZZ",
+               ID %in% subset)
+zz_flowing_subset <- filter(zz_flowing, ID %in% subset)
+prop <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+
+
+ggplot()+
+  geom_spatvector(data = zz_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_point(data = zz_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+                        breaks = c(0.25, 0.5, 0.75, 1),
+                        labels = c("0.25", "0.5", "0.75", "1"),
+                        name = "% time flowing")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("zz.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
 ```
 
+
+easiest to access tribs
 ```{r}
 # easiest to access tribs
 subset <- c(31, 24, 22, 21, 15, 14, 1)
@@ -802,21 +1104,222 @@ one_shed <- filter(all_sheds2,
                wshed == "W3",
                ID %in% subset)
 w3_flowing_subset <- filter(w3_flowing, ID %in% subset)
+prop <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+
 
 ggplot()+
-  geom_tile(data = w3_df, aes(x=x, y=y), fill = "lightgrey")+
+  geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
   geom_point(data = w3_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
- geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat,label = ID))+
-  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
-                        limits = c(0,1),
-                        breaks = c(0, 0.5, 1),
-                        labels = c("0", "0.5", "1"),
-                        name = "% time flowing")+
+  #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
   theme_void()+
-  labs(title = "Seasonal Flow Permanence: W3")+
-  coord_equal()
-length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+  labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+                        breaks = c(0.25, 0.5, 0.75, 1),
+                        labels = c("0.25", "0.5", "0.75", "1"),
+                        name = "% time flowing")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("w3_2.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
+
+#fb
+subset <- c(seq(1, 30, 1))
+exclude <-  c(1, 2, 3, 4, 11, 12, 24, 23, 25)
+subset <- subset[! subset %in% exclude]
+one_shed <- filter(all_sheds2, 
+               wshed == "FB",
+               ID %in% subset)
+fb_flowing_subset <- filter(fb_flowing, ID %in% subset)
+prop <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+
+
+ggplot()+
+  geom_spatvector(data = fb_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_point(data = fb_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+                        breaks = c(0.25, 0.5, 0.75, 1),
+                        labels = c("0.25", "0.5", "0.75", "1"),
+                        name = "% time flowing")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("fb.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
+
+#zz
+subset <- c(seq(1, 28, 1))
+exclude <-  c(21, 18, 17, 14, 16, 19, 20, 22, 23, 24, 13, 15)
+subset <- subset[! subset %in% exclude]
+one_shed <- filter(all_sheds2, 
+               wshed == "ZZ",
+               ID %in% subset)
+zz_flowing_subset <- filter(zz_flowing, ID %in% subset)
+prop <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+
+
+ggplot()+
+  geom_spatvector(data = zz_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_point(data = zz_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+                        breaks = c(0.25, 0.5, 0.75, 1),
+                        labels = c("0.25", "0.5", "0.75", "1"),
+                        name = "% time flowing")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("zz.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
 ```
+
+every other sensor
+```{r}
+# every other sensor
+subset <- seq(1, 31, 2)
+one_shed <- filter(all_sheds2, 
+               wshed == "W3",
+               ID %in% subset)
+w3_flowing_subset <- filter(w3_flowing, ID %in% subset)
+prop <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+
+
+ggplot()+
+  geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_point(data = w3_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+                        breaks = c(0.25, 0.5, 0.75, 1),
+                        labels = c("0.25", "0.5", "0.75", "1"),
+                        name = "% time flowing")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("w3_2.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
+
+#fb
+subset <- c(seq(1, 30, 2))
+
+one_shed <- filter(all_sheds2, 
+               wshed == "FB",
+               ID %in% subset)
+fb_flowing_subset <- filter(fb_flowing, ID %in% subset)
+prop <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+
+
+ggplot()+
+  geom_spatvector(data = fb_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_point(data = fb_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+                        breaks = c(0.25, 0.5, 0.75, 1),
+                        labels = c("0.25", "0.5", "0.75", "1"),
+                        name = "% time flowing")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("fb.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
+
+#zz
+subset <- c(seq(1, 28, 2))
+
+one_shed <- filter(all_sheds2, 
+               wshed == "ZZ",
+               ID %in% subset)
+zz_flowing_subset <- filter(zz_flowing, ID %in% subset)
+prop <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+
+
+ggplot()+
+  geom_spatvector(data = zz_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_point(data = zz_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+                        breaks = c(0.25, 0.5, 0.75, 1),
+                        labels = c("0.25", "0.5", "0.75", "1"),
+                        name = "% time flowing")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("zz.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
+```
+
+other combination of every other sensor
+```{r}
+# every other sensor
+subset <- seq(2, 31, 2)
+one_shed <- filter(all_sheds2, 
+               wshed == "W3",
+               ID %in% subset)
+w3_flowing_subset <- filter(w3_flowing, ID %in% subset)
+prop <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+
+
+ggplot()+
+  geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_point(data = w3_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+                        breaks = c(0.25, 0.5, 0.75, 1),
+                        labels = c("0.25", "0.5", "0.75", "1"),
+                        name = "% time flowing")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("w3_2.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
+
+#fb
+subset <- c(seq(2, 30, 2))
+
+one_shed <- filter(all_sheds2, 
+               wshed == "FB",
+               ID %in% subset)
+fb_flowing_subset <- filter(fb_flowing, ID %in% subset)
+prop <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+
+
+ggplot()+
+  geom_spatvector(data = fb_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_point(data = fb_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+                        breaks = c(0.25, 0.5, 0.75, 1),
+                        labels = c("0.25", "0.5", "0.75", "1"),
+                        name = "% time flowing")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("fb.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
+
+#zz
+subset <- c(seq(2, 28, 2))
+
+one_shed <- filter(all_sheds2, 
+               wshed == "ZZ",
+               ID %in% subset)
+zz_flowing_subset <- filter(zz_flowing, ID %in% subset)
+prop <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+
+
+ggplot()+
+  geom_spatvector(data = zz_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_point(data = zz_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+                        breaks = c(0.25, 0.5, 0.75, 1),
+                        labels = c("0.25", "0.5", "0.75", "1"),
+                        name = "% time flowing")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+ggsave("zz.png", plot = last_plot(), scale = 1, width = 3, height = 3, units = "in")
+```
+
 
 Geospatial analysis for Hubbard Brook study catchments
 ```{r}
