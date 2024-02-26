@@ -9,16 +9,19 @@ editor_options:
 ```{r}
 #setup
 library(pacman)
-p_load(tidyverse, sp, mapview,
-       rgeos, spdplyr, tmap, stars, STICr,
+p_load(tidyverse, sp, mapview, tmap, stars,
        lubridate, gganimate, animation, patchwork, ggrepel, whitebox,
        terra)
-install.packages("rgdal")
+#bring in STICr function
+source("classify_wetdry.R")
+source("tidy_hobo_data.R")
+
 ```
 
 
 Read in data for all locations using for loop
 12/17/23- successfully made more flexible function, produces error message if sensor data (.csv) is missing from the folder containing the data for that deployment.
+2/25/24- STICr package not kept up to date, I need to make my own functions for it or get source code
 ```{r}
 
 #inputs: folder, ws, deployment
@@ -92,11 +95,6 @@ w3_3 <- read_deployment(folder = "./HBLoggers_11_14_23/",
 all_w3 <- rbind(w3_1, w3_2, w3_3)
 all_w3$datetime <- with_tz(all_w3$datetime, "US/Eastern")
 
-
-```
-
-Reading in loggers in Falls Brook and Zig Zag
-```{r}
 fb_1 <- read_deployment(folder = "./FBloggers_7_19_23/", 
                         wshed1 = "FB",
                         deployment1 = 1)
@@ -136,12 +134,42 @@ all_sheds2$tempC <- (all_sheds2$tempC - 32) * 5/9
 #create spreadsheet containing all of the data to send to Danielle Hare
 #write.csv(all_sheds2, "./DataForDanielle/HB_stic.csv")
 #data <- read_csv("./DataForDanielle/HB_stic.csv")
+
+```
+
+Figure out how many sensors failed in each shed in each deployment.
+sensors failed due to running out of battery, getting water logged and breaking, not providing any data when read, or being lost (only one in FB)
+```{r}
+#first figure out how many unique sensors I recorded being deployed:
+#make loop to build table that shows how many sensors were deployed, and how many I have data for:
+deploy <- read.csv("./Fieldwork_formatted_summer23/All_deployments.csv")
+sheds <- c("W3", "FB", "ZZ")
+deploys <- c(rep(1, 3), rep(2, 3), rep(3, 3))
+#create empty dataframe to hold results
+out <- data.frame("shed" = rep(sheds, 3), "deployment" = deploys, "ideal" = 0, "actual" = 0)
+
+#for loop that calculates the number of sensors deployed
+for(i in 1:length(out$shed)){
+  out$ideal[i] <- length(unique(deploy$ID[deploy$deployment == out$deployment[i] & deploy$wshed == out$shed[i]]))
+}
+
+#calculate column with the actual number of sensors, or ones that i successfully got data from
+for(i in 1:length(out$shed)){
+  out$actual[i] <- length(unique(all_sheds$ID[all_sheds$deployment == out$deployment[i] & all_sheds$wshed == out$shed[i]]))
+}
+#calculate number missing for each deployment and shed
+out$missing <- out$ideal - out$actual
+#display result as a nicely formatted table
+knitr::kable(out, format = "pipe")
+
 ```
 
 How do we visualize this information?
+2/25/24- switching from Rgeos land to terra land
 ```{r}
 #watershed 3 shape
-sheds <- readOGR(dsn='./HB/hbef_wsheds')
+#terra uses SpatVector, read in using vect()
+sheds <- vect('./HB/hbef_wsheds')
 w3 <- sheds %>% filter(WS == "WS3")
 stream <- st_read("./HB/hbstream/hb42_master_startend.shp")
 w3_rast <- raster("./HB/hbstream/w3_5m.tif")
