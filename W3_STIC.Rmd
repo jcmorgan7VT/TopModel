@@ -560,6 +560,44 @@ saveHTML(animate(x,
 Flow routing
 ```{r}
 routes <- read.csv("w3_flowrouting.csv")
+
+
+#3/18/24, doing analysis I talked about with Kevin
+#plotting the change in discharge against change in connected surface area
+head(all_sheds2)
+Q2023 <- read_csv("weir3_weir_3.csv")
+
+
+#creating function to determine connected surface area
+doi <- "2023-07-03 12:10:00"
+
+all_sheds2 |> 
+  filter(datetime == doi) |> 
+  filter(deployment == 1, wshed == "W3") |> 
+  select(lat, long, binary)
+
+points_w3 <- vect(data_w3, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
+
+high_col <- "#2274A5"
+low_col <- "#ECD444"
+
+ggplot()+
+  geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_point(data = w3_flowing_subset, 
+             aes(x = long, y = lat, fill = percent_flowing), 
+             pch = 21,
+             color = "black",
+             size = 3)+
+  #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
+  #scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
+  scale_fill_gradient(high = high_col, low = low_col,
+                        breaks = c(0.25, 0.5, 0.75, 1),
+                        labels = c("0.25", "0.5", "0.75", "1"),
+                        name = "% time flowing")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+
 ```
 
 ```{r}
@@ -888,16 +926,21 @@ one_shed <- filter(all_sheds2,
                wshed == "W3")
 w3_flowing_subset <- filter(w3_flowing, ID %in% subset)
 prop <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
-
+high_col <- "#2274A5"
+low_col <- "#ECD444"
 
 ggplot()+
   geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
-  geom_point(data = w3_flowing_subset, aes(x = long, y = lat, color = percent_flowing), size = 2)+
+  geom_point(data = w3_flowing_subset, 
+             aes(x = long, y = lat, fill = percent_flowing), 
+             pch = 21,
+             color = "black",
+             size = 3)+
   #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
-  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  #scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
   theme_void()+
   labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
-  scale_colour_gradient(high = "darkslategray1", low = "darkslategray",
+  scale_fill_gradient(high = high_col, low = low_col,
                         breaks = c(0.25, 0.5, 0.75, 1),
                         labels = c("0.25", "0.5", "0.75", "1"),
                         name = "% time flowing")+

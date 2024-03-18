@@ -19,11 +19,16 @@ After meeting with Kevin and JP, I am doing an analysis that will be more useful
     - Find CO2 fluxes in NE headwater streams
 - The streams are dynamic in the middle ranges- how do I express this? (Less important than others)
 
+2/23/24
+Adapting script from rgeos and raster land to do analysis that Linda is thinking about. (Never finished)
+
+3/18/24
+Adapting script to test against my observations of flow
+
 ```{r}
 #setup chunk
 library(pacman)
-p_load(tidyverse, raster, rgdal, sp, sf, mapview,
-       rgeos, spdplyr, tmap, stars,
+p_load(tidyverse, terra, rgdal, sp, sf, mapview, spdplyr, tmap, stars,
        lubridate, gganimate, animation, patchwork,
        whitebox, grid, scales, ggthemes, viridis,
        parallel, future.apply) 
@@ -968,6 +973,13 @@ ggplot(one_year)+
   labs(x = "Date", 
        y = "Stream Surface Area (m^2)",
        title = "Stream surface area through time by watershed")
+
+```
+
+3/18/24
+Doing what Kevin and I talked about with my model runs from Carrie's data
+```{r}
+sa <- read.csv("./Data4Matt/dailyFlowingArea.csv")
 
 ```
 

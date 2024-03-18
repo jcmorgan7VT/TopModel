@@ -197,11 +197,12 @@ Getting PET for HB from Green et al. 2021, using Penman Monteith
 9/28/22
 Attempting to implement PET, figure out what other parameters are and how I will get them
 
-
+2/2/24
+Revisiting, trying to get topmodel to run
 ```{r, warning=FALSE}
 #generating topographic index
-setwd("C:/Users/John/Documents/HBTopModel/HB/knb-lter-hbr.211.2")
-dem <- raster("dem1m.tif")
+
+dem <- raster(".//HB/knb-lter-hbr.211.2/dem1m.tif")
 setwd("C:/Users/John/Documents/HBTopModel/HB/hbef_wsheds")
 
 w3 <- readOGR(dsn='.',layer = 'hbef_wsheds')
