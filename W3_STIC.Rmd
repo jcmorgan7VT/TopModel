@@ -208,6 +208,47 @@ zz_labels <- data_zz |>
   select(ID, lat, long)
 
 #creating reference image of sensor locations
+#seasonal flow permanence at each point
+#make binary columns for wet and dry
+all_sheds2$binary <- 1
+all_sheds2$binary[all_sheds2$wetdry == "dry"] <- 0
+
+
+shed <- "W3"
+#point_seasonal <- function(shed){
+  one_shed <- filter(all_sheds2, 
+               wshed == shed)
+  IDs <- unique(one_shed$ID)
+
+  w3_flowing <- one_shed %>% 
+  group_by(ID)  %>% 
+  reframe("percent_flowing" = sum(binary)/length(binary),
+            "lat" = unique(lat),
+            "long" = unique(long))
+shed <- "FB"
+#point_seasonal <- function(shed){
+  one_shed <- filter(all_sheds2, 
+               wshed == shed)
+  IDs <- unique(one_shed$ID)
+
+  fb_flowing <- one_shed %>% 
+  group_by(ID)  %>% 
+  reframe("percent_flowing" = sum(binary)/length(binary),
+            "lat" = unique(lat),
+            "long" = unique(long))
+  
+shed <- "ZZ"
+#point_seasonal <- function(shed){
+  one_shed <- filter(all_sheds2, 
+               wshed == shed)
+  IDs <- unique(one_shed$ID)
+
+  zz_flowing <- one_shed %>% 
+  group_by(ID)  %>% 
+  reframe("percent_flowing" = sum(binary)/length(binary),
+            "lat" = unique(lat),
+            "long" = unique(long))
+
 #w3
 ggplot()+
   geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
@@ -381,16 +422,25 @@ instead of making plots for the wettest and driest times, make raster grid plots
 binary <- c("#754668",
             "#17BEBB"
   )
+binary <- c("#ECD444", "#2274A5")
 
 #remove measurements from first deployment that are not every 30 mins
-plot_test <- filter(all_w3, deployment == 1)%>%
+plot_test <- filter(all_w3, deployment != 1)%>%
  slice(which(row_number() %% 3 == 0))
 head(plot_test)
 
-plot_test2 <- filter(all_zz, deployment != 1) #%>% rbind(plot_test)
+#flo accumulation to extract upstream area from
+flowacc_wgs <-  project(flowacc, "EPSG:4326", method = "near")
+
+data_w3_coords <- unique(all_w3 %>% 
+  dplyr::select(lat, long))
+
+lineup <- terra::extract(output_wgs, data_w3_coords)
+
+plot_test2 <- filter(all_w3, deployment != 1) #%>% rbind(plot_test)
 dates <- unique(plot_test2$datetime)
 
-spots_flowing <- plot_test2 %>% 
+spots_flowing <- plot_test %>% 
   group_by(datetime) %>% 
   summarise("percent_flowing" = sum(binary)/length(binary))
 
@@ -403,11 +453,10 @@ ggplot(plot_test2)+
                     labels = c("No flow", "flowing"),
                     name = ""
                     )+
-  labs(title = "Streamflow permanence in ZZ")+
+  labs(title = "Streamflow permanence in W3")+
   theme_classic()
 #ways to make better
-#order points by distance to outlet
-#change colors
+#order points by distance to outlet or drainage area
 #add discharge and precipitation
 ```
 
@@ -429,6 +478,7 @@ length(unique(xy.list))
 12/20/23
 Make some quick figures for meeting with Danielle
 ```{r}
+#NOT CONVERTED FROM RASTER
 #watershed 3 shape
 
 w3_rast <- rast("./HB/hbstream/w3_5m.tif")
@@ -566,39 +616,169 @@ routes <- read.csv("w3_flowrouting.csv")
 #plotting the change in discharge against change in connected surface area
 head(all_sheds2)
 Q2023 <- read_csv("weir3_weir_3.csv")
+binary_col <- c("#2274A5", "#ECD444")
 
 
 #creating function to determine connected surface area
-doi <- "2023-07-03 12:10:00"
+#plot the network at this given time
+show_network <- function(doi){
+  #doi <- "2023-07-03 12:10:00"
 
-all_sheds2 |> 
+points <- all_sheds2 |> 
   filter(datetime == doi) |> 
   filter(deployment == 1, wshed == "W3") |> 
-  select(lat, long, binary)
+  select(lat, long, wetdry)
 
-points_w3 <- vect(data_w3, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
-
-high_col <- "#2274A5"
-low_col <- "#ECD444"
+points2 <-  vect(points, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
 
 ggplot()+
   geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
-  geom_point(data = w3_flowing_subset, 
-             aes(x = long, y = lat, fill = percent_flowing), 
+  geom_point(data = points, 
+             aes(x = long, y = lat, fill = wetdry), 
              pch = 21,
              color = "black",
              size = 3)+
   #geom_text_repel(data = w3_flowing_subset, aes(x = long, y = lat, label = ID))+
   #scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
   theme_void()+
-  labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
-  scale_fill_gradient(high = high_col, low = low_col,
-                        breaks = c(0.25, 0.5, 0.75, 1),
-                        labels = c("0.25", "0.5", "0.75", "1"),
-                        name = "% time flowing")+
+  #labs(title = paste0("n = ",length(subset), ", tot % = ", signif(prop, 2)))+
+  scale_fill_manual(drop = FALSE,
+                     values = c("#ECD444", "#2274A5"),
+                    breaks = c("dry", "wet"),
+                    labels = c("No flow", "flowing"),
+                    name = ""
+                    )+
   theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+}
+#test the show network function
+show_network("2023-07-03 12:20:00")
+
+#determine how much of the network is connected to the outlet
+
 
 ```
+
+```{r}
+#also run Carrie's model on the discharge from this summer
+#copy and pasted from QPM_analysis_9_29_23
+#read in processed discharge from this summer
+#units are mm/day, which is correct for the model
+q_data <- read.csv("./HB/HBEF_DailyStreamflow_1956-2023.csv")
+q_data$DATE <- ymd(q_data$DATE)
+w3_q <- q_data |> 
+  filter(WS == 3) |> 
+  filter(DATE >= "2023-01-01")
+
+#watershed boundary, already has crs
+W3 <- vect('./HB/hbef_wsheds') |> 
+  filter(WS == "WS3")
+
+#flowaccumulation to provide predefined channel
+flowacc_path <- "./HB/5m hydro enforced DEM/TWI_andotherlayers/flowacc.tif"
+flowacc <- terra::rast(flowacc_path)
+crs(flowacc) <- crs(W3)
+#crop and mask flowacc
+flow_crop <- terra::crop(flowacc, W3)
+flow_mask <- terra::mask(flow_crop, W3)
+#threshold flow accumulation raster
+flow_mask[flow_mask < 700] <- NA
+flow_mask[flow_mask >= 700] <- 1
+#using a critical drainage area of 700 * 5 m^2, or 3500 m^2 by     default
+
+#twi as input to logistic regression
+twi_output <- "./HB/5m hydro enforced DEM/TWI_andotherlayers/twi.tif"
+twi <- terra::rast(twi_output)
+crs(twi) <- crs(W3)
+#crop and mask twi
+twi_crop <- terra::crop(twi, W3)
+w3_twi <- terra::mask(twi_crop, W3)
+
+#function to calculate probability of flow raster
+willit <- function(input_logtwi, inputQ){
+  #b0, or intercept from Kevin's email from Carrie, might need to redo regression
+  b0 <- -35.43
+  #all ofther coefs from Jensen et al. 2018
+  twi_coef <- 15.57
+  flow_coef <- 0.12
+
+  b1x1 <- flow_coef * inputQ
+  b2x2 <- twi_coef * input_logtwi
+
+  #logistic regression from Jensen et al. 2018
+  p <- exp(b0 + b1x1 + b2x2)/(1 + exp(b0 + b1x1 + b2x2))
+  return(p)
+}
+
+qlist <- w3_q %>% 
+  dplyr::select(DATE, Streamflow)
+
+probable_flow_extent <- function(qlist){
+  out <- willit(log(w3_twi), qlist$Streamflow)
+  #crs(out) <- 26919
+  
+  out[out < 0.9] <- 0
+  out[out >= 0.9] <- 1
+  
+  #removes values that are not within pre-defined channel
+  masked <- mask(out, flow_mask)
+  
+  g_df <- masked #%>%
+    #as.points() %>%
+    #as.data.frame() %>% 
+    #mutate(Date = qlist$DATE)
+  
+  return(g_df)
+}
+output <- probable_flow_extent(qlist[200 ,])
+plot(output)
+#convert output to wgs84, 
+output_wgs <-  project(output, "EPSG:4326", method = "near")
+#plot(output_wgs)
+#points(w3_stream_wgs)
+
+#then extract values by points for each day at each sensor location
+head(all_w3)
+head(all_sheds2)
+
+data_w3_coords <- unique(all_sheds2 %>% 
+  dplyr::select(lat, long))
+
+dates <- seq(ymd("2023-07-03"), ymd("2023-11-13"), 1)
+qlist2 <- filter(qlist, DATE %in% dates)
+
+output <- probable_flow_extent(qlist[200 ,])
+lineup <- terra::extract(output_wgs, data_w3_coords)
+
+#empty string to hold output of for loop
+right <- c()
+
+#get daily flow permanence to compare
+all_sheds2$binary <- 1
+all_sheds2$binary[all_sheds2$wetdry == "dry"] <- 0
+
+#for loop to iterate through each day, and run Carrie's model
+for(i in 1:length(dates)){
+  output <- probable_flow_extent(qlist2[i ,])
+  output_wgs <-  project(output, "EPSG:4326", method = "near")
+
+}
+
+#method copied from below to calculate percentage flowing, just need to convert to daily time step
+list <- c("W3", "FB", "ZZ")
+out <- seq(1, 3, 1)
+
+for(i in 1:length(list)){
+one_shed <- filter(all_sheds2, 
+               wshed == list[i])
+#seasonal flow permanence of whole watershed for
+perc_flow <- length(one_shed$wetdry[one_shed$wetdry == "wet"]) / length(one_shed$wetdry)
+out[i] <- perc_flow
+}
+
+percent_seasonal_flow <- data.frame("shed" = list,
+                                       "perc_flow" = out)
+```
+
 
 ```{r}
 #find all unique combinations of wet and dry sensors
@@ -683,46 +863,7 @@ percent_seasonal_flow <- data.frame("shed" = list,
 ```
 
 ```{r}
-#seasonal flow permanence at each point
-#make binary columns for wet and dry
-all_sheds2$binary <- 1
-all_sheds2$binary[all_sheds2$wetdry == "dry"] <- 0
 
-
-shed <- "W3"
-#point_seasonal <- function(shed){
-  one_shed <- filter(all_sheds2, 
-               wshed == shed)
-  IDs <- unique(one_shed$ID)
-
-  w3_flowing <- one_shed %>% 
-  group_by(ID)  %>% 
-  reframe("percent_flowing" = sum(binary)/length(binary),
-            "lat" = unique(lat),
-            "long" = unique(long))
-shed <- "FB"
-#point_seasonal <- function(shed){
-  one_shed <- filter(all_sheds2, 
-               wshed == shed)
-  IDs <- unique(one_shed$ID)
-
-  fb_flowing <- one_shed %>% 
-  group_by(ID)  %>% 
-  reframe("percent_flowing" = sum(binary)/length(binary),
-            "lat" = unique(lat),
-            "long" = unique(long))
-  
-shed <- "ZZ"
-#point_seasonal <- function(shed){
-  one_shed <- filter(all_sheds2, 
-               wshed == shed)
-  IDs <- unique(one_shed$ID)
-
-  zz_flowing <- one_shed %>% 
-  group_by(ID)  %>% 
-  reframe("percent_flowing" = sum(binary)/length(binary),
-            "lat" = unique(lat),
-            "long" = unique(long))
   
 #watershed 3 shape
 
