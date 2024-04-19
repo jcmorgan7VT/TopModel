@@ -6,6 +6,7 @@ output: html_document
 editor_options: 
   chunk_output_type: console
 ---
+testing to make sure this works
 ```{r}
 #setup
 library(pacman)

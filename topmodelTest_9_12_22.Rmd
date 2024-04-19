@@ -8,15 +8,13 @@ date: '2022-09-12'
 Downloading and playing with TopModel package, just finished reading Hornberger paper.
 
 ```{r}
-#install.packages('topmodel')
+install.packages('topmodel')
 ```
 
 ```{r, echo = false, warning=FALSE}
 library(tidyverse)
 library(topmodel)
-library(raster)
-library(rgdal)
-library(spdplyr)
+library(terra)
 library(lubridate)
 ```
 
@@ -51,7 +49,7 @@ image(DEM)
 data(huagrahuma.dem)
 DEM <- sinkfill(huagrahuma.dem, res=25, degree=0.1)
 topindex <- topidx(DEM, resolution=25)
-
+hist(topindex$atb)
 # The values need to be split into a set of classes, since topmodel() is a semidistributed model that lumps hydrologically similar areas into the same hydrological response units.
 # Here we define 16 hydrological response units:
 
