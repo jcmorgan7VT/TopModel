@@ -167,7 +167,7 @@ knitr::kable(out, format = "pipe")
 
 How do we visualize this information?
 2/25/24- switching from Rgeos land to terra land
-```{r}
+```{r prep-for-mapping}
 #Make a simple map for each watershed to serve as the template for downsampling
 #terra uses SpatVector, read in using vect()
 sheds <- vect('./HB/hbef_wsheds')
@@ -420,9 +420,7 @@ ggplot()+
 
 instead of making plots for the wettest and driest times, make raster grid plots showing all times
 ```{r}
-binary <- c("#754668",
-            "#17BEBB"
-  )
+
 binary <- c("#ECD444", "#2274A5")
 
 #remove measurements from first deployment that are not every 30 mins
@@ -456,6 +454,28 @@ ggplot(plot_test2)+
                     )+
   labs(title = "Streamflow permanence in W3")+
   theme_classic()
+
+plot_test3 <- plot_test2 %>% 
+  mutate(Depth = "Shallow") %>% 
+  filter(ID %in% c(3, 7, 12, 17, 2, 4, 10, 6, 14, 15, 16, 13))
+plot_test3$Depth[plot_test3$ID %in% c(3, 7, 12, 17)] <- "Deep"
+
+binary <- c("#DB995A",
+            "#586BA4"
+  )
+ggplot(plot_test3)+
+  geom_tile(aes(x = datetime, y = ID, fill = wetdry))+
+  #facet_grid(~deployment, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c("dry", "wet"),
+                    labels = c("No flow", "flowing"),
+                    name = ""
+                    )+
+  labs(title = "Streamflow permanence in W3",
+       x = "")+
+  theme_classic()+
+  facet_wrap(~Depth)
 #ways to make better
 #order points by distance to outlet or drainage area
 #add discharge and precipitation
@@ -1029,7 +1049,7 @@ ggplot()+
 Testing different logical sampling schemes
 
 Reference plots
-```{r}
+```{r reference-plots}
 #plot to help me figure out where each sensor is
 #creating reference image of sensor locations
 #w3
@@ -1588,5 +1608,10 @@ WGScoor<-  MyData
 twi <- raster(twi_output)
 dem <- raster(dem)
 plot(twi)
+
+
+ggplot(data = filter(all_sheds, ID == 2 & wshed == "W3" & datetime <= "2023-07-10 13:00:00" & datetime >= "2023-07-03 13:00:00"))+
+  geom_line(aes(x = datetime,
+                y = condUncal))
 
 ```

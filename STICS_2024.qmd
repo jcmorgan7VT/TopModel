@@ -1,0 +1,248 @@
+---
+title: "STIC_2024"
+format: html
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+8/4/24
+Reading in observations from STIC sensors in Hubbard Brook from summer 2024.
+Summary of observations for Kevin and JP
+```{r}
+
+#inputs: folder, ws, deployment
+read_deployment <- function(folder, wshed1){
+#file location
+#folder = "./summer2024/ZZ_summer24/"
+                     #   wshed1 = "ZZ"
+  
+files <- list.files(folder, pattern = ".csv")
+#deployment info
+deploy <- read.csv("./summer2024/stic2024.csv")
+#filter values must have different names than colnames
+w3 <- filter(deploy, wshed == wshed1)
+w3_n <- na.omit(w3)
+w3_n$start <- mdy_hm(w3_n$start)
+w3_n$end <- mdy_hm(w3_n$stop)
+
+sensor_ids <- as.character(w3_n$sensor)
+sensor_num <- (substr(files, 1, 8))
+
+# r <- c(sensor_ids, sensor_num)
+# r
+# length(unique(r))
+#i <- 12
+alldat <- NA
+for(i in 1:length(sensor_ids)){
+  chosen <- paste0(sensor_ids[i], ".csv") #line to add i
+  tryCatch({
+  path_to_chosen <- paste0(folder, chosen)
+  data <- tidy_hobo_data(path_to_chosen)
+  #  data <- tidy_hobo_data("./summer2024/ZZ_summer24/20011657.csv")
+
+
+  #subset deployment information
+  deployment_info <- filter(w3_n, sensor == sensor_ids[i])
+
+  wet <- classify_wetdry(data,
+                         classify_var = "condUncal",
+                         method = "absolute",
+                         threshold = 10)
+  #remove dates before and after start and end date of deployment
+  wet_filt <- filter(wet, datetime > deployment_info$start) %>%
+    filter(datetime < deployment_info$end) %>% 
+    bind_cols(deployment_info)
+
+
+  if(i == 1) alldat <- wet_filt
+  if(i > 1) alldat <- rbind(alldat, wet_filt)
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+}
+
+#create new column that indicates if every sensor is deployed or not
+alldat$all_deployed <- 0
+
+alldat$all_deployed[alldat$datetime >= max(alldat$start) & alldat$datetime <= min(alldat$end)] <- 1
+
+readout <- alldat %>% dplyr::select(-start, -end)
+
+return(readout)
+}
+
+w3_24 <- read_deployment(folder = "./summer2024/W3_summer24/", 
+                        wshed1 = "W3")
+fb_24 <- read_deployment(folder = "./summer2024/FB_summer24/", 
+                        wshed1 = "FB")
+zz_24 <- read_deployment(folder = "./summer2024/ZZ_summer24/", 
+                        wshed1 = "ZZ")
+#got error, was due to spreadsheet having a duplicate record. For trouble shooting in the future- if a for loop fails, if i leave the index as the variable the loop is using, I can try to run each component of the loop on the one that failed.
+w3_3 <- read_deployment(folder = "./HBLoggers_11_14_23/", 
+                        wshed1 = "W3",
+                        deployment1 = 3)
+
+all_w3 <- rbind(w3_1, w3_2, w3_3)
+all_w3$datetime <- with_tz(all_w3$datetime, "US/Eastern")
+
+fb_1 <- read_deployment(folder = "./FBloggers_7_19_23/", 
+                        wshed1 = "FB",
+                        deployment1 = 1)
+fb_2 <- read_deployment(folder = "./FBloggers_9_20_23/", 
+                        wshed1 = "FB",
+                        deployment1 = 2)
+fb_3 <- read_deployment(folder = "./HBLoggers_11_14_23/", 
+                        wshed1 = "FB",
+                        deployment1 = 3)
+
+all_fb <- rbind(fb_1, fb_2, fb_3)
+
+
+zz_1 <- read_deployment(folder = "./ZZloggers_7_20_23/", 
+                        wshed1 = "ZZ",
+                        deployment1 = 1)
+zz_2 <- read_deployment(folder = "./ZZloggers_9_21_23/", 
+                        wshed1 = "ZZ",
+                        deployment1 = 2)
+zz_3 <- read_deployment(folder = "./HBLoggers_11_14_23/", 
+                        wshed1 = "ZZ",
+                        deployment1 = 3)
+
+all_zz <- rbind(zz_1, zz_2, zz_3)
+
+all_sheds <- rbind(all_w3, all_fb, all_zz)
+
+#qlist[(which(qlist$Streamflow >= 30)),]
+all_sheds[which.max(all_sheds$tempC),]
+
+all_sheds2 <- all_sheds[-(which(all_sheds$sensor == 20011664)),]
+all_sheds2[which.max(all_sheds2$tempC),]
+
+#convert temperature to degreese celsius, read in as farenheit from hoboware
+all_sheds2$tempC <- (all_sheds2$tempC - 32) * 5/9
+
+#create spreadsheet containing all of the data to send to Danielle Hare
+#write.csv(all_sheds2, "./DataForDanielle/HB_stic.csv")
+#data <- read_csv("./DataForDanielle/HB_stic.csv")
+
+binary <- c("#DB995A",
+            "#586BA4"
+  )
+ggplot(fb_24)+
+  geom_tile(aes(x = datetime, y = number, fill = wetdry))+
+  #facet_grid(~deployment, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c("dry", "wet"),
+                    labels = c("No flow", "flowing"),
+                    name = ""
+                    )+
+  labs(title = "Streamflow permanence in W3",
+       x = "")+
+  theme_classic()
+
+```
+
+```{r}
+#make the figure above, but with sensors ordered by drainage area on the y-axis
+```
+
+  
+**8/13/24**
+Prepping for research wrap up meeting with Kevin tomorrow.
+Make summary map showing where sensors worked, and where they didn't
+categories:
+  0- not redeployed
+  1- redeployed, worked whole time
+  2- redeployed, failed or lost
+  
+```{r prep-for-mapping}
+# copied from prep-for-mapping chunk from W3_STIC.Rmd
+#Make a simple map for each watershed to serve as the template 
+sheds <- vect('./HB/hbef_wsheds')
+plot(sheds)
+#method to subset shapefiles- use base r ways to subset
+w3 <- sheds[2,]
+plot(w3)
+
+#read in shapefiles for each of the streams
+w3_stream <- vect("./HB/hbstream/hb42_master_startend.shp")
+fb_stream <- vect("./HB/hbstream/FB_subcatchment_flowlines.shp")
+zz_stream <- vect("./HB/hbstream/ZZ_subcatchment_flowlines.shp")
+#project the streams to wgs84
+w3_stream_wgs <- project(w3_stream, "+proj=longlat +datum=WGS84")
+fb_stream_wgs <- project(fb_stream, "+proj=longlat +datum=WGS84")
+zz_stream_wgs <- project(zz_stream, "+proj=longlat +datum=WGS84")
+#filter data for sensors in each shed
+#changed to names used in this document
+data_w3 <- unique(w3_24 %>% 
+  dplyr::select(number, sensor, lat, long)) %>% 
+  rename("ID" = number)
+data_fb <- unique(fb_24 %>% 
+  dplyr::select(number, sensor, lat, long)) %>% 
+  rename("ID" = number)
+data_zz <- unique(zz_24 %>% 
+  dplyr::select(number, sensor, lat, long)) %>% 
+  rename("ID" = number)
+#convert dataframe of sensor locations to vector data
+points_w3 <- vect(data_w3, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
+points_fb <- vect(data_fb, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
+points_zz <- vect(data_zz, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
+#make plots of stream, then add points of sensor locations
+#removed axes and labels
+```
+
+```{r compare-sensor-IDs}
+# comparing sensor IDs to figure out which ones died, or were not redeployed
+
+actual <- as.numeric(unique(w3_24$number))
+ideal <- as.numeric(unique(w3_n$number))
+files <- list.files("./summer2024/W3_summer24/", pattern = ".csv")
+actual <- as.numeric(substr(files, 1, 8))
+
+setdiff(ideal, actual)
+
+deploy <- read.csv("./summer2024/stic2024.csv")
+#filter values must have different names than colnames
+w3 <- filter(deploy, wshed == "W3")
+w3_n <- na.omit(w3)
+simple_table <- w3_n %>% 
+  select(number, sensor) %>% 
+  unique()
+simple_table
+
+sensor_ids <- as.character(w3_n$sensor)
+
+```
+
+```{r}
+# modified reference plots from W3_STIC, chunk #creating reference image of sensor locations
+#w3
+ggplot()+
+  geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_spatvector(data = points_w3)+#aes(color = percent_flowing), size = 2)+
+  geom_text_repel(data = data_w3, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = "W3 2024 STICS")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+#fb
+ggplot()+
+  geom_spatvector(data = fb_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_spatvector(data = points_fb)+#aes(color = percent_flowing), size = 2)+
+  geom_text_repel(data = data_fb, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = "FB 2024 STICS")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+#zz
+ggplot()+
+  geom_spatvector(data = zz_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_spatvector(data = points_zz)+#aes(color = percent_flowing), size = 2)+
+  geom_text_repel(data = data_zz, aes(x = long, y = lat, label = ID))+
+  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  theme_void()+
+  labs(title = "ZZ 2024 STICS")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+```
+
+
