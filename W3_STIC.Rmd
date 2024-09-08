@@ -134,7 +134,7 @@ all_sheds2$tempC <- (all_sheds2$tempC - 32) * 5/9
 
 #create spreadsheet containing all of the data to send to Danielle Hare
 #write.csv(all_sheds2, "./DataForDanielle/HB_stic.csv")
-#data <- read_csv("./DataForDanielle/HB_stic.csv")
+data <- read_csv("./DataForMary/HB_stic.csv")
 
 ```
 
