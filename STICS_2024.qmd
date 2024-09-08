@@ -10,6 +10,18 @@ editor_options:
 Reading in observations from STIC sensors in Hubbard Brook from summer 2024.
 Summary of observations for Kevin and JP
 ```{r}
+#setup
+library(pacman)
+p_load(tidyverse, sp, mapview, tmap, stars,
+       lubridate, gganimate, animation, patchwork, ggrepel, whitebox,
+       terra,  tidyterra)
+#bring in STICr function
+source("classify_wetdry.R")
+source("tidy_hobo_data.R")
+
+```
+
+```{r}
 
 #inputs: folder, ws, deployment
 read_deployment <- function(folder, wshed1){
@@ -127,7 +139,7 @@ all_sheds2$tempC <- (all_sheds2$tempC - 32) * 5/9
 binary <- c("#DB995A",
             "#586BA4"
   )
-ggplot(fb_24)+
+ggplot(w3_24)+
   geom_tile(aes(x = datetime, y = number, fill = wetdry))+
   #facet_grid(~deployment, scales = "free") + 
   scale_fill_manual(drop = FALSE,
@@ -143,6 +155,60 @@ ggplot(fb_24)+
 ```
 
 ```{r}
+#make the figure above, but without all the weird gaps
+head(filter(w3_24, number == 17))
+head(filter(w3_24, number == 16))
+
+#sensor 17 has a 15 min timestep instead of a 30 min one, reduce the timestep to match the others and the figure will look nicer
+without_17 <- filter(w3_24, number != 17)
+sub <- filter(w3_24, number == 17) %>% 
+  filter(row_number() %% 2 == 0)
+
+w3_fixed <- rbind(without_17, sub)
+
+ggplot(w3_fixed)+
+  geom_tile(aes(x = datetime, y = number, fill = wetdry))+
+  #facet_grid(~deployment, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c("dry", "wet"),
+                    labels = c("No flow", "flowing"),
+                    name = ""
+                    )+
+  labs(title = "Streamflow permanence in W3",
+       x = "")+
+  theme_classic()
+
+
+ggplot(fb_24)+
+  geom_tile(aes(x = datetime, y = number, fill = wetdry))+
+  #facet_grid(~deployment, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c("dry", "wet"),
+                    labels = c("No flow", "flowing"),
+                    name = ""
+                    )+
+  labs(title = "Streamflow permanence in FB",
+       x = "")+
+  theme_classic()
+
+ggplot(zz_24)+
+  geom_tile(aes(x = datetime, y = number, fill = wetdry))+
+  #facet_grid(~deployment, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c("dry", "wet"),
+                    labels = c("No flow", "flowing"),
+                    name = ""
+                    )+
+  labs(title = "Streamflow permanence in ZZ",
+       x = "")+
+  theme_classic()
+```
+
+```{r}
+
 #make the figure above, but with sensors ordered by drainage area on the y-axis
 ```
 
@@ -193,24 +259,71 @@ points_zz <- vect(data_zz, geom=c("long", "lat"), crs = "+proj=longlat +datum=WG
 
 ```{r compare-sensor-IDs}
 # comparing sensor IDs to figure out which ones died, or were not redeployed
-
-actual <- as.numeric(unique(w3_24$number))
-ideal <- as.numeric(unique(w3_n$number))
-files <- list.files("./summer2024/W3_summer24/", pattern = ".csv")
-actual <- as.numeric(substr(files, 1, 8))
-
-setdiff(ideal, actual)
-
+# W3
+# find the difference between all sensor locations and the ones actually deployed
+# read in all deployment info
 deploy <- read.csv("./summer2024/stic2024.csv")
-#filter values must have different names than colnames
 w3 <- filter(deploy, wshed == "W3")
 w3_n <- na.omit(w3)
-simple_table <- w3_n %>% 
-  select(number, sensor) %>% 
-  unique()
-simple_table
 
-sensor_ids <- as.character(w3_n$sensor)
+# compare the actual sensor numbers deployed to the ideal or maximum
+actual <- as.numeric(unique(w3_24$number))
+ideal <- as.numeric(unique(w3_n$number))
+setdiff(ideal, actual)
+
+#create simple table to use for plotting
+simple_table <- w3_n %>% 
+  select(number, sensor, lat, long) %>% 
+  unique() %>% 
+  mutate("status" = "Good (23)")
+simple_table$status[c(23, 4, 6, 10)] <- "Maybe (4)"
+simple_table$status[c(25)] <- "Failed (1)"
+simple_table$status[c(26, 30, 31)] <- "Not deployed (3)"
+points_w3 <- vect(simple_table, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
+
+#### repeat for FB
+deploy <- read.csv("./summer2024/stic2024.csv")
+fb_deploy <- filter(deploy, wshed == "FB")
+fb_n <- na.omit(fb_deploy)
+
+# compare the actual sensor numbers deployed to the ideal or maximum
+actual <- as.numeric(unique(fb_24$number))
+ideal <- as.numeric(unique(fb_n$number))
+setdiff(ideal, actual)
+
+#create simple table to use for plotting
+simple_table_fb <- fb_n %>% 
+  select(number, sensor, lat, long) %>% 
+  unique() %>% 
+  mutate("status" = "Good (23)")
+simple_table_fb <- simple_table_fb[order(simple_table_fb$number),]
+
+simple_table_fb$status[c(8, 1)] <- "Maybe (4)"
+simple_table_fb$status[c(18)] <- "Failed (1)"
+simple_table_fb$status[c(10, 12, 16, 21, 30)] <- "Not deployed (3)"
+points_fb <- vect(simple_table_fb, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
+
+### Repeat for ZZ
+deploy <- read.csv("./summer2024/stic2024.csv")
+zz_deploy <- filter(deploy, wshed == "ZZ")
+zz_n <- na.omit(zz_deploy)
+
+# compare the actual sensor numbers deployed to the ideal or maximum
+actual <- as.numeric(unique(zz_24$number))
+ideal <- as.numeric(unique(zz_n$number))
+setdiff(ideal, actual)
+
+#create simple table to use for plotting
+simple_table_zz <- zz_n %>% 
+  select(number, sensor, lat, long) %>% 
+  unique() %>% 
+  mutate("status" = "Good (24)")
+simple_table_zz <- simple_table_zz[order(simple_table_zz$number),]
+
+simple_table_zz$status[c(1, 23)] <- "Maybe (2)"
+simple_table_zz$status[c(22, 28)] <- "Failed (2)"
+#simple_table_fb$status[c(10, 12, 16, 21, 30)] <- "Not deployed (3)"
+points_zz <- vect(simple_table_zz, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
 
 ```
 
@@ -219,12 +332,52 @@ sensor_ids <- as.character(w3_n$sensor)
 #w3
 ggplot()+
   geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
-  geom_spatvector(data = points_w3)+#aes(color = percent_flowing), size = 2)+
-  geom_text_repel(data = data_w3, aes(x = long, y = lat, label = ID))+
-  scale_colour_gradient(high = "darkslategray1", low = "darkslategray")+
+  geom_spatvector(data = points_w3, aes(color = status))+#aes(color = percent_flowing), size = 2)+
+  geom_text_repel(data = simple_table, aes(x = long, y = lat, label = number))+
   theme_void()+
   labs(title = "W3 2024 STICS")+
   theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+
+#fb
+ggplot()+
+  geom_spatvector(data = fb_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_spatvector(data = points_fb, aes(color = status))+#aes(color = percent_flowing), size = 2)+
+  geom_text_repel(data = simple_table_fb, aes(x = long, y = lat, label = number))+
+  theme_void()+
+  labs(title = "FB 2024 STICS")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+
+#zz
+ggplot()+
+  geom_spatvector(data = zz_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_spatvector(data = points_zz, aes(color = status))+#aes(color = percent_flowing), size = 2)+
+  geom_text_repel(data = simple_table_zz, aes(x = long, y = lat, label = number))+
+  theme_void()+
+  labs(title = "ZZ 2024 STICS")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+
+
+#make map with pie charts in space
+p_load(scatterpie)
+#reformat data, start with just a single week
+w3_fixed$binary <- 1
+w3_fixed$binary[w3_fixed$wetdry == "dry"] <- 0
+
+one_week <- filter(w3_fixed, datetime >= "2024-05-20 23:30:00") %>% 
+  filter(datetime <= "2024-05-27 23:30:00") %>% 
+  select(datetime, binary, number, lat, long) %>% 
+  pivot_wider(names_from = datetime, values_from = binary)
+names <- one_week %>% select(-c(number, lat, long)) %>% 
+  colnames()
+
+ggplot() + 
+  geom_scatterpie(aes(x=long, y=lat, group=number), 
+                           data=one_week,
+                           cols=names,
+                           size = 2,
+                  color = NA) +   coord_equal()+ 
+  theme(legend.position="none")
+#pie chart plot is not working well
 #fb
 ggplot()+
   geom_spatvector(data = fb_stream_wgs, color = "grey", lwd = 1.5)+
@@ -245,4 +398,7 @@ ggplot()+
   theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
 ```
 
+```{r}
+
+```
 
