@@ -1,0 +1,128 @@
+---
+title: "Test Frameworks"
+format: html
+editor: visual
+---
+
+9/8/24
+Test different theoretical frameworks using my data.
+```{r reading-in-STIC-obs}
+#reading in final format data for summer 23
+data_23 <- read_csv("./DataForMary/HB_stic.csv")
+#reading in final format data for summer 24
+data_24 <- read_csv("./summer2024/STICS2024.csv")
+```
+9/10/24
+Make figures showing the full period of record
+```{r}
+binary <- c("#DB995A",
+            "#586BA4"
+  )
+
+data_23$mins <- minute(data_23$datetime)
+data_24$mins <- minute(data_24$datetime)
+
+head(filter(data_23, wshed == "W3", deployment == 1))
+ggplot()+
+  geom_tile(data = filter(data_23, wshed == "W3", mins %in% c(0, 30)),
+            aes(x = datetime, y = ID, fill = wetdry))+
+  geom_tile(data = filter(data_24, wshed == "W3", mins %in% c(0, 30)),
+            aes(x = datetime, y = number, fill = wetdry))+
+  #facet_grid(~deployment, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c("dry", "wet"),
+                    labels = c("No flow", "flowing"),
+                    name = ""
+                    )+
+  labs(title = "Streamflow permanence in W3",
+       x = "")+
+  theme_classic()
+```
+
+FB
+```{r}
+
+head(filter(data_24, wshed == "FB", sensor == 21736589))
+
+ggplot()+
+  geom_tile(data = filter(data_23, wshed == "FB", mins %in% c(0, 30)),
+            aes(x = datetime, y = ID, fill = wetdry))+
+  geom_tile(data = filter(data_24, wshed == "FB", mins %in% c(0, 30)),
+            aes(x = datetime, y = number, fill = wetdry))+
+  #facet_grid(~deployment, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c("dry", "wet"),
+                    labels = c("No flow", "flowing"),
+                    name = ""
+                    )+
+  labs(title = "Streamflow permanence in FB",
+       x = "")+
+  theme_classic()
+```
+ZZ
+```{r}
+ggplot()+
+  geom_tile(data = filter(data_23, wshed == "ZZ", mins %in% c(0, 30)),
+            aes(x = datetime, y = ID, fill = wetdry))+
+  geom_tile(data = filter(data_24, wshed == "ZZ", mins %in% c(0, 30)),
+            aes(x = datetime, y = number, fill = wetdry))+
+  #facet_grid(~deployment, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c("dry", "wet"),
+                    labels = c("No flow", "flowing"),
+                    name = ""
+                    )+
+  labs(title = "Streamflow permanence in ZZ",
+       x = "")+
+  theme_classic()
+```
+
+Start with Carrie's model- how well does it capture the dynamics that I observed?
+```{r}
+#read in discharge from W3-- input to Carrie's model, discharge in L/s
+q <- read_csv("https://portal.edirepository.org/nis/dataviewer?packageid=knb-lter-hbr.1.17&entityid=efc477b3ef1bb3dd8b9355c9115cd849")
+#input discharge needs to be in mm/day?
+#reference to understand difference between daily mean and instantaneous streamflow:
+#https://hydrofunctions.readthedocs.io/en/master/notebooks/DailyMean_vs_Instant.html
+
+#creating minute column, used to filter out higher temporal resolution measurements for plotting
+data_23$mins <- minute(data_23$datetime)
+data_24$mins <- minute(data_24$datetime)
+
+#find the range of dates that I need discharge for
+start <- min(data_23$datetime)
+stop <- max(data_23$datetime)
+
+#filtering discharge down to the range of dates
+q_23 <- q %>% 
+  filter(DATETIME > start & DATETIME < stop)
+
+```
+  
+```{r}
+#chunk that is actually running the model
+
+#function to calculate probability of flow raster
+willit <- function(input_logtwi, inputQ){
+  #b0, or intercept from Kevin's email from Carrie, might need to redo regression
+  b0 <- -35.43
+  #all ofther coefs from Jensen et al. 2018
+  twi_coef <- 15.57
+  flow_coef <- 0.12
+
+  b1x1 <- flow_coef * inputQ
+  b2x2 <- twi_coef * input_logtwi
+
+  #logistic regression from Jensen et al. 2018
+  p <- exp(b0 + b1x1 + b2x2)/(1 + exp(b0 + b1x1 + b2x2))
+  return(p)
+}
+
+test <- willit(log(twi3), 1)
+plot(test)
+#after running, threshold by some probability of flowing
+```
+
