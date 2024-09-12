@@ -7,6 +7,8 @@ editor: visual
 9/8/24
 Test different theoretical frameworks using my data.
 ```{r reading-in-STIC-obs}
+library(pacman)
+p_load(tidyverse, terra)
 #reading in final format data for summer 23
 data_23 <- read_csv("./DataForMary/HB_stic.csv")
 #reading in final format data for summer 24
@@ -98,10 +100,47 @@ stop <- max(data_23$datetime)
 
 #filtering discharge down to the range of dates
 q_23 <- q %>% 
-  filter(DATETIME > start & DATETIME < stop)
+  filter(DATETIME > start & DATETIME < stop) %>% 
+  #convert to mm/day.
+  #converting instantaneous streamflow to mm/day by taking measurement, and scaling   it up as if that was the discharge for the whole day. It is not, it is just at that   moment, but should fix any units/order of magnitude issues
+  mutate("Q_mm_day" = Discharge_ls * 0.001 * 86400 / 420000 * 1000) 
+q_23$mins <- minute(q_23$DATETIME)
+
+#removing times that are not coincident with STIC observations
+q_23_f <- filter(q_23, mins %in% c(0, 30))
+
+ggplot(q_23_f, aes(x  = DATETIME, y = Q_mm_day))+
+  geom_line()+
+  labs(title = "Discharge from W3, July to Nov 2023",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()
 
 ```
   
+```{r}
+#calculate then extract the TWI at each of the sensor locations. May be tricky to make sure that they line up with flowlines, or places with greatest drainage area.
+twi3 <- "./w3_dems/w3_dem_twi.tif"
+#twi calculated in script topmodel_fromscratch_2_23_23.Rmd
+twi3 <- raster(twi3)
+plot(twi3)
+
+#plot locations of sensors
+locs <- data_23 %>% 
+  filter(wshed == "W3") %>% 
+  select(ID, deployment, lat, long) %>% 
+  unique()
+
+locs_shape <- vect(locs, 
+                   geom=c("long", "lat"), 
+                   crs = "+proj=longlat +datum=WGS84")
+lcc <- terra::project(locs_shape,"+init=epsg:4326")
+
+#extract twi values using terra::extract
+twi_ex <- extract(twi3+0, lcc)
+
+```
+
 ```{r}
 #chunk that is actually running the model
 
@@ -124,5 +163,6 @@ willit <- function(input_logtwi, inputQ){
 test <- willit(log(twi3), 1)
 plot(test)
 #after running, threshold by some probability of flowing
+#loop through the input dataframe of discharge, once for each sensor. make an indexed array perhaps?
 ```
 
