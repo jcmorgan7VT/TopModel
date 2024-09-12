@@ -122,23 +122,25 @@ ggplot(q_23_f, aes(x  = DATETIME, y = Q_mm_day))+
 #calculate then extract the TWI at each of the sensor locations. May be tricky to make sure that they line up with flowlines, or places with greatest drainage area.
 twi3 <- "./w3_dems/w3_dem_twi.tif"
 #twi calculated in script topmodel_fromscratch_2_23_23.Rmd
-twi3 <- raster(twi3)
+twi3 <- rast(twi3)
 plot(twi3)
 
 #plot locations of sensors
 locs <- data_23 %>% 
   filter(wshed == "W3") %>% 
-  select(ID, deployment, lat, long) %>% 
+  select(ID, lat, long) %>% 
   unique()
 
 locs_shape <- vect(locs, 
                    geom=c("long", "lat"), 
                    crs = "+proj=longlat +datum=WGS84")
-lcc <- terra::project(locs_shape,"+init=epsg:4326")
+lcc <- terra::project(locs_shape,crs(twi3))
 
 #extract twi values using terra::extract
-twi_ex <- extract(twi3+0, lcc)
+twi_ex <- extract(twi3, lcc)
 
+#these point locations are not manually corrected.
+#in next chunk, calculate the percent chance that each spot is flowing based off of an input discharge
 ```
 
 ```{r}
@@ -164,5 +166,21 @@ test <- willit(log(twi3), 1)
 plot(test)
 #after running, threshold by some probability of flowing
 #loop through the input dataframe of discharge, once for each sensor. make an indexed array perhaps?
+
+test <- willit(twi_ex$w3_dem_twi, q_23_f$Q_mm_day)
+
+#for tomorrow- get this to work. Will need to run it throughout the entire discharge record?
+for(i in 1:length(twi_ex$ID)){
+  out <- willit(log(twi_ex$w3_dem_twi), runs[i])
+  out2 <- out %>%
+  rasterToPoints %>%
+  as.data.frame()
+  
+  out2$DATE <- dates[i]
+  
+  if(i == 1) final <- out2
+  if(i > 1) final <- rbind(final, out2)
+
+}
 ```
 
