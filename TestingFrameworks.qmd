@@ -2,13 +2,15 @@
 title: "Test Frameworks"
 format: html
 editor: visual
+editor_options: 
+  chunk_output_type: console
 ---
 
 9/8/24
 Test different theoretical frameworks using my data.
 ```{r reading-in-STIC-obs}
 library(pacman)
-p_load(tidyverse, terra)
+p_load(tidyverse, terra, tidyterra, whitebox)
 #reading in final format data for summer 23
 data_23 <- read_csv("./DataForMary/HB_stic.csv")
 #reading in final format data for summer 24
@@ -169,18 +171,201 @@ plot(test)
 
 test <- willit(twi_ex$w3_dem_twi, q_23_f$Q_mm_day)
 
-#for tomorrow- get this to work. Will need to run it throughout the entire discharge record?
+#unmodified df to store output of for loop
+mod <- q_23_f
+#loop through discharge record for each STIC location
 for(i in 1:length(twi_ex$ID)){
-  out <- willit(log(twi_ex$w3_dem_twi), runs[i])
-  out2 <- out %>%
-  rasterToPoints %>%
-  as.data.frame()
+  mod$ID <- twi_ex$ID[i]
+  mod$percent_flowing <- willit(log(twi_ex$w3_dem_twi[i]), mod$Q_mm_day)
   
-  out2$DATE <- dates[i]
   
-  if(i == 1) final <- out2
-  if(i > 1) final <- rbind(final, out2)
+  if(i == 1) final <- mod
+  if(i > 1) final <- rbind(final, mod)
 
 }
+
+#thresholding resulting percent chances to get a binary of flowing/not flowing
+#using three thresholds reported in Carrie's paper
+final$per_90 <- 0
+final$per_90[final$percent_flowing >= 90] <- 1
+
+final$per_75 <- 0
+final$per_75[final$percent_flowing >= 75] <- 1
+
+final$per_50 <- 0
+final$per_50[final$percent_flowing >= 50] <- 1
+#then compare prediction versus actual
+w3_23 <- filter(data_23, wshed == "W3") %>% 
+  rename("DATETIME" = datetime)
+#make a binary wet versus dry column
+w3_23$binary <- 1
+w3_23$binary[w3_23$wetdry == "dry"] <- 0
+
+#join the two tables
+forp <- left_join(w3_23, final, by = c("DATETIME", "ID"))
+```
+
+```{r}
+#plot to compare observed versus predicted at all sensors
+#hard to do for binary data, instead maybe calculate the percentage of time that it is correct?
+#compare binary column to 3 different percent chance of flow columns
+length(which(forp$binary == forp$per_90))/length(forp$DATETIME)
+IDs <- unique(forp$ID)
+
+for(i in 1:length(IDs)){
+  inter <- filter(forp, ID == IDs[i])
+  result <- length(which(inter$binary == inter$per_90))/length(inter$DATETIME)
+  mod <- data.frame("ID" = IDs[i],
+                    "percent_agree" = result)
+  
+  if(i == 1) final <- mod
+  if(i > 1) final <- rbind(final, mod)
+
+}
+
+#plot through space
+#Make a simple map for each watershed to serve as the template 
+sheds <- vect('./HB/hbef_wsheds')
+plot(sheds)
+#method to subset shapefiles- use base r ways to subset
+w3 <- sheds[2,]
+plot(w3)
+
+#read in shapefiles for each of the streams
+w3_stream <- vect("./HB/hbstream/hb42_master_startend.shp")
+w3_stream_wgs <- project(w3_stream, "+proj=longlat +datum=WGS84")
+data_w3 <- unique(w3_23 %>% 
+  dplyr::select(ID, lat, long)) %>% 
+  left_join(final, by = "ID")
+
+points_w3 <- vect(data_w3, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
+
+#create simple table that contains labels for points
+simple_table_fb <- fb_n %>% 
+  select(number, sensor, lat, long) %>% 
+  unique() %>% 
+  mutate("status" = "Good (23)")
+simple_table_fb <- simple_table_fb[order(simple_table_fb$number),]
+
+
+ggplot()+
+  geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_spatvector(data = points_w3, aes(color = percent_agree), size = 3)+#aes(color = percent_flowing), size = 2)+
+  #geom_text_repel(data = simple_table, aes(x = long, y = lat, label = number))+
+  theme_void()+
+  labs(title = "Agreement with Carrie's model")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+
+
+
+```
+
+```{r}
+#run Carrie's model again on a courser twi dataset
+#instead of using 10m dem on HB database, use coarsened 1m dem
+#aggregate function, by factor of 10- 1 m resolution to 10 m res.
+#tried just aggregating twi raster, but it looks funny
+twi3_c <- aggregate(twi3, 10)
+#should aggregate dem, then do all of the transformations to it
+#read in 1 m dem
+dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
+m1 <- rast(dem)
+m10 <- aggregate(m1, 10)
+plot(m10, xlim = c(281400, 282000),
+     ylim = c(4870600, 4871200))
+#first crop and mask to W3 shape
+sheds <- vect('./HB/hbef_wsheds')
+w3 <- sheds[2,]
+dem_crop <- terra::crop(m10, w3)
+dem_mask <- terra::mask(dem_crop, w3)
+plot(dem_mask)
+#save raster, because whitebox wants it is a files location instead of an object in R
+writeRaster(dem_mask, "./w3_dems/hbef_10mdem/10mdem_crop.tif")
+
+cropped <- "./w3_dems/hbef_10mdem/10mdem_crop.tif"
+twi <- terra::rast(cropped)
+twi_crop <- terra::crop(twi, w3)
+plot(twi_crop)
+
+breach_output <- "./w3_dems/hbef_10mdem/10m_dem_breached.tif"
+wbt_breach_depressions_least_cost(
+  dem = cropped,
+  output = breach_output,
+  dist = 5,
+  fill = TRUE)
+
+fill_output <- "./w3_dems/hbef_10mdem/10m_dem_filled.tif"
+wbt_fill_depressions_wang_and_liu(
+  dem = breach_output,
+  output = fill_output
+)
+
+flowacc_output <- "./w3_dems/hbef_10mdem/10m_dem_flowacc.tif"
+wbt_d_inf_flow_accumulation(input = fill_output,
+                            output = flowacc_output,
+                            out_type = "Specific Contributing Area")
+
+slope_output <- "./w3_dems/hbef_10mdem/10m_dem_slope.tif"
+wbt_slope(dem = fill_output,
+          output = slope_output,
+          units = "degrees")
+
+twi_output <- "./w3_dems/hbef_10mdem/10m_dem_twi.tif"
+wbt_wetness_index(sca = flowacc_output, #flow accumulation
+                  slope = slope_output,
+                  output = twi_output)
+
+twi <- terra::rast(twi_output)
+twi_crop <- terra::crop(twi, w3)
+plot(twi_crop)
+# 9/16/24
+#There is something wrong with the 10m dem that I have. Will try to download it from data repo again. 
+#Reached out to Kevin and JP, the 10m dem on the repo is bad. instead use corsened 1 m lidar
+```
+
+```{r}
+#re-run Carrie's model on the coarser DEM, and compare to my observations
+#extract values of twi at sensor locations
+twi_ex <- extract(twi_crop, lcc)
+
+#unmodified df to store output of for loop
+mod <- q_23_f
+#loop through discharge record for each STIC location
+for(i in 1:length(twi_ex$ID)){
+  mod$ID <- twi_ex$ID[i]
+  mod$percent_flowing <- willit(log(twi_ex$"10m_dem_twi"[i]), mod$Q_mm_day)
+  
+  
+  if(i == 1) final <- mod
+  if(i > 1) final <- rbind(final, mod)
+
+}
+#thresholding resulting percent chances to get a binary of flowing/not flowing
+#using three thresholds reported in Carrie's paper
+final$per_90 <- 0
+final$per_90[final$percent_flowing >= 90] <- 1
+
+final$per_75 <- 0
+final$per_75[final$percent_flowing >= 75] <- 1
+
+final$per_50 <- 0
+final$per_50[final$percent_flowing >= 50] <- 1
+#then compare prediction versus actual
+w3_23 <- filter(data_23, wshed == "W3") %>% 
+  rename("DATETIME" = datetime)
+#make a binary wet versus dry column
+w3_23$binary <- 1
+w3_23$binary[w3_23$wetdry == "dry"] <- 0
+
+#join the two tables
+forp <- left_join(w3_23, final, by = c("DATETIME", "ID"))
+
+```
+
+
+```{r}
+#under what wetness conditions does Carrie's model agree with my observations the most?
+#where and when does the model agree the least?
+#where does it do the worst and the best?
 ```
 
