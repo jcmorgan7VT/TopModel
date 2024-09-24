@@ -9,8 +9,10 @@ editor_options:
 9/8/24
 Test different theoretical frameworks using my data.
 ```{r reading-in-STIC-obs}
+#loading packages
 library(pacman)
 p_load(tidyverse, terra, tidyterra, whitebox)
+
 #reading in final format data for summer 23
 data_23 <- read_csv("./DataForMary/HB_stic.csv")
 #reading in final format data for summer 24
@@ -18,7 +20,7 @@ data_24 <- read_csv("./summer2024/STICS2024.csv")
 ```
 9/10/24
 Make figures showing the full period of record
-```{r}
+```{r full-record-w3-plot}
 binary <- c("#DB995A",
             "#586BA4"
   )
@@ -45,7 +47,7 @@ ggplot()+
 ```
 
 FB
-```{r}
+```{r full-record-FB-plot}
 
 head(filter(data_24, wshed == "FB", sensor == 21736589))
 
@@ -66,7 +68,7 @@ ggplot()+
   theme_classic()
 ```
 ZZ
-```{r}
+```{r full-record-zz-plot}
 ggplot()+
   geom_tile(data = filter(data_23, wshed == "ZZ", mins %in% c(0, 30)),
             aes(x = datetime, y = ID, fill = wetdry))+
@@ -87,7 +89,9 @@ ggplot()+
 Start with Carrie's model- how well does it capture the dynamics that I observed?
 ```{r}
 #read in discharge from W3-- input to Carrie's model, discharge in L/s
-q <- read_csv("https://portal.edirepository.org/nis/dataviewer?packageid=knb-lter-hbr.1.17&entityid=efc477b3ef1bb3dd8b9355c9115cd849")
+#q <- read_csv("https://portal.edirepository.org/nis/dataviewer?packageid=knb-lter-hbr.1.17&entityid=efc477b3ef1bb3dd8b9355c9115cd849")
+#write.csv(q, "HB_5minQ.csv")
+q <- read_csv("HB_5minQ.csv")
 #input discharge needs to be in mm/day?
 #reference to understand difference between daily mean and instantaneous streamflow:
 #https://hydrofunctions.readthedocs.io/en/master/notebooks/DailyMean_vs_Instant.html
@@ -241,11 +245,11 @@ data_w3 <- unique(w3_23 %>%
 points_w3 <- vect(data_w3, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
 
 #create simple table that contains labels for points
-simple_table_fb <- fb_n %>% 
-  select(number, sensor, lat, long) %>% 
-  unique() %>% 
-  mutate("status" = "Good (23)")
-simple_table_fb <- simple_table_fb[order(simple_table_fb$number),]
+# simple_table_w3 <- fb_n %>% 
+#   select(number, sensor, lat, long) %>% 
+#   unique() %>% 
+#   mutate("status" = "Good (23)")
+# simple_table_fb <- simple_table_fb[order(simple_table_fb$number),]
 
 
 ggplot()+
@@ -280,7 +284,7 @@ dem_crop <- terra::crop(m10, w3)
 dem_mask <- terra::mask(dem_crop, w3)
 plot(dem_mask)
 #save raster, because whitebox wants it is a files location instead of an object in R
-writeRaster(dem_mask, "./w3_dems/hbef_10mdem/10mdem_crop.tif")
+#writeRaster(dem_mask, "./w3_dems/hbef_10mdem/10mdem_crop.tif")
 
 cropped <- "./w3_dems/hbef_10mdem/10mdem_crop.tif"
 twi <- terra::rast(cropped)
@@ -326,39 +330,120 @@ plot(twi_crop)
 ```{r}
 #re-run Carrie's model on the coarser DEM, and compare to my observations
 #extract values of twi at sensor locations
-twi_ex <- extract(twi_crop, lcc)
+```
 
+```{r}
+#coarsened DEM is not working, and I am going to test different scenarios anyway, so having it in the framework of a function will behoove me
+#writing function form of Carrie's model
+#inputs
+#willit function already defined
+willit <- function(input_logtwi, inputQ){
+  #b0, or intercept from Kevin's email from Carrie, might need to redo regression
+  b0 <- -35.43
+  #all ofther coefs from Jensen et al. 2018
+  twi_coef <- 15.57
+  flow_coef <- 0.12
+
+  b1x1 <- flow_coef * inputQ
+  b2x2 <- twi_coef * input_logtwi
+
+  #logistic regression from Jensen et al. 2018
+  p <- exp(b0 + b1x1 + b2x2)/(1 + exp(b0 + b1x1 + b2x2))
+  return(p)
+}
+#discharge is the next input
+
+test <- willit(log(twi3), 1)
+plot(test)
+
+apply_regression <- function(inputQ, inputTWI, observations){
 #unmodified df to store output of for loop
-mod <- q_23_f
+  mod <- inputQ
 #loop through discharge record for each STIC location
-for(i in 1:length(twi_ex$ID)){
-  mod$ID <- twi_ex$ID[i]
-  mod$percent_flowing <- willit(log(twi_ex$"10m_dem_twi"[i]), mod$Q_mm_day)
+  for(i in 1:length(inputTWI$ID)){
+      mod$ID <- inputTWI$ID[i]
+      mod$percent_flowing <- willit(log(inputTWI[i,2]), mod$Q_mm_day)
   
+  
+    if(i == 1) final <- mod
+    if(i > 1) final <- rbind(final, mod)
+
+  }
+  #threshold resulting percent chances to get a binary of flowing/not flowing
+  #using three thresholds reported in Carrie's paper
+  final$per_90 <- 0
+  final$per_90[final$percent_flowing >= 90] <- 1
+
+  final$per_75 <- 0
+  final$per_75[final$percent_flowing >= 75] <- 1
+
+  final$per_50 <- 0
+  final$per_50[final$percent_flowing >= 50] <- 1
+  #then compare prediction versus actual
+  w3_23 <- filter(observations, wshed == "W3") %>% 
+    rename("DATETIME" = datetime)
+  #make a binary wet versus dry column
+  w3_23$binary <- 1
+  w3_23$binary[w3_23$wetdry == "dry"] <- 0
+
+  #join the two tables
+  #forp is output that contains everything
+  forp <- left_join(w3_23, final, by = c("DATETIME", "ID"))
+  IDs <- unique(forp$ID)
+
+  for(i in 1:length(IDs)){
+  inter <- filter(forp, ID == IDs[i])
+  result <- length(which(inter$binary == inter$per_90))/length(inter$DATETIME)
+  mod <- data.frame("ID" = IDs[i],
+                    "percent_agree" = result)
   
   if(i == 1) final <- mod
   if(i > 1) final <- rbind(final, mod)
 
+  }
+  #final or data_w3 contains summarized values
+  #data_w3 is final output
+  unique(w3_23 %>% 
+  dplyr::select(ID, lat, long)) %>% 
+  left_join(final, by = "ID")
 }
-#thresholding resulting percent chances to get a binary of flowing/not flowing
-#using three thresholds reported in Carrie's paper
-final$per_90 <- 0
-final$per_90[final$percent_flowing >= 90] <- 1
 
-final$per_75 <- 0
-final$per_75[final$percent_flowing >= 75] <- 1
+applied <- apply_regression(inputQ = q_23_f,
+                            inputTWI = twi_ex,
+                            observations = data_23)
+points_w3 <- vect(applied, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
+ggplot()+
+  geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_spatvector(data = points_w3, aes(color = percent_agree), size = 3)+#aes(color = percent_flowing), size = 2)+
+  #geom_text_repel(data = simple_table, aes(x = long, y = lat, label = number))+
+  theme_void()+
+  labs(title = "Agreement with Carrie's model")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
 
-final$per_50 <- 0
-final$per_50[final$percent_flowing >= 50] <- 1
-#then compare prediction versus actual
-w3_23 <- filter(data_23, wshed == "W3") %>% 
-  rename("DATETIME" = datetime)
-#make a binary wet versus dry column
-w3_23$binary <- 1
-w3_23$binary[w3_23$wetdry == "dry"] <- 0
+```
 
-#join the two tables
-forp <- left_join(w3_23, final, by = c("DATETIME", "ID"))
+```{r}
+
+twi_ex2 <- extract(twi_crop, lcc)
+
+applied <- apply_regression(inputQ = q_23_f,
+                            inputTWI = twi_ex2,
+                            observations = data_23)
+
+points_w3 <- vect(applied, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
+
+ggplot()+
+  geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_spatvector(data = points_w3, aes(color = percent_agree), size = 3)+#aes(color = percent_flowing), size = 2)+
+  #geom_text_repel(data = simple_table, aes(x = long, y = lat, label = number))+
+  theme_void()+
+  labs(title = "Agreement with Carrie's model")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+```
+
+9/24/24
+Figure out why the values from the normal twi raster appear to be the same probability as those from the 10 m coarsened DEM. OR make sure that points align with where the twi raster thinks that the stream is
+```{r}
 
 ```
 
