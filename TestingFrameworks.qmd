@@ -11,7 +11,7 @@ Test different theoretical frameworks using my data.
 ```{r reading-in-STIC-obs}
 #loading packages
 library(pacman)
-p_load(tidyverse, terra, tidyterra, whitebox)
+p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson)
 
 #reading in final format data for summer 23
 data_23 <- read_csv("./DataForMary/HB_stic.csv")
@@ -333,9 +333,9 @@ plot(twi_crop)
 ```
 
 ```{r}
-#coarsened DEM is not working, and I am going to test different scenarios anyway, so having it in the framework of a function will behoove me
+# 9/25/24- rewrote code to get out of for loop world, vectorize all the operations
+
 #writing function form of Carrie's model
-#inputs
 #willit function already defined
 willit <- function(input_logtwi, inputQ){
   #b0, or intercept from Kevin's email from Carrie, might need to redo regression
@@ -351,106 +351,310 @@ willit <- function(input_logtwi, inputQ){
   p <- exp(b0 + b1x1 + b2x2)/(1 + exp(b0 + b1x1 + b2x2))
   return(p)
 }
-#discharge is the next input
 
-test <- willit(log(twi3), 1)
-plot(test)
+#before passing to function, join Q, TWI, and observations into one big df
+#then apply function to appropriate columns
+data_23$binary <- 1
+data_23$binary[data_23$wetdry == "dry"] <- 0
 
-apply_regression <- function(inputQ, inputTWI, observations){
-#unmodified df to store output of for loop
-  mod <- inputQ
-#loop through discharge record for each STIC location
-  for(i in 1:length(inputTWI$ID)){
-      mod$ID <- inputTWI$ID[i]
-      mod$percent_flowing <- willit(log(inputTWI[i,2]), mod$Q_mm_day)
-  
-  
-    if(i == 1) final <- mod
-    if(i > 1) final <- rbind(final, mod)
-
-  }
+everything_bagel <- data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, lat, long, binary) %>% 
+  left_join(twi_ex2, by = "ID") %>% 
+  rename("DATETIME" = datetime,
+         "twi" = '10m_dem_twi') %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  mutate(percent_flowing = willit(log(twi), Q_mm_day) * 100) 
   #threshold resulting percent chances to get a binary of flowing/not flowing
   #using three thresholds reported in Carrie's paper
-  final$per_90 <- 0
-  final$per_90[final$percent_flowing >= 90] <- 1
+  everything_bagel$per_90 <- 0
+  everything_bagel$per_90[everything_bagel$percent_flowing >= 90] <- 1
 
-  final$per_75 <- 0
-  final$per_75[final$percent_flowing >= 75] <- 1
+  everything_bagel$per_75 <- 0
+  everything_bagel$per_75[everything_bagel$percent_flowing >= 75] <- 1
 
-  final$per_50 <- 0
-  final$per_50[final$percent_flowing >= 50] <- 1
+  everything_bagel$per_50 <- 0
+  everything_bagel$per_50[everything_bagel$percent_flowing >= 50] <- 1
   #then compare prediction versus actual
-  w3_23 <- filter(observations, wshed == "W3") %>% 
-    rename("DATETIME" = datetime)
-  #make a binary wet versus dry column
-  w3_23$binary <- 1
-  w3_23$binary[w3_23$wetdry == "dry"] <- 0
 
-  #join the two tables
-  #forp is output that contains everything
-  forp <- left_join(w3_23, final, by = c("DATETIME", "ID"))
-  IDs <- unique(forp$ID)
-
-  for(i in 1:length(IDs)){
-  inter <- filter(forp, ID == IDs[i])
-  result <- length(which(inter$binary == inter$per_90))/length(inter$DATETIME)
-  mod <- data.frame("ID" = IDs[i],
-                    "percent_agree" = result)
-  
-  if(i == 1) final <- mod
-  if(i > 1) final <- rbind(final, mod)
-
+#write a function to use in summarise
+compare <- function(x, y, time){
+  length(which(x == y))/length(time)*100
   }
-  #final or data_w3 contains summarized values
-  #data_w3 is final output
-  unique(w3_23 %>% 
-  dplyr::select(ID, lat, long)) %>% 
-  left_join(final, by = "ID")
+  
+tiny_bagel <- everything_bagel %>% 
+  group_by(ID, lat, long) %>% 
+  summarise(threshold_90per = compare(binary, per_90, DATETIME),
+            threshold_75per = compare(binary, per_75, DATETIME),
+            threshold_50per = compare(binary, per_50, DATETIME)) %>% 
+  pivot_longer(cols = starts_with("threshold"), 
+               names_to = "threshold", 
+               values_to = "percent_agreement")
+  tiny_bagel$category <- "high >=90%"
+  tiny_bagel$category <- "sometimes "
+
+  everything_bagel$per_50[everything_bagel$percent_flowing >= 50] <- 1
+
+ggplot(tiny_bagel, aes(x = threshold, y = percent_agreement))+
+  geom_boxplot()
+
+points_w3 <- vect(tiny_bagel, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
+ggplot()+
+  geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_spatvector(data = points_w3, aes(color = percent_agreement), size = 3)+
+  facet_wrap(~threshold)+#aes(color = percent_flowing), size = 2)+
+  #geom_text_repel(data = simple_table, aes(x = long, y = lat, label = number))+
+  theme_void()+
+  scale_color_binned(type = "viridis",
+                      breaks = c(30, 60, 90)#,
+                      #limits = c(0, 40)
+                     )+
+  labs(title = "Agreement with Carrie's model, 7/23 - 11/23")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+
+```
+
+```{r}
+#coarse DEM
+twi_ex2 <- extract(twi_crop, lcc)
+plot(twi_crop)
+#normal one
+twi_ex <- extract(twi3, lcc)
+plot(twi3)
+#finally able to compare the coarsened to non-coarsened results
+everything_bagel <- data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, lat, long, binary) %>% 
+  left_join(twi_ex, by = "ID") %>% 
+  rename("DATETIME" = datetime,
+         "twi" = w3_dem_twi) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  mutate(percent_flowing = willit(log(twi), Q_mm_day) * 100) 
+  #threshold resulting percent chances to get a binary of flowing/not flowing
+  #using three thresholds reported in Carrie's paper
+  everything_bagel$per_90 <- 0
+  everything_bagel$per_90[everything_bagel$percent_flowing >= 90] <- 1
+
+  everything_bagel$per_75 <- 0
+  everything_bagel$per_75[everything_bagel$percent_flowing >= 75] <- 1
+
+  everything_bagel$per_50 <- 0
+  everything_bagel$per_50[everything_bagel$percent_flowing >= 50] <- 1
+  #then compare prediction versus actual
+
+#write a function to use in summarise
+compare <- function(x, y, time){
+  length(which(x == y))/length(time)
+  }
+  
+tiny_bagel <- everything_bagel %>% 
+  group_by(ID, lat, long) %>% 
+  summarise(agree_90 = compare(binary, per_90, DATETIME),
+            agree_75 = compare(binary, per_75, DATETIME),
+            agree_50 = compare(binary, per_50, DATETIME))
+#results between 1m resolution and 10 m resolution are very different, as I thought they should be, and the 
+```
+
+
+```{r}
+#Carrie's model, when averaged across every site and every time is a coinflip
+#fit my own regression to the dataset
+ready2split <-  data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, lat, long, binary) %>% 
+  left_join(twi_ex, by = "ID") %>% 
+  rename("DATETIME" = datetime,
+         "twi" = w3_dem_twi) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  #select(DATETIME, ID, binary, twi, Q_mm_day) %>% 
+  mutate(twi = log(twi))
+set.seed(123)
+train_full <- ready2split %>% 
+  slice_sample(prop = 0.8)
+
+#create test dataset
+test  <- anti_join(ready2split, train_full, by = c("DATETIME", "ID"))
+
+train_values <- train %>% 
+  select(binary, twi, Q_mm_day)
+
+model <- glm(binary ~.,family=binomial(link='logit'),data=train)
+summary(model)
+
+```
+
+```{r}
+john_reg <- function(input_logtwi, inputQ){
+  #b0, or intercept from Kevin's email from Carrie, might need to redo regression
+  b0 <- -1.160316
+  #all ofther coefs from Jensen et al. 2018
+  twi_coef <- 0.089141
+  flow_coef <- 0.619352
+
+  b1x1 <- flow_coef * inputQ
+  b2x2 <- twi_coef * input_logtwi
+
+  #logistic regression from Jensen et al. 2018
+  p <- exp(b0 + b1x1 + b2x2)/(1 + exp(b0 + b1x1 + b2x2))
+  return(p)
 }
 
-applied <- apply_regression(inputQ = q_23_f,
-                            inputTWI = twi_ex,
-                            observations = data_23)
-points_w3 <- vect(applied, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
+tested <- test %>% 
+    mutate(percent_flowing = john_reg(log(twi), Q_mm_day) * 100) 
+#determine the number of sensor observations preserved in the test dataset at each timestep
+tested %>% 
+  group_by(DATETIME) %>% 
+  summarise(count = length(unique(ID)))
+
+
+add_thresholds <- function(df){
+  df$per_90 <- 0
+  df$per_90[df$percent_flowing >= 90] <- 1
+
+  df$per_75 <- 0
+  df$per_75[df$percent_flowing >= 75] <- 1
+
+  df$per_50 <- 0
+  df$per_50[df$percent_flowing >= 50] <- 1
+  return(df)
+}
+
+#testing to make sure that compare function is doing what I want it to
+add_thresholds(tested) %>% 
+  group_by(DATETIME, Q_mm_day) %>% 
+  summarise(threshold_90 = compare(binary, per_90, DATETIME),
+            count = length(unique(ID)))
+
+out <-  add_thresholds(tested) %>% 
+  group_by(ID) %>% 
+  summarise(threshold_90 = compare(binary, per_90, DATETIME),
+            threshold_75 = compare(binary, per_75, DATETIME),
+            threshold_50 = compare(binary, per_50, DATETIME)) %>% 
+  pivot_longer(cols = starts_with("threshold"), 
+               names_to = "threshold", 
+               values_to = "percent_agreement")
+
+ggplot(out, aes(x = threshold, y = percent_agreement))+
+  geom_boxplot()
+
+points_w3 <- vect(out, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
 ggplot()+
   geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
-  geom_spatvector(data = points_w3, aes(color = percent_agree), size = 3)+#aes(color = percent_flowing), size = 2)+
+  geom_spatvector(data = points_w3, aes(color = percent_agreement), size = 3)+
+  facet_wrap(~threshold)+#aes(color = percent_flowing), size = 2)+
   #geom_text_repel(data = simple_table, aes(x = long, y = lat, label = number))+
   theme_void()+
-  labs(title = "Agreement with Carrie's model")+
+  scale_color_binned(type = "viridis",
+                      breaks = c(30, 60, 90)#,
+                      #limits = c(0, 40)
+                     )+
+  labs(title = "Agreement with New model, 7/23 - 11/23")+
   theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
-
 ```
 
 ```{r}
+#plot to see under what conditions Carrie and my model work well
+#hydrograph, but colored by the percent agreement
+hydro <-  add_thresholds(tested) %>% 
+  group_by(DATETIME, Q_mm_day) %>% 
+  summarise(threshold_90 = compare(binary, per_90, DATETIME),
+            threshold_75 = compare(binary, per_75, DATETIME),
+            threshold_50 = compare(binary, per_50, DATETIME)) %>% 
+  pivot_longer(cols = starts_with("threshold"), 
+               names_to = "threshold", 
+               values_to = "percent_agreement")
 
-twi_ex2 <- extract(twi_crop, lcc)
-
-applied <- apply_regression(inputQ = q_23_f,
-                            inputTWI = twi_ex2,
-                            observations = data_23)
-
-points_w3 <- vect(applied, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
-
+hydro %>% 
+filter(DATETIME > "2023-09-15 16:30:00" & DATETIME < "2023-09-18 16:30:00") %>% 
 ggplot()+
+  geom_line(aes(x = DATETIME, y = Q_mm_day, color = percent_agreement), lwd = 1.5)+
+  facet_wrap(~threshold, ncol = 1)+
+  theme_classic()+
+  scale_colour_viridis_c()
+
+```
+
+
+```{r}
+#final version of discharge through time colored by model fidelity, using wes anderson color palette
+start <- "2023-08-07 00:00:00"
+stop <- "2023-08-14 00:00:00"
+
+ready2split %>% 
+    mutate(percent_flowing = john_reg(log(twi), Q_mm_day) * 100) %>% 
+  add_thresholds() %>% 
+  group_by(DATETIME, Q_mm_day) %>% 
+  summarise(threshold_90 = compare(binary, per_90, DATETIME),
+            threshold_75 = compare(binary, per_75, DATETIME),
+            threshold_50 = compare(binary, per_50, DATETIME)) %>% 
+  pivot_longer(cols = starts_with("threshold"), 
+               names_to = "threshold", 
+               values_to = "percent_agreement") %>% 
+#filter(DATETIME > start & DATETIME < stop) %>% 
+ggplot()+
+  geom_line(aes(x = DATETIME, y = Q_mm_day, color = percent_agreement), lwd = 1)+
+  facet_wrap(~threshold, ncol = 1)+
+  theme_classic()+
+  scale_color_gradientn(colors = rev(wes_palette("Zissou1", 100, type = "continuous")))
+
+```
+
+
+```{r}
+#now plot whether model is right or wrong at each location
+
+#dataframe that shows whether the model was right or wrong 
+devil_on_shoulder <- ready2split %>%
+  mutate(percent_flowing = john_reg(log(twi), Q_mm_day) * 100) %>%
+  add_thresholds() %>%
+  #filter(DATETIME > start & DATETIME < stop) %>%
+  mutate(
+    agree_or_no_90 = binary - per_90,
+    agree_or_no_75 = binary - per_75,
+    agree_or_no_50 = binary - per_50) %>%
+  pivot_longer(cols = starts_with("agree_"),
+               names_to = "threshold",
+               values_to = "percent_agreement")
+View(devil_on_shoulder)
+
+devil_on_shoulder$meaning <- "correct"
+devil_on_shoulder$meaning[devil_on_shoulder$percent_agreement == -1] <- "commission"
+devil_on_shoulder$meaning[devil_on_shoulder$percent_agreement == 1] <- "ommission"
+
+start <- "2023-08-07 00:00:00 EST"
+stop <- "2023-08-07 02:00:00 EST"
+
+devil_on_shoulder %>% 
+  filter(DATETIME > start & DATETIME < stop) %>% 
+  filter(threshold == "agree_or_no_90") %>% 
+  vect(geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84") %>% 
+ggplot()+  
   geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
-  geom_spatvector(data = points_w3, aes(color = percent_agree), size = 3)+#aes(color = percent_flowing), size = 2)+
+  geom_spatvector(aes(color = meaning), size = 3)+
+  facet_wrap(~DATETIME)+#aes(color = percent_flowing), size = 2)+
   #geom_text_repel(data = simple_table, aes(x = long, y = lat, label = number))+
   theme_void()+
-  labs(title = "Agreement with Carrie's model")+
+  labs(title = "Agreement with New model, 7/23 - 11/23")+
   theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
-```
-
-9/24/24
-Figure out why the values from the normal twi raster appear to be the same probability as those from the 10 m coarsened DEM. OR make sure that points align with where the twi raster thinks that the stream is
-```{r}
-
-```
+#instead of panels for each date and time, just do a grid
 
 
-```{r}
-#under what wetness conditions does Carrie's model agree with my observations the most?
-#where and when does the model agree the least?
-#where does it do the worst and the best?
+devil_on_shoulder %>% 
+  #filter(DATETIME > start & DATETIME < stop) %>% 
+  #filter(threshold == "agree_or_no_90") %>% 
+  ggplot()+
+  geom_tile(aes(x = DATETIME, y = ID, fill = meaning))+
+  facet_grid(~threshold, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                    values = c("#586BA4","black", "#DB995A"),
+                    breaks = c("commission", "correct", "ommission"),
+                    name = ""
+                    )+
+  labs(title = "Streamflow permanence in W3",
+       x = "")+
+  theme_classic()+
+    theme(legend.position="bottom")
+
+
 ```
 
