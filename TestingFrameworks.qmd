@@ -11,7 +11,7 @@ Test different theoretical frameworks using my data.
 ```{r reading-in-STIC-obs}
 #loading packages
 library(pacman)
-p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson)
+p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly)
 
 #reading in final format data for summer 23
 data_23 <- read_csv("./DataForMary/HB_stic.csv")
@@ -590,7 +590,7 @@ ready2split %>%
   pivot_longer(cols = starts_with("threshold"), 
                names_to = "threshold", 
                values_to = "percent_agreement") %>% 
-#filter(DATETIME > start & DATETIME < stop) %>% 
+filter(DATETIME > start & DATETIME < stop) %>% 
 ggplot()+
   geom_line(aes(x = DATETIME, y = Q_mm_day, color = percent_agreement), lwd = 1)+
   facet_wrap(~threshold, ncol = 1)+
@@ -656,5 +656,148 @@ devil_on_shoulder %>%
     theme(legend.position="bottom")
 
 
+```
+
+```{r}
+#Creates vectors having data points
+expected_value <- factor(c(1,0,1,0,1,1,1,0,0,1))
+predicted_value <- factor(c(1,0,0,1,1,1,0,0,0,1))
+
+#Creating confusion matrix
+example <- confusionMatrix(data=predicted_value, reference = expected_value)
+
+#Display results 
+example
+
+#make a confusion matrix for the whole sample
+conf_all <- add_thresholds(tested) #%>% 
+o <- confusionMatrix(data = factor(conf_all$per_50), reference = factor(conf_all$binary))
+unname(o$overall[1])
+#calculate the accuracy for each threshold at each point in time
+#write mini function to spit out just the accuracy
+#trying to make a dataset ready to pass through a mutate with function that returns confusion matrix accuracy
+#not vectorized solution, but it works
+mega_thresholds <- function(df){
+  for(i in 1:100){
+  df$threshold <- i
+  df$flowing <- 0
+  df$flowing[df$percent_flowing >= df$threshold] <- 1
+  
+  
+  if(i == 1) final <- df
+  if(i > 1) final <- rbind(final, df)
+  }
+  return(final)
+}
+conf_all <- mega_thresholds(tested)
+
+#accuracy field of confusion matrix is the same as result of compare function I wrote
+#write function to produce accuracy
+accuracy_calc <- function(model, reference){
+  mat <- confusionMatrix(factor(model, levels = c(0,1)), factor(reference, levels = c(0,1)))
+  acc <- unname(mat$overall[1])
+  return(acc)
+}
+
+#calculating accuracy for the range of thresholds for each sensor
+ID_acc <- conf_all %>% 
+    group_by(threshold, ID) %>% 
+    summarise(test = accuracy_calc(flowing, binary))
+#plotting the output, the accuracy resulting from every threshold for each sensor
+ggplot(ID_acc, aes(x = threshold, y = test))+
+    geom_line()+
+  facet_wrap(~ID)+
+  labs(x = "Logistic Threshold",
+       y = "Accuracy of prediction",
+       title = "Accuracy based on threshold for each sensor")+
+  theme_classic()
+
+#make this same plot, but colored by ommission or commission as it contributes to accuracy
+#Will need a new accuracy_calc function
+om <- function(model, reference){
+  mat <- confusionMatrix(factor(model, levels = c(0,1)), factor(reference, levels = c(0,1)))
+  ommission <- unname(mat$table[2])
+  return(ommission)
+}
+
+com <- function(model, reference){
+  mat <- confusionMatrix(factor(model, levels = c(0,1)), factor(reference, levels = c(0,1)))
+  commission <- unname(mat$table[3])
+  return(commission)
+}
+
+#commission and ommission as proportions
+ID_acc <- conf_all %>% 
+    group_by(threshold, ID) %>% 
+    reframe(test = accuracy_calc(flowing, binary),
+            ommission = om(flowing, binary)/length(flowing),
+            commission = com(flowing, binary)/length(flowing)) %>% 
+  mutate(ommission = -ommission) %>% 
+  pivot_longer(cols = c(commission, ommission), names_to = "type_of_error", values_to = "proportion")
+#not proportions but counts
+ID_acc2 <- conf_all %>% 
+    group_by(threshold, ID) %>% 
+    reframe(test = accuracy_calc(flowing, binary),
+            ommission = om(flowing, binary),
+            commission = com(flowing, binary)) %>%
+  mutate(combined = commission - ommission)
+  #pivot_longer(cols = c(commission, ommission), names_to = "type_of_error", values_to = "count")
+ggplot(ID_acc2, aes(x = type_of_error, y = count))+
+  geom_boxplot()
+#plotting the output, the accuracy resulting from every threshold for each sensor
+ID_acc2 %>% 
+ggplot(aes(x = threshold, y = test))+
+    geom_line()+
+  geom_point(aes(color = combined))+
+  facet_wrap(~ID)+
+  labs(x = "Logistic Threshold",
+       y = "Accuracy of prediction",
+       title = "Accuracy based on threshold for each sensor, colored by commission (+)/ommission (-)")+
+  theme_classic()+
+  scale_color_gradient2(low = ("#DB995A"),
+  mid = "white",
+  high = ("#586BA4"))
+
+```
+
+```{r}
+#plotted date versus discharge, for three different threshold values
+start <- "2023-08-07 00:00:00"
+stop <- "2023-08-14 00:00:00"
+
+
+acc_calced <- conf_all %>%
+  filter(threshold == 50) %>%
+  group_by(DATETIME, Q_mm_day, threshold) %>%
+  summarise(test = accuracy_calc(flowing, binary)) %>%
+  filter(DATETIME > start & DATETIME < stop)
+  ggplot()+
+  geom_line(aes(x = DATETIME, y = Q_mm_day, color = test), lwd = 1)+
+  facet_wrap(~threshold, ncol = 1)+
+  theme_classic()+
+  scale_color_gradientn(colors = rev(wes_palette("Zissou1", 100, type = "continuous")))
+#make a confusion matrx for each time step, plot versus discharge (will show hysteresis)
+#make a confusion matrix for rising and falling limb of each event, maybe even at each sensor
+```
+
+```{r}
+#testing out package that will automatically extract rising and falling limb
+#install.packages("hydroEvents")
+library(hydroEvents)
+#qdata = WQ_Q$qdata[[1]]
+#BF_res = eventBaseflow(qdata$Q_cumecs)
+#limbs(data = qdata$Q_cumecs, dates = NULL, events = BF_res, main = "with 'eventBaseflow'")
+plot <- ready2split %>% 
+  select(DATETIME, Q_mm_day) %>% 
+  unique() %>% 
+  drop_na() %>% 
+  ggplot(aes(x = DATETIME, y = Q_mm_day))+
+  geom_line()+
+  geom_point()
+
+ggplotly(plot)
+
+#BF_res <- eventBaseflow(justQ$Q_mm_day, BFI_Th = 0.7, min.diff = 1)
+#limbs(data = justQ$Q_mm_day, dates =justQ$DATETIME, events = BF_res)
 ```
 

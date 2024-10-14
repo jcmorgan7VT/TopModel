@@ -1,0 +1,148 @@
+---
+title: "Process_discharge"
+format: html
+---
+
+10/14/24: script to process salt dilutions
+
+```{r}
+#script uploaded to google drive
+
+V <- 5e-5 #volume of slug [m^3]
+k <- #slope of the line between cond and relative cond from calibration tank
+
+#relative conductivity calculations
+#secondary solution
+X <- 10 #volume of salt slug solution added to 1 L of secondary solution [mL]
+V0 <- 1000 #volume of water in secondary solution [mL]
+RCsec <- X / (V0 + X) #relative cond of secondary solution
+#calibration tank
+EC0 <-  #background cond of calibration tank [micro S/cm]
+#calculate relative cond at each time step
+#amount of secondary solution added
+Dsec <- 10 # [mL]
+timesteps <- 6
+
+RC <- seq(0, timesteps, 1)
+RC <- RCsec * RC * Dsec /(V0 + RC * Dsec) + (RC * Dsec) #Vc, volume of secs at each timestep
+
+#input actual conductivity at each timestep
+EC <- c(EC0, 11.9, 13.1, 13.4, 15, 16.1, 19.1)
+
+plot(EC, RC)
+#calculate k
+k <- lm(EC~RC)$coefficients[2]
+
+#back to calculating Q
+DeltaT <- 10 #[s]
+
+##calculate sum of change in conductivity minus background
+sum <- 
+
+Q <- V / (7.7 * DeltaT * sum)
+Q_Ls <- Q * 1000
+
+######ATTEMPT 2
+# 7/31/24
+
+# measurement from 7/4/24, bagley brook trail MAIN TRIB
+
+V <- 7.5e-5 #volume of slug [m^3]
+k <- #slope of the line between cond and relative cond from calibration tank
+
+  #relative conductivity calculations
+  #secondary solution
+  X <- 10 #volume of salt slug solution added to 1 L of secondary solution [mL]
+V0 <- 1000 #volume of water in secondary solution [mL]
+RCsec <- X / (V0 + X) #relative cond of secondary solution
+#calibration tank
+EC0 <- 9.4 #background cond of calibration tank [micro S/cm]
+#calculate relative cond at each time step
+#amount of secondary solution added
+Dsec <- 10 # [mL]
+timesteps <- 6
+
+RC <- seq(0, timesteps, 1)
+RC <- RCsec * RC * Dsec /(V0 + RC * Dsec) + (RC * Dsec) #Vc, volume of secs at each timestep
+
+#input actual conductivity at each timestep
+EC <- c(EC0, 9.4, 12.4, 12.4, 12, 12.4, 19.2)
+
+plot(EC, RC)
+#calculate k
+k <- unname(lm(EC~RC)$coefficients[2])
+
+#back to calculating Q
+DeltaT <- 10 #[s]
+
+#calculate sum of change in conductivity minus background
+sum <- 196.3
+
+Q <- V / (k * DeltaT * sum)
+Q_Ls <- Q * 1000
+
+
+```
+
+```{r}
+
+
+#measurement from bagley main trib 6_25
+vol <- 100 #volume of slug [mL]
+V <- vol * 1e-6 #volume of slug [m^3]
+
+  #relative conductivity calculations
+  #secondary solution
+  X <- 10 #volume of salt slug solution added to 1 L of secondary solution [mL]
+V0 <- 1000 #volume of water in secondary solution [mL]
+RCsec <- X / (V0 + X) #relative cond of secondary solution
+#calibration tank
+EC0 <- 8.5 #background cond of calibration tank, should be the same as upstream [micro S/cm]
+#calculate relative cond at each time step
+#amount of secondary solution added
+Dsec <- 10 # [mL]
+timesteps <- 5
+
+RC <- seq(0, timesteps, 1)
+RC <- RCsec * RC * Dsec /(V0 + RC * Dsec) + (RC * Dsec) #Vc, volume of secs at each timestep
+
+#input actual conductivity at each timestep
+EC <- c(EC0, 8.5, 8.9, 8.9, 10.4, 11.2)
+
+plot(EC, RC)
+#calculate k
+#slope of the line between cond and relative cond from calibration tank
+# form of linear reg: Y ~ X
+k <- unname(lm(EC~RC)$coefficients[2])
+
+#back to calculating Q
+DeltaT <- 10 #[s]
+
+#calculate sum of change in conductivity minus background
+sum <- 355.8
+
+Q <- V / (k * DeltaT * sum)
+Q_Ls <- Q * 1000
+
+```
+
+```{r}
+#develop method to process read in files
+#find files
+folder_path <- "./salt_dilutions/FB_8_1"
+files <- list.files(folder_path)
+#sensor 256 appears to always measure a little higher, and 258 a little lower. Can experimentally determine if one of them is objectively correct, but for now I am going to assume they are both a little wrong.
+#conductivity units: μS/cm
+cond <- read_csv(paste0(folder_path,"/", files[1])) %>% 
+  rename(cond_down = `cond_down_μS/cm`,
+         cond_up = `cond_up_μS/cm`) %>% 
+  mutate(cond_up = ceiling(cond_up),
+         cond_down = floor(cond_down),
+         delta_cond = cond_up - cond_down,)
+
+k <- read_csv(paste0(folder_path,"/", files[2]))
+
+meta <- read_csv(paste0(folder_path,"/", files[3]))
+
+```
+
