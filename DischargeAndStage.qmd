@@ -1,6 +1,8 @@
 ---
 title: "Process_discharge"
 format: html
+editor_options: 
+  chunk_output_type: console
 ---
 
 10/14/24: script to process salt dilutions
@@ -133,16 +135,299 @@ folder_path <- "./salt_dilutions/FB_8_1"
 files <- list.files(folder_path)
 #sensor 256 appears to always measure a little higher, and 258 a little lower. Can experimentally determine if one of them is objectively correct, but for now I am going to assume they are both a little wrong.
 #conductivity units: μS/cm
-cond <- read_csv(paste0(folder_path,"/", files[1])) %>% 
-  rename(cond_down = `cond_down_μS/cm`,
-         cond_up = `cond_up_μS/cm`) %>% 
+cond <- read_csv(paste0(folder_path,"/", files[1])) #%>% 
   mutate(cond_up = ceiling(cond_up),
          cond_down = floor(cond_down),
-         delta_cond = cond_up - cond_down,)
+         delta_cond = cond_up - cond_down,
+         time_down = mdy_hms(time_down),
+         time_up = mdy_hms(time_up))
 
-k <- read_csv(paste0(folder_path,"/", files[2]))
+k <- read_csv(paste0(folder_path,"/", files[2])) %>% 
+  rename(cond = `cond_k_μS/cm`) #%>% 
+  #mutate(cond = ceiling(cond))
 
 meta <- read_csv(paste0(folder_path,"/", files[3]))
 
+#now taking these inputs and use them to calculate
+vol <- meta$slugVolume_mL #volume of slug [mL]
+V <- vol * 1e-6 #volume of slug [m^3]
+
+#relative conductivity calculations
+#secondary solution- set up for standard solution
+X <- 10 #volume of salt slug solution added to 1 L of secondary solution [mL]
+V0 <- 1000 #volume of water in secondary solution [mL]
+RCsec <- X / (V0 + X) #relative cond of secondary solution
+
+#calibration tank
+EC0 <- k$cond[1] #background cond of calibration tank, should be the same as upstream [micro S/cm]
+#calculate relative cond at each time step
+#amount of secondary solution added
+Dsec <- 10 # [mL]
+timesteps <- na.omit(k$slugadded_mL) %>% length()
+
+RC <- seq(0, timesteps, 1)
+RC <- RCsec * RC * Dsec /(V0 + RC * Dsec) + (RC * Dsec) #Vc, volume of secs at each timestep
+
+#input actual conductivity at each timestep
+ECs <- drop_na(k)$cond
+EC <- c(EC0, ECs)
+
+plot(EC, RC)
+#calculate k
+#slope of the line between cond and relative cond from calibration tank
+# form of linear reg: Y ~ X
+k <- unname(lm(EC~RC)$coefficients[2])
+
+#back to calculating Q
+DeltaT <- 10 #[s]
+(cond$time_down[1] - cond$time_down[2])
+
+#calculate sum of change in conductivity minus background
+sum <- 355.8
+
+Q <- V / (k * DeltaT * sum)
+Q_Ls <- Q * 1000
+
+```
+
+Skipping just to fitting a model to stage
+```{r}
+#reading in final format data for summer 23
+data_23 <- read_csv("./DataForMary/HB_stic.csv")
+#reading in final format data for summer 24
+data_24 <- read_csv("./summer2024/STICS2024.csv")
+
+#plot locations of sensors
+locs <- data_23 %>% 
+  filter(wshed == "FB") %>% 
+  select(ID, lat, long) %>% 
+  unique()
+
+locs_shape <- vect(locs, 
+                   geom=c("long", "lat"), 
+                   crs = "+proj=longlat +datum=WGS84")
+
+
+
+dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
+m1 <- rast(dem)
+m10 <- aggregate(m1, 10)
+plot(m10)
+lcc <- terra::project(locs_shape,crs(m10))
+
+#save raster, because whitebox wants it is a files location instead of an object in R
+writeRaster(m10, "./fb_dems/10mdem.tif", overwrite = TRUE)
+
+
+breach_output <- "./fb_dems/10mdem_breach.tif"
+wbt_breach_depressions_least_cost(
+  dem = "./fb_dems/10mdem.tif",
+  output = breach_output,
+  dist = 10,
+  fill = TRUE)
+
+fill_output <- "./fb_dems/10mdem_fill.tif"
+wbt_fill_depressions_wang_and_liu(
+  dem = breach_output,
+  output = fill_output
+)
+
+flowacc_output <- "./fb_dems/10mdem_flowacc.tif"
+wbt_d_inf_flow_accumulation(input = fill_output,
+                            output = flowacc_output,
+                            out_type = "Specific Contributing Area")
+
+slope_output <- "./fb_dems/10mdem_slope.tif"
+wbt_slope(dem = fill_output,
+          output = slope_output,
+          units = "degrees")
+
+twi_output <- "./fb_dems/10mdem_twi.tif"
+wbt_wetness_index(sca = flowacc_output, #flow accumulation
+                  slope = slope_output,
+                  output = twi_output)
+
+twi2 <- terra::rast(twi_output)
+plot(twi2)
+
+#just extract values from 10 m twi raster
+twi_ex <- extract(twi2, lcc)
+
+```
+
+
+```{r}
+#chunk that reads in stage, converts to proper units
+#read in stage, convert to a height
+FB_air <- read_csv("./PressureTransducers_11_14_23/FB_air.csv", skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME))
+
+FB_water <- read_csv("./PressureTransducers_11_14_23/FB_water.csv", skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME))
+
+FB_water %>% 
+  left_join(FB_air, by = "DATETIME") %>% 
+  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
+  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
+  ggplot(aes(x = DATETIME, y = stage_cm))+
+  geom_line()+
+  theme_classic()+
+  labs(title = "Falls Brook Stage",
+       x = "",
+       y = "Stage (in)")
+#convert pressure to height of water
+#h = p / (ρ * g)
+#h = height in m
+#density of water = 997 kg/m³
+#gravitational acceleration = 9.8 m/s²
+#convert psi to pascals, 1 psi = 6894.76 bars
+
+library(patchwork)
+fbAirPlot <- ggplot(FB_air, aes(x = DATETIME, y = pressure_psi))+
+  geom_line()+
+  theme_classic()+
+  ggtitle("Falls Brook Air pressure")
+fbWaterPlot <- ggplot(FB_water, aes(x = DATETIME, y = pressure_psi))+
+  geom_line()+
+  theme_classic()+
+  ggtitle("Falls Brook Water pressure")
+
+
+fbAirPlot / fbWaterPlot
+
+data_23$mins <- minute(data_23$datetime)
+
+#Fit a logistic regression to falls brook stage
+#outputs df with stage in cm
+FB_stage <- FB_water %>% 
+  left_join(FB_air, by = "DATETIME") %>% 
+  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
+  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701)
+
+ready2split <-  data_23 %>% 
+  filter(wshed == "FB", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, lat, long, binary) %>% 
+  left_join(twi_ex, by = "ID") %>% 
+  rename("DATETIME" = datetime,
+         "twi" = '10mdem_twi') %>% 
+  right_join(select(FB_stage, c(DATETIME, stage_cm)), by = "DATETIME") %>% 
+  #select(DATETIME, ID, binary, twi, Q_mm_day) %>% 
+  mutate(twi = log(twi))
+set.seed(123)
+train_full <- ready2split %>% 
+  slice_sample(prop = 0.8)
+
+#create test dataset
+test  <- anti_join(ready2split, train_full, by = c("DATETIME", "ID"))
+
+train_values <- train_full %>% 
+  select(binary, twi, stage_cm)
+
+model <- glm(binary ~.,family=binomial(link='logit'),data=train_values)
+summary(model)
+
+john_reg <- function(input_logtwi, inputQ){
+  #b0, or intercept from Kevin's email from Carrie, might need to redo regression
+  b0 <- unname(model$coefficients[1])
+  #all ofther coefs from Jensen et al. 2018
+  twi_coef <- unname(model$coefficients[2])
+  flow_coef <- unname(model$coefficients[3])
+
+  b1x1 <- flow_coef * inputQ
+  b2x2 <- twi_coef * input_logtwi
+
+  #logistic regression from Jensen et al. 2018
+  p <- exp(b0 + b1x1 + b2x2)/(1 + exp(b0 + b1x1 + b2x2))
+  return(p)
+}
+
+tested <- ready2split %>% 
+    mutate(percent_flowing = john_reg(log(twi), stage_cm) * 100,
+           mins = minute(DATETIME)) %>% 
+  filter(mins %in% c(0, 30))
+
+#determine the number of sensor observations preserved in the test dataset at each timestep
+tested %>% 
+  group_by(DATETIME) %>% 
+  summarise(count = length(unique(ID)))
+
+
+add_thresholds <- function(df){
+  df$per_90 <- 0
+  df$per_90[df$percent_flowing >= 90] <- 1
+
+  df$per_75 <- 0
+  df$per_75[df$percent_flowing >= 75] <- 1
+
+  df$per_50 <- 0
+  df$per_50[df$percent_flowing >= 50] <- 1
+  return(df)
+}
+
+#testing to make sure that compare function is doing what I want it to
+add_thresholds(tested) %>% 
+  group_by(DATETIME, stage_cm) %>% 
+  summarise(threshold_90 = compare(binary, per_90, DATETIME),
+            count = length(unique(ID)))
+
+out <-  add_thresholds(tested) %>% 
+  group_by(ID) %>% 
+  summarise(threshold_90 = compare(binary, per_90, DATETIME),
+            threshold_75 = compare(binary, per_75, DATETIME),
+            threshold_50 = compare(binary, per_50, DATETIME)) %>% 
+  pivot_longer(cols = starts_with("threshold"), 
+               names_to = "threshold", 
+               values_to = "percent_agreement")
+
+ggplot(out, aes(x = threshold, y = percent_agreement))+
+  geom_boxplot()+
+  ggtitle("Agreement between log regression and observations, FB")
+
+
+
+hydro <-  add_thresholds(tested) %>% 
+  group_by(DATETIME, stage_cm) %>% 
+  summarise(threshold_90 = compare(binary, per_90, DATETIME),
+            threshold_75 = compare(binary, per_75, DATETIME),
+            threshold_50 = compare(binary, per_50, DATETIME)) %>% 
+  pivot_longer(cols = starts_with("threshold"), 
+               names_to = "threshold", 
+               values_to = "percent_agreement")
+
+pt1 <- hydro %>% 
+filter(DATETIME > "2023-07-23 00:00:00" & DATETIME < "2023-9-20 00:00:00")
+pt2 <- hydro %>% 
+filter(DATETIME > "2023-09-23 00:00:00" & DATETIME < "2023-11-10 00:00:00")
+
+rbind(pt1, pt2) %>% 
+filter(DATETIME > "2023-10-15 00:00:00" & DATETIME < "2023-11-01 00:00:00") %>% 
+ggplot()+
+  geom_line(aes(x = DATETIME, y = stage_cm, color = percent_agreement), lwd = 1)+
+  facet_wrap(~threshold, ncol = 1)+
+  ylim(c(10, 11))+
+  #theme_classic()+
+  scale_color_gradientn(colors = rev(wes_palette("Zissou1", 100, type = "continuous")))
+
+
+#does not work yet
+points_w3 <- vect(out, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
+ggplot()+
+  geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
+  geom_spatvector(data = points_w3, aes(color = percent_agreement), size = 3)+
+  facet_wrap(~threshold)+#aes(color = percent_flowing), size = 2)+
+  #geom_text_repel(data = simple_table, aes(x = long, y = lat, label = number))+
+  theme_void()+
+  scale_color_binned(type = "viridis",
+                      breaks = c(30, 60, 90)#,
+                      #limits = c(0, 40)
+                     )+
+  labs(title = "Agreement with New model, 7/23 - 11/23")+
+  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
 ```
 
