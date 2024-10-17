@@ -15,7 +15,7 @@ Basically taking discharge measured at weirs, and contextualizing it into someth
 
 ```{r}
 library(pacman)
-p_load(tidyverse, raster, rgdal, sp, mapview,
+p_load(tidyverse, terra, tidyterra, sp, mapview,
        rgeos, spdplyr, tmap, stars, STICr,
        lubridate, gganimate, animation, patchwork,
        whitebox,ggridges, grid, scales, ggthemes, viridis,
@@ -45,8 +45,8 @@ twi3 <- raster(twi3)
 #low flow in w3 = 0.2 mm/d
 
 #location of stream
-stream <- readOGR("./HB/hbstream/hb42_master_startend.shp")
-stream_p <- spTransform(stream, crs(twi3))
+stream <- vect("./HB/hbstream/hb42_master_startend.shp")
+w3_stream_wgs <- project(w3_stream, "+proj=longlat +datum=WGS84")
 
 ```
 
@@ -209,6 +209,7 @@ ggplot(final2)+
 #   )
 
 ```
+
 ```{r}
 #dont run
 #the actual analysis, testing on W3
