@@ -870,8 +870,6 @@ data_23 %>%
 #can I figure out a chunk of the discharge or stage that is associated with each one of these?
 
 #plot persistency versus discharge
-train_full <- ready2split %>% 
-  slice_sample(prop = 0.8)
 
 pks <- data_23 %>% 
   filter(wshed == "W3", mins %in% c(0, 30)) %>% 
@@ -932,11 +930,177 @@ add_thresholds <- function(df){
   return(df)
 }
 
-#testing to make sure that compare function is doing what I want it to
-add_thresholds(tested) %>% 
-  group_by(DATETIME, stage_cm) %>% 
+out <-  add_thresholds(tested) %>% 
+  group_by(ID) %>% 
   summarise(threshold_90 = compare(binary, per_90, DATETIME),
-            count = length(unique(ID)))
+            threshold_75 = compare(binary, per_75, DATETIME),
+            threshold_50 = compare(binary, per_50, DATETIME)) %>% 
+  pivot_longer(cols = starts_with("threshold"), 
+               names_to = "threshold", 
+               values_to = "percent_agreement")
+
+ggplot(out, aes(x = threshold, y = percent_agreement))+
+  geom_boxplot()+
+  ggtitle("Durighetto local persistency, W3")
+```
+
+After meeting with Kevin today- can we predict the local persistency?
+```{r}
+#using model to predict local persistency
+#should I use a linear model?
+data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, lat, long, binary) %>% 
+    group_by(ID) %>% 
+    slice_sample(prop = 0.8) %>% 
+  rename("DATETIME" = datetime) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  summarise(pk = sum(binary)/length(binary)) %>% 
+  select(ID, pk) %>% 
+  ungroup() %>% 
+  left_join(twi_ex2, by = "ID") %>% 
+  left_join(twi_ex, by = "ID") %>% 
+  ggplot(aes(x = `10m_dem_twi`, y = pk))+
+  geom_point()+
+      geom_smooth(method = 'lm')
+
+    
+
+data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, lat, long, binary) %>% 
+    slice_sample(prop = 0.8) %>% 
+  rename("DATETIME" = datetime) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  left_join(pks, by = "ID") %>% 
+  select(binary, pk, Q_mm_day)
+
+model <- glm(binary ~.,family=binomial(link='logit'),data=train_values)
+summary(model)
+
+john_reg <- function(input_logtwi, inputQ){
+  #b0, or intercept from Kevin's email from Carrie, might need to redo regression
+  b0 <- unname(model$coefficients[1])
+  #all ofther coefs from Jensen et al. 2018
+  twi_coef <- unname(model$coefficients[2])
+  flow_coef <- unname(model$coefficients[3])
+
+  b1x1 <- flow_coef * inputQ
+  b2x2 <- twi_coef * input_logtwi
+
+  #logistic regression from Jensen et al. 2018
+  p <- exp(b0 + b1x1 + b2x2)/(1 + exp(b0 + b1x1 + b2x2))
+  return(p)
+}
+
+tested <- data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, lat, long, binary) %>% 
+  rename("DATETIME" = datetime) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  left_join(pks, by = "ID") %>%
+  mutate(percent_flowing = john_reg(pk, Q_mm_day) * 100)
+```
+
+Modeling local persistency seems weird. Yesterday talking with Kevin I feel like we strayed even further afield. I think it makes more sense to keep the narrative around trying to predict whether or not a location has water, and we assume is flowing.
+
+```{r}
+#have not applied durighetto technique to other watersheds, do that here
+#falling for the classic blunder- need to re-read data in
+data_23 <- read_csv("./DataForMary/HB_stic.csv")
+data_23$binary <- 1
+data_23$binary[data_23$wetdry == "dry"] <- 0
+data_23$mins <- minute(data_23$datetime)
+
+data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, lat, long, binary) %>% 
+  group_by(ID) %>% 
+  summarise(pk = sum(binary)/length(binary)) %>% 
+  arrange(pk)
+
+#read in and format Falls Brook Data
+FB_air <- read_csv("./PressureTransducers_11_14_23/FB_air.csv", skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi_air = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME))
+
+FB_water <- read_csv("./PressureTransducers_11_14_23/FB_water.csv", skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi_water = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME))
+
+FB_stage <- FB_water %>% 
+  left_join(FB_air, by = "DATETIME") %>% 
+  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
+  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701)
+#plot persistency versus discharge
+#first calculate local persistency (pk)
+#pks <- 
+data_23 %>% 
+  filter(wshed == "FB", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, lat, long, binary) %>% 
+    group_by(ID) %>% 
+  rename("DATETIME" = datetime) %>% 
+  right_join(select(FB_stage, c(DATETIME, stage_cm)), by = "DATETIME") %>% 
+  summarise(pk = sum(binary)/length(binary)) %>% 
+  select(ID, pk) %>% 
+  ungroup()
+  
+#how to determine the amount of discharge that increases due to one sensor location turning on
+train_values <-  data_23 %>% 
+  filter(wshed == "FB", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, lat, long, binary) %>% 
+    slice_sample(prop = 0.8) %>% 
+  rename("DATETIME" = datetime) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  left_join(pks, by = "ID") %>% 
+  select(binary, pk, Q_mm_day)
+
+model <- glm(binary ~.,family=binomial(link='logit'),data=train_values)
+summary(model)
+
+john_reg <- function(input_logtwi, inputQ){
+  #b0, or intercept from Kevin's email from Carrie, might need to redo regression
+  b0 <- unname(model$coefficients[1])
+  #all ofther coefs from Jensen et al. 2018
+  twi_coef <- unname(model$coefficients[2])
+  flow_coef <- unname(model$coefficients[3])
+
+  b1x1 <- flow_coef * inputQ
+  b2x2 <- twi_coef * input_logtwi
+
+  #logistic regression from Jensen et al. 2018
+  p <- exp(b0 + b1x1 + b2x2)/(1 + exp(b0 + b1x1 + b2x2))
+  return(p)
+}
+
+#tested <- 
+  data_23 %>% 
+  filter(wshed == "FB") %>% 
+  select(datetime, ID, lat, long, binary) %>% 
+  left_join(FB_twi_ex, by = "ID") %>% 
+  rename("DATETIME" = datetime,
+         "twi" = '10mdem_twi') #%>% 
+  mutate(twi = log(twi)) %>% 
+  right_join(select(FB_stage, c(DATETIME, stage_cm)), by = "DATETIME") %>% 
+  left_join(pks, by = "ID") %>%
+  mutate(percent_flowing = john_reg(pk, Q_mm_day) * 100)
+
+
+add_thresholds <- function(df){
+  df$per_90 <- 0
+  df$per_90[df$percent_flowing >= 90] <- 1
+
+  df$per_75 <- 0
+  df$per_75[df$percent_flowing >= 75] <- 1
+
+  df$per_50 <- 0
+  df$per_50[df$percent_flowing >= 50] <- 1
+  return(df)
+}
 
 out <-  add_thresholds(tested) %>% 
   group_by(ID) %>% 
@@ -949,5 +1113,6 @@ out <-  add_thresholds(tested) %>%
 
 ggplot(out, aes(x = threshold, y = percent_agreement))+
   geom_boxplot()+
-  ggtitle("Agreement between log regression and observations, FB")```
+  ggtitle("Durighetto local persistency, W3")
+```
 

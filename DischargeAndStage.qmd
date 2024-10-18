@@ -192,6 +192,7 @@ Q_Ls <- Q * 1000
 
 Skipping just to fitting a model to stage
 ```{r}
+#creating falls brook twi values
 #reading in final format data for summer 23
 data_23 <- read_csv("./DataForMary/HB_stic.csv")
 #reading in final format data for summer 24
@@ -251,7 +252,7 @@ twi2 <- terra::rast(twi_output)
 plot(twi2)
 
 #just extract values from 10 m twi raster
-twi_ex <- extract(twi2, lcc)
+FB_twi_ex <- extract(twi2, lcc)
 
 ```
 
