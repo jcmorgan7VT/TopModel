@@ -263,13 +263,13 @@ FB_twi_ex <- extract(twi2, lcc)
 FB_air <- read_csv("./PressureTransducers_11_14_23/FB_air.csv", skip = 1) %>% 
   select(2:3) %>% 
   rename(DATETIME = 1,
-         pressure_psi = 2) %>% 
+         pressure_psi_air = 2) %>% 
   mutate(DATETIME = mdy_hms(DATETIME))
 
 FB_water <- read_csv("./PressureTransducers_11_14_23/FB_water.csv", skip = 1) %>% 
   select(2:3) %>% 
   rename(DATETIME = 1,
-         pressure_psi = 2) %>% 
+         pressure_psi_water = 2) %>% 
   mutate(DATETIME = mdy_hms(DATETIME))
 
 FB_water %>% 
@@ -290,11 +290,11 @@ FB_water %>%
 #convert psi to pascals, 1 psi = 6894.76 bars
 
 library(patchwork)
-fbAirPlot <- ggplot(FB_air, aes(x = DATETIME, y = pressure_psi))+
+fbAirPlot <- ggplot(FB_air, aes(x = DATETIME, y = pressure_psi_air))+
   geom_line()+
   theme_classic()+
   ggtitle("Falls Brook Air pressure")
-fbWaterPlot <- ggplot(FB_water, aes(x = DATETIME, y = pressure_psi))+
+fbWaterPlot <- ggplot(FB_water, aes(x = DATETIME, y = pressure_psi_water))+
   geom_line()+
   theme_classic()+
   ggtitle("Falls Brook Water pressure")
@@ -620,6 +620,7 @@ out <-  add_thresholds(tested) %>%
   pivot_longer(cols = starts_with("threshold"), 
                names_to = "threshold", 
                values_to = "percent_agreement")
+out_zz
 
 ggplot(out, aes(x = threshold, y = percent_agreement))+
   geom_boxplot()+
@@ -674,6 +675,17 @@ wbt_relative_topographic_position(
   dem,
   output)
 
-#also drainage area
+#also drainage area, flow accumulation
+fb_flowacc <- "./fb_dems/1mdem_fb_flowacc.tif"
+wbt_d8_flow_accumulation(input = fb_filled,
+                         output = fb_flowacc)
+plot(rast(fb_flowacc))
+```
+
+```{r}
+#make a table with the mean agreement between the different topographic models. 
+
+
+#make a table with the mean agreement between local persistency calculated based on a different number of locations and visits... test whether 1 observation of the whole network condition versus 10,000 works better. 
 ```
 
