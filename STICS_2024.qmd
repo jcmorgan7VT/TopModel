@@ -14,7 +14,7 @@ Summary of observations for Kevin and JP
 library(pacman)
 p_load(tidyverse, sp, mapview, tmap, stars,
        lubridate, gganimate, animation, patchwork, ggrepel, whitebox,
-       terra,  tidyterra)
+       terra,  tidyterra, ggpmisc)
 #bring in STICr function
 source("classify_wetdry.R")
 source("tidy_hobo_data.R")

@@ -651,21 +651,6 @@ ggplot()+
   theme_classic()+
   scale_color_gradientn(colors = rev(wes_palette("Zissou1", 100, type = "continuous")))
 
-
-#does not work yet
-points_w3 <- vect(out, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
-ggplot()+
-  geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
-  geom_spatvector(data = points_w3, aes(color = percent_agreement), size = 3)+
-  facet_wrap(~threshold)+#aes(color = percent_flowing), size = 2)+
-  #geom_text_repel(data = simple_table, aes(x = long, y = lat, label = number))+
-  theme_void()+
-  scale_color_binned(type = "viridis",
-                      breaks = c(30, 60, 90)#,
-                      #limits = c(0, 40)
-                     )+
-  labs(title = "Agreement with New model, 7/23 - 11/23")+
-  theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
 ```
 
 ```{r}
@@ -687,5 +672,100 @@ plot(rast(fb_flowacc))
 
 
 #make a table with the mean agreement between local persistency calculated based on a different number of locations and visits... test whether 1 observation of the whole network condition versus 10,000 works better. 
+```
+
+```{r}
+#find the range of discharge values where a sensor goes from on to off, or the range of discharge values over which a sensor is flowing
+pks <- data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, lat, long, binary) %>% 
+    group_by(ID) %>% 
+  rename("DATETIME" = datetime) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  summarise(pk = sum(binary)/length(binary)) %>% 
+  select(ID, pk) %>% 
+  ungroup()
+
+#develop a way to determine a transition from one state to another
+test <- data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+    group_by(ID) %>% 
+  rename("DATETIME" = datetime) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  filter(ID == 1)
+
+#iterate through the whole list, and if the binary are the same, get rid of the previous one
+#from 2023-07-05 19:00:00 to 2023-07-06 05:30:00
+start <- ymd_hms("2023-07-05 19:00:00")
+stop <- ymd_hms("2023-07-06 05:30:00")
+#instead of doing a for loop, make a lagged column, filter out everything that is not 0
+test2 <- test %>% 
+  filter(DATETIME > start & DATETIME < stop) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) %>% 
+  filter(transition %in% c(-1, 1))
+
+test2$state_change <- "none"
+test2$state_change[test2$transition == -1] <- "wetting"
+test2$state_change[test2$transition == 1] <- "drying"
+
+test2
+
+#now apply to the whole dataset
+test <- data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+    group_by(ID) %>% 
+  rename("DATETIME" = datetime) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  #filter(ID == 1)%>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) %>% 
+  filter(transition %in% c(-1, 1))
+
+test$state_change <- "none"
+test$state_change[test$transition == -1] <- "wetting"
+test$state_change[test$transition == 1] <- "drying"
+
+# facet labels
+hum_names <- as_labeller(
+     c("avg_wettingQ" = "Mean",
+            "med_wettingQ" = "Median",
+            "min_wettingQ" = "Min",
+            "max_wettingQ" = "Max"))
+
+test %>% 
+  group_by(ID) %>% 
+  filter(state_change == "wetting") %>% 
+  summarise(avg_wettingQ = mean(Q_mm_day),
+            med_wettingQ = median(Q_mm_day),
+            min_wettingQ = min(Q_mm_day),
+            max_wettingQ = max(Q_mm_day)) %>% 
+  left_join(pks, by = "ID") %>% 
+  pivot_longer(cols = avg_wettingQ:max_wettingQ) %>% 
+  ggplot(aes(x = pk, y = value))+
+  geom_point()+
+  #geom_smooth(method = "lm", se = FALSE)+
+   # stat_poly_eq(label.x = 0.9, label.y = 0.9) +
+  facet_wrap(~name, scale = "free_y", labeller = hum_names)+
+  theme_classic()+
+  labs(title = "Discharge required for stream wetting",
+       x = "Local Persistency",
+       y = "Discharge (mm/day)")
+#calculate for each sensor the average discharge where wetting occurs
+
+```
+
+```{r}
+#calculate flow duration curve, and what range of that this dataset captures
+```
+
+```{r}
+#determine the range of topography my study watersheds represent
+```
+
+```{r}
+#calculate expansion exponent after prancevic and kirchner 2019
 ```
 
