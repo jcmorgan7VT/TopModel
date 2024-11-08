@@ -757,6 +757,142 @@ test %>%
 
 ```
 
+
+```{r}
+#figure out how often the hierarchical framework is correct
+#local persistency tells us what sequence sensors should turn on, how often is this right?
+#what amount of discharge is associated with the sensors turning on each time, and how can I account for antecedent conditions?
+
+#first filter to a single date and time, and see if what is flowing agrees with local persistency
+time <- ymd_hms("2023-07-05 20:00:00")
+#instead of doing a for loop, make a lagged column, filter out everything that is not 0
+data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  rename("DATETIME" = datetime) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  filter(DATETIME == time) %>% 
+    left_join(pks, by = "ID") %>% 
+  arrange(pk) %>% 
+  mutate(lagged = lag(binary),
+         ID_lag = lag(ID),
+         transition = (binary - lagged)) %>%
+  filter(transition == 1) %>%
+  print(n = 31)
+
+#basically i need to keep the discharge and local persistency on the row where flow binary goes from 0 to 1
+#add a lagged column
+#labeller for plotting
+hum_names2 <- as_labeller(
+     c("mean_q" = "Mean",
+            "med_q" = "Median"))
+#works for a single time, now try for a few
+start <- ymd_hms("2023-07-05 19:00:00")
+stop <- ymd_hms("2023-08-05 20:30:00")
+#instead of doing a for loop, make a lagged column, filter out everything that is not 0
+data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  rename("DATETIME" = datetime) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  #filter(DATETIME > start & DATETIME < stop) %>%
+    left_join(pks, by = "ID") %>% 
+  arrange(pk) %>% 
+  group_by(DATETIME) %>% 
+  mutate(lagged = lag(binary),
+         ID_lag = lag(ID),
+         transition = (binary - lagged)) %>%
+  filter(transition == 1) %>% 
+  ungroup() %>% 
+  group_by(ID_lag) %>% 
+  summarise(mean_q = mean(Q_mm_day),
+            med_q = median(Q_mm_day)) %>% 
+  left_join(rename(pks, ID_lag = "ID"), by = "ID_lag") %>% 
+      filter(ID_lag != 6) %>% #when not lagged in 26, actually should be 6, all of the values are shifted down one, meaning that at this discharge, every pk smaller is right at the threshold to flow
+    pivot_longer(cols = c(mean_q, med_q)) %>% 
+  ggplot(aes(x = pk, y = value))+
+  geom_point()+
+  geom_smooth(method = "lm", se = FALSE)+
+    stat_poly_eq(label.x = 0.9, label.y = 0.9) +
+  facet_wrap(~name, scale = "free_y", labeller = hum_names2)+
+  theme_classic()+
+  labs(title = "threshold discharge based on persistency",
+       x = "Local Persistency",
+       y = "Discharge (mm/day)")
+
+#this plot shows the discharge required for every sensor with higher flow persistency to turn on
+
+#same data, but fit an exponential curve to it
+fitting <- data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  rename("DATETIME" = datetime) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  #filter(DATETIME > start & DATETIME < stop) %>%
+    left_join(pks, by = "ID") %>% 
+  arrange(pk) %>% 
+  group_by(DATETIME) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) %>%
+  filter(transition == 1) %>% 
+  ungroup() %>% 
+  group_by(ID) %>% 
+  summarise(mean_q = mean(Q_mm_day),
+            med_q = median(Q_mm_day)) %>% 
+  left_join(pks, by = "ID") %>% 
+      filter(ID != 26)
+
+model <- nls(mean_q ~ a*exp(-r * pk), data = fitting, start = list(a = 0.5, r = 0.2))
+
+fitting %>% 
+    add_predictions(model) %>% 
+  ggplot(aes(x = pk, y = log(mean_q)))+
+  geom_point()+
+  geom_line(aes(y = pred), color = "blue")+
+   # stat_poly_eq(label.x = 0.9, label.y = 0.9) +
+  theme_classic()+
+  labs(title = "threshold discharge based on persistency",
+       x = "Local Persistency",
+       y = "Mean Discharge (mm/day)")
+
+
+#now calculate when and where the hierarchical model is wrong
+#start with plot that is proportion of time when hierarchical model is wrong for each sensor
+data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  rename("DATETIME" = datetime) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  #filter(DATETIME > start & DATETIME < stop) %>%
+    left_join(pks, by = "ID") %>% 
+  arrange(pk) %>% 
+  group_by(DATETIME, Q_mm_day) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) %>%
+  filter(transition == 1) %>% 
+      filter(ID != 26) %>% 
+  ungroup() %>% 
+  group_by(ID) %>% 
+  summarise(count = sum(transition)) %>% 
+  ggplot(aes(x = as.integer(ID), y = count/6007, group = as.integer(ID)))+
+  geom_bar(stat="identity")+
+  labs(title = "Proportion of time that hierarchical framework fails",
+       x = "Sensor ID",
+       y = "Proportion of time")+
+  theme_classic()
+
+#figuring out when and where botter and durighetto doesn't work is not going to be easy... 
+# I think that what will matter is antecedent conditions
+
+#I could make a column of lagged of lagged discharge
+
+gggg <- data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  filter(ID == 1)
+
+length(gggg$ID)
+```
+
 ```{r}
 #calculate flow duration curve, and what range of that this dataset captures
 ```
@@ -767,5 +903,6 @@ test %>%
 
 ```{r}
 #calculate expansion exponent after prancevic and kirchner 2019
+
 ```
 
