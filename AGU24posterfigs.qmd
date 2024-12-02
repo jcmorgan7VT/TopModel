@@ -1,0 +1,15 @@
+---
+title: "AGU24 poster figures"
+format: html
+---
+
+```{r}
+seis <- read_csv("seismic_12_2_24.csv") %>% 
+  filter(quality == "yes",
+         grilla_number != 158)
+
+ggplot(seis, aes(x = long, y = lat, color = as.numeric(depth)))+
+  geom_point()+
+  theme_classic()
+```
+

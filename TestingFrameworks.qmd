@@ -16,6 +16,8 @@ p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly
 
 #reading in final format data for summer 23
 data_23 <- read_csv("./DataForMary/HB_stic.csv")
+data_23$binary <- 1
+data_23$binary[data_23$wetdry == "dry"] <- 0
 #reading in final format data for summer 24
 data_24 <- read_csv("./summer2024/STICS2024.csv")
 ```

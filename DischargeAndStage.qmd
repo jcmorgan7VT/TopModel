@@ -7,6 +7,17 @@ editor_options:
 
 10/14/24: script to process salt dilutions
 
+11/20/24: get data from excel
+```{r}
+library(googlesheets4)
+test <- read_sheet("https://docs.google.com/spreadsheets/d/1Km4mXI5AUgNl1oZDUaRBBOnmHCKc2zrmsMA8KyPWWY0/edit?gid=0#gid=0")
+
+test2 <- read_sheet("https://docs.google.com/spreadsheets/d/1Km4mXI5AUgNl1oZDUaRBBOnmHCKc2zrmsMA8KyPWWY0/edit?gid=2089142478#gid=2089142478")
+
+read_sheet("https://docs.google.com/spreadsheets/d/1Km4mXI5AUgNl1oZDUaRBBOnmHCKc2zrmsMA8KyPWWY0/edit?gid=142396057#gid=142396057")
+```
+
+
 ```{r}
 #script uploaded to google drive
 
@@ -676,6 +687,10 @@ plot(rast(fb_flowacc))
 
 ```{r}
 #find the range of discharge values where a sensor goes from on to off, or the range of discharge values over which a sensor is flowing
+
+data_23$mins <- minute(data_23$datetime)
+
+
 pks <- data_23 %>% 
   filter(wshed == "W3", mins %in% c(0, 30)) %>% 
   select(datetime, ID, lat, long, binary) %>% 
@@ -755,6 +770,7 @@ test %>%
        y = "Discharge (mm/day)")
 #calculate for each sensor the average discharge where wetting occurs
 
+#difference in discharge as it dries, plotted against stream length and area
 ```
 
 
@@ -903,6 +919,279 @@ length(gggg$ID)
 
 ```{r}
 #calculate expansion exponent after prancevic and kirchner 2019
+# L = wetted length
+# Qo = discharge at the outlet
+# B = network scaling exponent
+# L = Qo^B
+#then implement JP idea: plot that is diagnostic of whether
+# y, tranmissivity scaling exponent for W3 from P&K19 = 1.28
+# A = local contributing area
+# T = A^-y
 
+# all I need to calculate is the local drainage area, and discharge when the sensors go dry. Actual and theoretical.
+
+## Discharge when the sensors go dry (Actual)
+hum_names <- as_labeller(
+     c("avg_dryingQ" = "Mean",
+            "med_dryingQ" = "Median",
+            "min_dryingQ" = "Min",
+            "max_dryingQ" = "Max"))
+
+maxe <- 10
+positions <- data.frame(x = c(0,maxe,maxe, 0,0,maxe ),
+                        y = c(0,maxe,0, 0,maxe,maxe ),
+                        fill = c(rep("Yes",3), rep("No", 3)))
+test %>% 
+  group_by(ID) %>% 
+  filter(state_change == "drying") %>% 
+  summarise(avg_dryingQ = mean(Q_mm_day),
+            med_dryingQ = median(Q_mm_day),
+            min_dryingQ = min(Q_mm_day),
+            max_dryingQ = max(Q_mm_day)) %>% 
+  left_join(pks, by = "ID") %>% 
+  pivot_longer(cols = avg_dryingQ:max_dryingQ) %>% 
+  left_join(W3_uaa_ex, by = "ID") %>% 
+  rename(uaa = `10mdem_flowacc`) %>% 
+  mutate(hypothetical_T = uaa^-1.28) %>% # T = A^-y, used y from P&K
+  filter(ID != 13) %>% #remove 13, something wrong with drainage area, way too small
+  filter(name == "avg_dryingQ") %>% 
+  ggplot(aes(x = hypothetical_T, y = value))+
+  geom_text(aes(label = ID))+
+  geom_abline(intercept = 0, slope = 1, color="black", 
+                 linetype="dashed")+
+  geom_polygon(data = positions, aes(x = x,
+                   y = y,
+                   fill = fill), alpha = 0.2)+
+  scale_fill_manual(values = c( "salmon", "midnightblue"), name = "")+
+  #geom_smooth(method = "lm", se = FALSE)+
+  #  stat_poly_eq(label.x = 0.9, label.y = 0.9) +
+  #facet_wrap(~name, scale = "free_y", labeller = hum_names)+
+  theme_classic()+
+  lims(x = c(0, maxe),
+       y = c(0, maxe))+
+  labs(title = "Does Topography Predict Transmissivity?",
+       x = "Theoretical Transmissivity",
+       y = "Actual Tranmissivity (Median Q when Si dries)")+
+    theme(legend.position="top")
+
+  
+
+## Local drainage area- UAA for each logger location
+W3_uaa_ex
+# Si = some location in the watershed
+#plot with calculated tranmissivity on the X, and Q where Si should go dry
+
+#I also need an estimate of Q at each location... is there some leap in logic that could help me get here from local persistency?
+
+#or could I build a relationship between drainage area, discharge, and which locations are active...
+
+#determine how much discharge each sensor contributes?
+
+# Find each time that a sensor wets, and determine what the difference in discharge is between before and after wetting. Rough estimate of how much discharge is being contributed at each location?
 ```
 
+11/14/24- After illuminating meeting with JP and Kevin, I have a second iteration of the JPG and JCM graph:
+```{r}
+data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  rename("DATETIME" = datetime) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  #filter(DATETIME > start & DATETIME < stop) %>%
+    left_join(pks, by = "ID") %>% 
+  arrange(pk) %>% 
+  group_by(DATETIME) %>% 
+  mutate(lagged = lag(binary),
+         ID_lag = lag(ID),
+         transition = (binary - lagged)) %>%
+  filter(transition == 1) %>% 
+  ungroup() %>% 
+  group_by(ID_lag) %>% 
+  summarise(mean_q = mean(Q_mm_day),
+            med_q = median(Q_mm_day)) %>% 
+  left_join(rename(pks, ID_lag = "ID"), by = "ID_lag") %>% 
+      filter(ID_lag != 6) %>% #when not lagged in 26, actually should be 6, all of the values are shifted down one, meaning that at this discharge, every pk smaller is right at the threshold to flow
+    pivot_longer(cols = c(mean_q, med_q)) %>% 
+  ggplot(aes(x = pk, y = value))+
+  geom_point()+
+  geom_smooth(method = "lm", se = FALSE)+
+    stat_poly_eq(label.x = 0.9, label.y = 0.9) +
+  facet_wrap(~name, scale = "free_y", labeller = hum_names2)+
+  theme_classic()+
+  labs(title = "threshold discharge based on persistency",
+       x = "Local Persistency",
+       y = "Discharge (mm/day)")
+```
+
+Analysis idea from Nov 18, 2024. 
+To test the assumption that Tranmissivity decreases as you move downvalley, test whether the change in discharge from one time step to the next when a sensor dries is related to it's position in the network. This might show where this tranmissivity hypothesis fails due to some condition of the subsurface.
+```{r}
+
+test <- data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+    group_by(ID) %>% 
+  rename("DATETIME" = datetime) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  #filter(ID == 1)%>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) %>% 
+  filter(transition %in% c(-1, 1))
+
+test$state_change <- "none"
+test$state_change[test$transition == -1] <- "wetting"
+test$state_change[test$transition == 1] <- "drying"
+
+# facet labels
+hum_names <- as_labeller(
+     c("avg_wettingQ" = "Mean",
+            "med_wettingQ" = "Median",
+            "min_wettingQ" = "Min",
+            "max_wettingQ" = "Max"))
+number_of_dries <- test %>% 
+  group_by(ID) %>% 
+  filter(state_change == "drying")
+
+#calculating the average and sd of delta Q for each sensor when they go dry
+data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+    group_by(ID) %>% 
+  rename("DATETIME" = datetime) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  #filter(ID == 1)%>% 
+  mutate(lagged = lag(binary),
+         lagged_datetime = lag(DATETIME),
+         lagged_Q = lag(Q_mm_day),
+         transition = abs(binary - lagged)) %>% 
+  filter(transition == 1) %>% 
+  mutate(drying_diff = (lagged_Q - Q_mm_day)) %>% 
+  select(DATETIME, ID, drying_diff) %>% 
+  group_by(ID) %>% 
+  summarise(mean = mean(drying_diff),
+            sd = sd(drying_diff),
+            med = median(drying_diff)) %>% #left join to drainage area
+  left_join(W3_uaa_ex, by = "ID") %>% 
+  ggplot(aes(x = log(`10mdem_flowacc`), y = mean))+
+  geom_point()+
+  theme_classic()+
+  labs(title = "Mean ΔQ required for stream drying",
+       x = "ln(Drainage Area) (m^2)",
+       y = "Mean |ΔQ| (mm/day)")#+
+  #geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.2)
+
+#calculating the average and sd of delta Q for each sensor when they go dry
+data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+    group_by(ID) %>% 
+  rename("DATETIME" = datetime) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  #filter(ID == 1)%>% 
+  mutate(lagged = lag(binary),
+         lagged_datetime = lag(DATETIME),
+         lagged_Q = lag(Q_mm_day),
+         transition = abs(binary - lagged)) %>% 
+  filter(transition == 1) %>% 
+  mutate(drying_diff = (lagged_Q - Q_mm_day)) %>% 
+  select(DATETIME, ID, drying_diff) %>% 
+  group_by(ID) %>% 
+  summarise(mean = mean(drying_diff),
+            sd = sd(drying_diff),
+            med = median(drying_diff)) %>% #left join to drainage area
+  left_join(W3_uaa_ex, by = "ID") %>% 
+  ggplot(aes(x = log(`10mdem_flowacc`), y = mean))+
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.2, color = "lightgrey")+
+  geom_point()+
+  theme_classic()+
+  labs(title = "ΔQ required for stream drying",
+       x = "ln(Drainage Area) (m^2)",
+       y = "Mean |ΔQ| (mm/day)")
+
+
+#calculating the average and sd of delta Q for each sensor when they go dry
+data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+    group_by(ID) %>% 
+  rename("DATETIME" = datetime) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  #filter(ID == 1)%>% 
+  mutate(lagged = lag(binary),
+         lagged_datetime = lag(DATETIME),
+         lagged_Q = lag(Q_mm_day),
+         transition = (binary - lagged)) %>% 
+  filter(transition == 1) %>% 
+  mutate(drying_diff = (lagged_Q - Q_mm_day)) %>% 
+  select(DATETIME, ID, drying_diff) %>% 
+  group_by(ID) %>% 
+  summarise(mean = mean(drying_diff),
+            sd = sd(drying_diff),
+            med = median(drying_diff)) %>% #left join to drainage area
+  left_join(W3_uaa_ex, by = "ID") %>% 
+  ggplot(aes(x = log(`10mdem_flowacc`), y = mean))+
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.2, color = "lightgrey")+
+  geom_point()+
+  theme_classic()+
+  geom_hline(yintercept = 0, lty = "dashed")+
+  labs(title = "ΔQ required for stream drying",
+       x = "ln(Drainage Area) (m^2)",
+       y = "Mean ΔQ (mm/day)")
+
+#calculating the average and sd of delta Q for each sensor when they go dry
+data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+    group_by(ID) %>% 
+  rename("DATETIME" = datetime) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  #filter(ID == 1)%>% 
+  mutate(lagged = lag(binary),
+         lagged_datetime = lag(DATETIME),
+         lagged_Q = lag(Q_mm_day),
+         transition = (binary - lagged)) %>% 
+  filter(transition == 1) %>% 
+  mutate(drying_diff = (lagged_Q - Q_mm_day)) %>% 
+  select(DATETIME, ID, drying_diff) %>% 
+  group_by(ID) %>% 
+  summarise(mean = mean(drying_diff),
+            sd = sd(drying_diff),
+            med = median(drying_diff)) %>% #left join to drainage area
+  left_join(W3_uaa_ex, by = "ID") %>% 
+  ggplot(aes(x = (`10mdem_flowacc`), y = mean))+
+  geom_errorbar(aes(ymin=mean-sd, ymax=mean+sd), width=.2, color = "lightgrey")+
+  geom_point()+
+  theme_classic()+
+  geom_hline(yintercept = 0, lty = "dashed")+
+  labs(title = "ΔQ required for stream drying",
+       x = "Drainage Area (m^2)",
+       y = "Mean ΔQ (mm/day)")
+
+data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+    group_by(ID) %>% 
+  rename("DATETIME" = datetime) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  #filter(ID == 1)%>% 
+  mutate(lagged = lag(binary),
+         lagged_datetime = lag(DATETIME),
+         lagged_Q = lag(Q_mm_day),
+         transition = abs(binary - lagged)) %>% 
+  filter(transition == 1) %>% 
+  mutate(drying_diff = (lagged_Q - Q_mm_day)) %>% 
+  select(DATETIME, ID, drying_diff) %>% 
+  group_by(ID) %>% 
+  summarise(mean = mean(drying_diff),
+            sd = sd(drying_diff),
+            med = median(drying_diff)) %>% #left join to drainage area
+  left_join(W3_uaa_ex, by = "ID") %>% 
+  ggplot(aes(x = log(`10mdem_flowacc`), y = med))+
+  geom_point()+
+  theme_classic()+
+  labs(title = "Median ΔQ required for stream drying",
+       x = "ln(Drainage Area) (m^2)",
+       y = "Median |ΔQ| (mm/day)")#+
+```
+
+Calculate how dynamic a location is: how often does it switch states? How many times does it switch states in a certain time frame?

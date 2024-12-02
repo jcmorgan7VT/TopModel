@@ -444,7 +444,7 @@ w3_map <- ggplot()+
 
 w3_map
 
-w3_map
+
 ```
 
 Combine maps, save
