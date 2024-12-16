@@ -7,12 +7,12 @@ editor_options:
 ```{r}
 library(pacman)
 
-p_load(maptools)
+p_load(stringr, patchwork)
 ```
 
 ```{r}
 seis <- read_csv("seismic_12_2_24.csv") %>% 
-  filter(quality == "yes",
+  filter(quality %in% c("yes", "1 away"),
          grilla_number != 158)
 
 ggplot(seis, aes(x = long, y = lat, color = as.numeric(depth)))+
@@ -27,6 +27,7 @@ plot(depths)
 #reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
 dd <- terra::project(depths, crs(m1))
 plot(dd)
+
 ```
 
 ```{r}
@@ -185,6 +186,7 @@ plot(w3_streams_vect,
 ```
 
 #Depth-to-bedrock versus surface with persistency plotted
+##attempt 1
 ```{r exporting}
 
 ####Forget all of this, I am just going to do this in ARC
@@ -203,7 +205,6 @@ writeVector(seis_sub, seis_pts, overwrite = TRUE)
 #stream raster (will need to convert to shapefile)
 writeRaster(w3_streams_rast, stream, overwrite = TRUE)
 ```
-
 ```{r bringing-back-to-R}
 #read in files that I created in ARC, and modified in excel to calculate accumulated distance
 stic_dist <- read_csv("./AGU24posterAnalysis/processed_export/dist_btwn_stic.csv")
@@ -265,12 +266,13 @@ seis_w3_ex %>%
 seis_w3_ex %>%
   left_join(seis_dist_f, by = "grilla_number") %>% 
   left_join(seis, by = "grilla_number") %>% 
-  mutate(surfaceMinusDepth = elevation_m - as.numeric(depth)) %>% 
+  mutate(surfaceMinusDepth = (elevation_m - as.numeric(depth)*5)) %>% 
   select(grilla_number, sum, elevation_m, surfaceMinusDepth) %>% 
   rename(Surface = elevation_m, Bedrock = surfaceMinusDepth) %>% 
   pivot_longer(cols = c(Surface, Bedrock)) %>% 
   ggplot(aes(x = sum, y = value))+
   geom_line(aes(lty = name))+
+  geom_point()+
     theme_classic()+
       scale_x_reverse()+
   geom_point(data = stic_w3_ex, 
@@ -311,6 +313,403 @@ seis_w3_ex %>%
                          #limits = c(0.5, 1),
                          labels = c("50%", "60%", "70%", "80%", "90%"))
 ```
+##attempt 2
+What is different- incorporating feedback from Kevin and JP
+```{r prepare-stream}
+#fresh delineated stream
+#whitebox tools method to snap
+
+#save to file for use in whitebox functions
+w3_pour_filename <- "./w3_dems/w3_pour.shp"
+writeVector(w3_pour, w3_pour_filename, overwrite=TRUE)
+#delineate streams
+w3_streams <- "./w3_dems/w3_streams.tif"
+wbt_extract_streams(flow_accum = w3_flowacc,
+                    output = w3_streams,
+                    threshold = 4000)
+plot((rast(w3_streams)))
+points(lcc)
+
+#read in shapefile of stream converted in ARC
+vect_stream_path <- "./AGU24posterAnalysis/vector_stream/vector_stream.shp"
+
+#stream as a vector
+vect_stream <- vect(vect_stream_path)
+plot(vect_stream)
+```
+```{r calculate-depth}
+#recalculate seismic data- calculate depth using actual Vs or linear model between Fr and Depth
+
+#scenario 1: use average Vs for all wells
+seis_good <- seis %>% 
+  select(grilla_number, lat, long, h_v_max, sd, Vs, depth) %>% 
+  mutate(Vs = 469.9,
+         depth = Vs/(4*h_v_max),
+         sd_depth_pos = Vs/(4*h_v_max + sd),
+         sd_depth_neg = Vs/(4*h_v_max - sd))
+seis_good
+
+#scenario 2: use linear equation
+seis %>% select(grilla_number, lat, long, h_v_max, sd, Vs, depth) %>% 
+  mutate(Vs = 469.9,
+         depth = 10.6147 - (0.2001* h_v_max),
+         sd_depth_pos = 10.6147 - (0.2001* h_v_max + sd),
+         sd_depth_neg = 10.6147 - (0.2001* h_v_max - sd))
+
+#I think scenario 1 makes more sense, scenario 2 does not work for Vs outside of the range of my calibration observations
+
+#take seismic measurements, convert to shapefile and correct crs
+depths <- vect(seis_good, 
+                  geom=c("long", "lat"), 
+                   crs = "+proj=longlat +datum=WGS84")
+plot(depths)
+dd <- terra::project(depths, crs(m1))
+plot(dd)
+```
+```{r prepare-seis-points}
+#then I can buffer and only keep seismic measurements 
+buf <- buffer(w3_net[c(77,33,76,75),], 5)
+#find which points lie in buffer
+buf <- terra::project(buf, crs(m1))
+
+as.data.frame(intersect(dd, buf)) %>% select(grilla_number, depth, sd)
+points(intersect(dd, buf), col = "blue")
+
+#snap seismic points to the line of the stream
+#input to snapping
+w3_seis_locs <- "./AGU24posterAnalysis/Figure8/w3_seis_locs.shp"
+writeVector(intersect(dd, buf), w3_seis_locs, overwrite=TRUE)
+
+#snap pour point to streams
+#output destination
+w3_seis_locs_snap <- "./AGU24posterAnalysis/Figure8/w3_seis_locs_snap.shp"
+wbt_jenson_snap_pour_points(pour_pts = w3_seis_locs,
+                            streams = w3_streams,
+                            output = w3_seis_locs_snap,
+                            snap_dist = 40)
+w3_stic_locs_r <- vect(w3_stic_locs_snap)
+plot(vect_stream)
+points(vect(w3_seis_locs_snap), pch = 1)
+seis_locs <- vect(w3_seis_locs_snap)
+```
+```{r calculate-dist-along-stream}
+#I can't figure out how to do this, so I need to export the DEM, and the new set of seismic points and use ARC to do it.
+####Forget all of this, I am just going to do this in ARC
+#paths to files saved for use in ARC
+w3_seis_locs_save2 <- "./AGU24posterAnalysis/attempt2/w3_seis_locs_snap.shp"
+stream <- "./AGU24posterAnalysis/stream.tif"
+#filled and breached DEM from figures4poster markdown
+dem_dest <- "./AGU24posterAnalysis/attempt2/dem.tif"
+w3_filled <- "./w3_dems/1mdem_fill.tif"
+
+#seis pts (not snapped)
+writeVector(seis_locs, w3_seis_locs_save2, overwrite = TRUE)
+
+#stream raster (will need to convert to shapefile)
+writeRaster(rast(w3_filled), dem_dest, overwrite = TRUE)
+
+#distance along the stream calculated in Arc and excel on other computer, sent here
+depth_exaggeration <- 1
+
+fungal <- read_csv("./AGU24posterAnalysis/Final_seis.csv") %>% 
+  select(-c(ARCID, GRID_CODE, FROM_NODE, 
+            TO_NODE, StrType, distance_below)) %>% 
+  #calculate columns of bedrock depth
+  mutate(bedrock = RASTERVALU - depth * depth_exaggeration,
+         bedrock_sd_p = RASTERVALU- sd_depth_p * depth_exaggeration,
+         bedrock_sd_n = RASTERVALU- sd_depth_n * depth_exaggeration)
+summary(fungal$depth)
+#subset STIC locations for plotting
+stic_xsec <- fungal %>% filter(grilla_num %in% c(192, 201, 208, 213)) %>% 
+  mutate(ID = c(14, 13, 12, 11)) %>% 
+  left_join(pks, by = "ID") %>% 
+  mutate(pk = pk * 100)
+
+```
+```{r plot}
+plot1 <- fungal %>% 
+  #select(grilla_number, sum, elevation_m, surfaceMinusDepth) %>% 
+  rename(Surface = RASTERVALU, Bedrock = bedrock) %>% 
+  mutate(Bedrock = Bedrock) %>% 
+  pivot_longer(cols = c(Surface, Bedrock)) %>% 
+  ggplot(aes(x = cum_dist_m, y = value))+
+  geom_line(aes(lty = name))+
+  #error bars are so small, not worth showing
+      #  geom_errorbar(aes(ymin=bedrock_sd_n, ymax=bedrock_sd_p))+
+  geom_point(data = fungal,
+            aes(x = cum_dist_m, y = bedrock))+
+    theme_classic()+
+      scale_x_reverse()+
+  geom_point(data = stic_xsec, 
+             aes(x = cum_dist_m, y = RASTERVALU, color = pk), size = 3)+
+  geom_text(data = stic_xsec, 
+             aes(x = cum_dist_m, y = RASTERVALU, 
+                 label = paste0(signif(pk, 2), "%")),
+            nudge_x = 20,
+            nudge_y = 10)+
+  labs(x = "Distance to outlet (m)",
+       y = "Elevation (m)")+
+  scale_linetype_manual(values = c(2, 1), 
+                        name = "")+
+  scale_color_continuous(type = "viridis",
+                         name = "Flow Duration",
+                         breaks = c(50, 70, 90),
+                         #limits = c(0.5, 1),
+                        labels = c("50%", "70%", "90%"))
+#ggsave("duration.plot.png", width = 16, units = "in", scale = 0.6)
+
+  
+  
+  
+
+```
+```{r calculate-duration-of-flow}
+#calculating pk
+data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  filter(ID == 1) %>% 
+  select(datetime, ID, binary) %>% 
+    group_by(ID) %>% 
+  rename("DATETIME" = datetime) %>% 
+  #left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  summarise(pk = sum(binary)/length(binary)) %>% 
+  select(ID, pk) %>% 
+  ungroup()
+
+data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+    group_by(ID) %>% 
+  rename("DATETIME" = datetime) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  #filter(ID == 1)%>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) #%>% 
+  filter(transition %in% c(-1, 1))
+
+test$state_change <- "none"
+test$state_change[test$transition == -1] <- "wetting"
+test$state_change[test$transition == 1] <- "drying"
+
+# facet labels
+hum_names <- as_labeller(
+     c("avg_wettingQ" = "Mean",
+            "med_wettingQ" = "Median",
+            "min_wettingQ" = "Min",
+            "max_wettingQ" = "Max"))
+number_of_dries <- test %>% 
+  group_by(ID) %>% 
+  summarise(count = 1003/length(transition)*0.5)
+  #filter(state_change == "drying")
+
+#successfully calculating the average duration of flow for an event
+dur <- data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+    #group_by(ID) %>% 
+  #rename("DATETIME" = datetime) #%>%
+  mutate(group = data.table::rleid(binary)) %>%
+  group_by(group, ID) %>%
+  summarise(state = first(binary), 
+            timeperiod = dplyr::last(datetime) - dplyr::first(datetime)) %>% 
+  mutate(timeperiod = as.numeric(timeperiod, units = "days")) %>% 
+  group_by(ID) %>% 
+  filter(state == 1) %>% 
+  summarise(avg_days_flowing = mean(timeperiod))
+
+stic_xsec2 <- fungal %>% filter(grilla_num %in% c(192, 201, 208, 213)) %>% 
+  mutate(ID = c(14, 13, 12, 11)) %>% 
+  left_join(dur, by = "ID")
+```
+```{r duration-profile-plot}
+plot2 <- fungal %>% 
+  #select(grilla_number, sum, elevation_m, surfaceMinusDepth) %>% 
+  rename(Surface = RASTERVALU, Bedrock = bedrock) %>% 
+  mutate(Bedrock = Bedrock) %>% 
+  pivot_longer(cols = c(Surface, Bedrock)) %>% 
+  ggplot(aes(x = cum_dist_m, y = value))+
+  geom_line(aes(lty = name))+
+  #error bars are so small, not worth showing
+      #  geom_errorbar(aes(ymin=bedrock_sd_n, ymax=bedrock_sd_p))+
+  geom_point(data = fungal,
+            aes(x = cum_dist_m, y = bedrock))+
+    theme_classic()+
+      scale_x_reverse()+
+  geom_point(data = stic_xsec2, 
+             aes(x = cum_dist_m, y = RASTERVALU, color = avg_days_flowing), size = 3)+
+  geom_text(data = stic_xsec2, 
+             aes(x = cum_dist_m, y = RASTERVALU, 
+                 label = paste0(signif(avg_days_flowing, 2), "days")),
+            nudge_x = 20,
+            nudge_y = 10)+
+  labs(x = "Distance to outlet (m)",
+       y = "Elevation (m)")+
+  scale_linetype_manual(values = c(2, 1), 
+                        name = "")+
+    scale_color_gradient(low = "purple",
+                         high = "orange",
+                         name = str_wrap("Event Length (days)", 5))
+#ggsave("Length.plot.png", width = 16, units = "in", scale = 0.6)
+
+fungal
+
+```
+##cross sections
+```{r export-all-seismic-locs}
+stream <- "./AGU24posterAnalysis/cross/seis4cross.shp"
+
+writeVector(dd, stream, overwrite=TRUE)
+
+```
+```{r read-in-from-ARC}
+#do for both w and e streams
+depth_exaggeration <- 1
+gorp <- read_csv("./AGU24posterAnalysis/w3x.csv") %>% 
+  arrange(cum_dist_m) %>% 
+  select(-c(ind_dist)) %>% 
+  #calculate columns of bedrock depth
+  mutate(bedrock = RASTERVALU - depth * depth_exaggeration,
+         bedrock_sd_p = RASTERVALU- sd_depth_p * depth_exaggeration,
+         bedrock_sd_n = RASTERVALU- sd_depth_n * depth_exaggeration)
+summary(gorp$depth)
+#subset STIC locations for plotting
+stic_xsec_w3 <- gorp %>% filter(grilla_num %in% c(208)) %>% 
+  mutate(ID = c(12)) %>% 
+  left_join(pks, by = "ID") %>% 
+  mutate(pk = pk * 100)
+
+#now plot
+gorp %>% 
+  #select(grilla_number, sum, elevation_m, surfaceMinusDepth) %>% 
+  rename(Surface = RASTERVALU, Bedrock = bedrock) %>% 
+  mutate(Bedrock = Bedrock) %>% 
+  pivot_longer(cols = c(Surface, Bedrock)) %>% 
+  ggplot(aes(x = cum_dist_m, y = value))+
+  geom_line(aes(lty = name))+
+  #error bars are so small, not worth showing
+      #  geom_errorbar(aes(ymin=bedrock_sd_n, ymax=bedrock_sd_p))+
+  geom_point(data = gorp,
+            aes(x = cum_dist_m, y = bedrock))+
+    theme_classic()+
+      #scale_x_reverse()+
+  geom_point(data = stic_xsec_w3, 
+             aes(x = cum_dist_m, y = RASTERVALU, color = pk), size = 3)+
+  geom_text(data = stic_xsec_w3, 
+             aes(x = cum_dist_m, y = RASTERVALU, 
+                 label = paste0(signif(pk, 2), "%")),
+            nudge_x = 2.5,
+            nudge_y = 2.5)+
+  labs(x = "Distance to outlet (m)",
+       y = "Elevation (m)")+
+  scale_linetype_manual(values = c(2, 1), 
+                        name = "")+
+  scale_color_continuous(type = "viridis",
+                         name = "Flow Duration",
+                         breaks = c(50, 70, 90),
+                         limits = c(50, 100),
+                        labels = c("50%", "70%", "90%"))
+ggsave("w3x.plot.png", width = 14, units = "in", scale = 0.4)
+
+```
+```{r again-for-E4}
+#do for both w and e streams
+depth_exaggeration <- 1
+gorp2 <- read_csv("./AGU24posterAnalysis/e4x.csv") %>% 
+  arrange(cum_dist_m) %>% 
+  #select(-c(ind_dist)) %>% 
+  #calculate columns of bedrock depth
+  mutate(bedrock = RASTERVALU - depth * depth_exaggeration,
+         bedrock_sd_p = RASTERVALU- sd_depth_p * depth_exaggeration,
+         bedrock_sd_n = RASTERVALU- sd_depth_n * depth_exaggeration)
+summary(gorp2$depth)
+#subset STIC locations for plotting
+stic_xsec_e4 <- gorp2 %>% filter(grilla_num %in% c(121)) %>% 
+  mutate(ID = c(25)) %>% 
+  left_join(pks, by = "ID") %>% 
+  mutate(pk = pk * 100)
+
+#now plot
+gorp2 %>% 
+  #select(grilla_number, sum, elevation_m, surfaceMinusDepth) %>% 
+  rename(Surface = RASTERVALU, Bedrock = bedrock) %>% 
+  mutate(Bedrock = Bedrock) %>% 
+  pivot_longer(cols = c(Surface, Bedrock)) %>% 
+  ggplot(aes(x = cum_dist_m, y = value))+
+  geom_line(aes(lty = name))+
+  #error bars are so small, not worth showing
+      #  geom_errorbar(aes(ymin=bedrock_sd_n, ymax=bedrock_sd_p))+
+  geom_point(data = gorp2,
+            aes(x = cum_dist_m, y = bedrock))+
+    theme_classic()+
+     # scale_x_reverse()+
+  geom_point(data = stic_xsec_e4, 
+             aes(x = cum_dist_m, y = RASTERVALU, color = pk), size = 3)+
+  geom_text(data = stic_xsec_e4, 
+             aes(x = cum_dist_m, y = RASTERVALU, 
+                 label = paste0(signif(pk, 2), "%")),
+            nudge_x = 1.2,
+            nudge_y = 0.75)+
+  labs(x = "Distance to outlet (m)",
+       y = "Elevation (m)")+
+  scale_linetype_manual(values = c(2, 1), 
+                        name = "")+
+  scale_color_continuous(type = "viridis",
+                         name = "Flow Duration",
+                         breaks = c(50, 70, 90),
+                         limits = c(50, 100),
+                        labels = c("50%", "70%", "90%"))
+ggsave("e4x.plot.png", width = 14, units = "in", scale = 0.4)
+```
+##E3 profile
+```{r}
+depth_exaggeration <- 3
+dour <- read_csv("./AGU24posterAnalysis/elev.csv") %>% 
+  select(-c(ind)) %>% 
+  #calculate columns of bedrock depth
+  mutate(bedrock = RASTERVALU - depth * depth_exaggeration,
+         bedrock_sd_p = RASTERVALU- sd_depth_p * depth_exaggeration,
+         bedrock_sd_n = RASTERVALU- sd_depth_n * depth_exaggeration)
+#subset STIC locations for plotting
+stic_xsec_e3 <- dour %>% filter(grilla_num %in% c(121, 224, 155)) %>% 
+  mutate(ID = c(25, 23, 22)) %>% 
+  left_join(pks, by = "ID") %>% 
+  mutate(pk = pk * 100)
+
+dour %>% 
+  #select(grilla_number, sum, elevation_m, surfaceMinusDepth) %>% 
+  rename(Surface = RASTERVALU, Bedrock = bedrock) %>% 
+  mutate(Bedrock = Bedrock) %>% 
+  pivot_longer(cols = c(Surface, Bedrock)) %>% 
+  ggplot(aes(x = cum_dist_m, y = value))+
+  geom_line(aes(lty = name))+
+  #error bars are so small, not worth showing
+      #  geom_errorbar(aes(ymin=bedrock_sd_n, ymax=bedrock_sd_p))+
+  geom_point(data = dour,
+            aes(x = cum_dist_m, y = bedrock))+
+    theme_classic()+
+      scale_x_reverse()+
+  geom_point(data = stic_xsec_e3, 
+             aes(x = cum_dist_m, y = RASTERVALU, color = pk), size = 3)+
+  geom_text(data = stic_xsec_e3, 
+             aes(x = cum_dist_m, y = RASTERVALU, 
+                 label = paste0(signif(pk, 2), "%")),
+            nudge_x = 20,
+            nudge_y = 10)+
+  labs(x = "Distance to outlet (m)",
+       y = "Elevation (m)")+
+  scale_linetype_manual(values = c(2, 1), 
+                        name = "")+
+  scale_color_continuous(type = "viridis",
+                         name = "Flow Duration",
+                         breaks = c(25, 50, 75),
+                         #limits = c(0.5, 1),
+                        labels = c("25%", "50%", "75%"))
+ggsave("e31.plot.png", width = 16, units = "in", scale = 0.6)
+
+```
+
+
+#Figure 4: Seismic calibration curve
 
 #Histograms of local persistency, dynamism, and number of days flowing
 ##Local persistency
@@ -340,7 +739,80 @@ data_23 %>%
 
 ```
 
-#Show where topography does not work to predict
+#Maps for poster
+##Map of W3 with flow persistence/total flow duration colored points
+```{r map-total-flow-duration}
+#requiring running of chunk from figures4poster
+#hillshade
+hillshade_out <- "./w3_dems/1mdem_hillshade.tif"
+hill <- rast(hillshade_out)
+
+#dem
+dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
+m1 <- rast(dem)
+#define the rectangular area that will be shown on final map
+ybounds <- c(4870350,4871350)
+xbounds <- c(281350, 282150)
+#crop to rectangular area
+crop1 <- crop(m1, ext(c(xbounds, ybounds)))
+#writeRaster(crop1, "./w3_dems/1mdem_crop.tif", overwrite = TRUE)
+#read in cropped dem
+#w3_crop <- "./w3_dems/1mdem_crop.tif"
+#crop1 <- rast(w3_crop)
+
+#watershed boundary
+w3_shed <- "./w3_dems/w3_shed.tif"
+w3_outline <- as.polygons(rast(w3_shed), extent=FALSE)
+
+#w3 network- thing I need to change
+#read in shapefile of stream converted in ARC
+vect_stream_path <- "./AGU24posterAnalysis/vector_stream/vector_stream.shp"
+#stream as a vector
+vect_stream <- vect(vect_stream_path)
+plot(vect_stream)
+#crop to watershed boundary
+w3_stream_crop <- crop(vect_stream, w3_outline)
+plot(w3_stream_crop)
+#or i could use old classification
+
+#point locations- snapped points from above chunk
+w3_stic_locs_r <- vect(w3_stic_locs_snap) %>% 
+  left_join(pks, by = "ID")
+
+plot(w3_net)
+ggplot()+
+  geom_spatraster(data = hill)+
+  theme_void()+
+  #theme(legend.position = "")+
+  scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
+    guides(fill = "none")+
+    new_scale_fill() +
+  geom_spatraster(data = crop1, alpha = 0.5)+
+    geom_sf(data = w3_outline, fill = NA, color = "black", alpha = 0.3)+
+  geom_sf(data = w3_net, aes(linetype = StrType), colour = "midnightblue") +
+  #geom_sf(data = w3_pour, colour = "black", pch = 8) +
+   scale_fill_hypso_c(palette = "c3t1" )+
+      guides(fill = "none")+
+#, limits = c(200, 1000))+
+    scale_linetype_manual(values = c(3, 2, 1),
+                            labels = c("Ephemeral", "Intermittent", "Perennial"),
+                          name = "Classification")+
+      new_scale_fill() +
+      geom_sf(data = w3_stic_locs_r, aes(fill = pk), pch = 21, size = 2) +
+  #scale_color_continuous(values = c("white", "black"))+
+  scale_fill_gradient(low = "black",
+                         high = "white",
+                         name = str_wrap("Flow Duration (%)", 5),
+                      breaks = c(0.25, 0.5, 0.75),
+                      labels = c("25%", "50%", "75%"))+
+  #theme(rect = element_rect(fill = "transparent", color = NA))+
+  ggspatial::annotation_scale(location = 'br', pad_x = unit(0.5, "cm"), 
+                              pad_y = unit(0.5, "cm"),
+                              line_width = 0.5, text_cex = 1, tick_height = 5)
+
+#finished, and it is gorgeous!
+```
+##Show where topography does not work to predict
 ```{r}
 #code from Testing Frameworks markdown
 writeVector(points_w3, "./AGU24posterAnalysis/topo_model_output.shp")
@@ -348,7 +820,7 @@ writeVector(points_w3, "./AGU24posterAnalysis/topo_model_output.shp")
 ggplot()+
   geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
   geom_spatvector(data = points_w3, aes(color = percent_agreement), size = 3)+
-  facet_wrap(~threshold)+#aes(color = percent_flowing), size = 2)+
+  #facet_wrap(~threshold)+#aes(color = percent_flowing), size = 2)+
   #geom_text_repel(data = simple_table, aes(x = long, y = lat, label = number))+
   theme_void()+
   scale_color_binned(type = "viridis",
@@ -357,7 +829,47 @@ ggplot()+
                      )+
   labs(title = "Agreement with New model, 7/23 - 11/23")+
   theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+
+#copy and paste map from earlier, but show percent agreement with topography logistic regression instead of pk
+agreement <- as.data.frame(points_w3) %>% 
+  filter(threshold == "threshold_90")
+
+w3_stic_locs_agree <- vect(w3_stic_locs_snap) %>% 
+  left_join(agreement, by = "ID")
+
+plot(w3_net)
+ggplot()+
+  geom_spatraster(data = hill)+
+  theme_void()+
+  #theme(legend.position = "")+
+  scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
+    guides(fill = "none")+
+    new_scale_fill() +
+  geom_spatraster(data = crop1, alpha = 0.5)+
+    geom_sf(data = w3_outline, fill = NA, color = "black", alpha = 0.3)+
+  geom_sf(data = w3_net, aes(linetype = StrType), colour = "midnightblue") +
+  #geom_sf(data = w3_pour, colour = "black", pch = 8) +
+   scale_fill_hypso_c(palette = "c3t1" )+
+      guides(fill = "none")+
+#, limits = c(200, 1000))+
+    scale_linetype_manual(values = c(3, 2, 1),
+                            labels = c("Ephemeral", "Intermittent", "Perennial"),
+                          name = "Classification")+
+      new_scale_fill() +
+      geom_sf(data = w3_stic_locs_agree, 
+              aes(fill = percent_agreement), pch = 21, size = 2) +
+  #scale_color_continuous(values = c("white", "black"))+
+  scale_fill_continuous(type = "viridis",
+                         name = str_wrap("Total Agreement with Topo Model (%)", 10),
+                      breaks = c(25, 50, 75),
+                      labels = c("25%", "50%", "75%"))+
+  #theme(rect = element_rect(fill = "transparent", color = NA))+
+  ggspatial::annotation_scale(location = 'br', pad_x = unit(0.5, "cm"), 
+                              pad_y = unit(0.5, "cm"),
+                              line_width = 0.5, text_cex = 1, tick_height = 5)
 ```
+
+
 
 
 ```{r}
