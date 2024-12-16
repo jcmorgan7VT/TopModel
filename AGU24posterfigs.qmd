@@ -4,13 +4,13 @@ format: html
 editor_options: 
   chunk_output_type: console
 ---
-```{r}
+#Setup and exploration
+```{r setup}
 library(pacman)
 
 p_load(stringr, patchwork)
 ```
-
-```{r}
+```{r read-seismic-data}
 seis <- read_csv("seismic_12_2_24.csv") %>% 
   filter(quality %in% c("yes", "1 away"),
          grilla_number != 158)
@@ -29,8 +29,7 @@ dd <- terra::project(depths, crs(m1))
 plot(dd)
 
 ```
-
-```{r}
+```{r depth-measurement-locations-map}
 #map of watershed 3 with depth to bedrock
 
 ggplot()+
@@ -49,6 +48,9 @@ ggplot()+
   theme(rect = element_rect(fill = "transparent", color = NA))+
   ggspatial::annotation_scale(location = 'tr')
 
+
+```
+```{r exploration-of-seismic-for-analysis}
 
 #map with stream segments labelled
 ggplot()+
@@ -185,136 +187,99 @@ plot(w3_streams_vect,
 
 ```
 
-#Depth-to-bedrock versus surface with persistency plotted
-##attempt 1
-```{r exporting}
+#Figure 3: Distribution of total flow duration, and mapped in space
+```{r map-total-flow-duration}
+#requiring running of chunk from figures4poster
+#hillshade
+hillshade_out <- "./w3_dems/1mdem_hillshade.tif"
+hill <- rast(hillshade_out)
 
-####Forget all of this, I am just going to do this in ARC
-#paths to files saved for use in ARC
-stic_pts <- "./AGU24posterAnalysis/stic_pts.shp"
-seis_pts <- "./AGU24posterAnalysis/seis_pts.shp"
-stream <- "./AGU24posterAnalysis/stream.tif"
+#dem
+dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
+m1 <- rast(dem)
+#define the rectangular area that will be shown on final map
+ybounds <- c(4870350,4871350)
+xbounds <- c(281350, 282150)
+#crop to rectangular area
+crop1 <- crop(m1, ext(c(xbounds, ybounds)))
+#writeRaster(crop1, "./w3_dems/1mdem_crop.tif", overwrite = TRUE)
+#read in cropped dem
+#w3_crop <- "./w3_dems/1mdem_crop.tif"
+#crop1 <- rast(w3_crop)
 
-#stic pts
-w3_stic_locs_r <- vect(w3_stic_locs_snap)
-writeVector(w3_stic_locs_r, stic_pts, overwrite=TRUE)
+#watershed boundary
+w3_shed <- "./w3_dems/w3_shed.tif"
+w3_outline <- as.polygons(rast(w3_shed), extent=FALSE)
 
-#seis pts (not snapped)
-writeVector(seis_sub, seis_pts, overwrite = TRUE)
+#w3 network- thing I need to change
+#read in shapefile of stream converted in ARC
+vect_stream_path <- "./AGU24posterAnalysis/vector_stream/vector_stream.shp"
+#stream as a vector
+vect_stream <- vect(vect_stream_path)
+plot(vect_stream)
+#crop to watershed boundary
+w3_stream_crop <- crop(vect_stream, w3_outline)
+plot(w3_stream_crop)
+#or i could use old classification
 
-#stream raster (will need to convert to shapefile)
-writeRaster(w3_streams_rast, stream, overwrite = TRUE)
-```
-```{r bringing-back-to-R}
-#read in files that I created in ARC, and modified in excel to calculate accumulated distance
-stic_dist <- read_csv("./AGU24posterAnalysis/processed_export/dist_btwn_stic.csv")
-seis_dist <- read_csv("./AGU24posterAnalysis/processed_export/dist_btwn_seis.csv")
-elevation <- read_csv("./AGU24posterAnalysis/processed_export/elevation.csv")
-
-#join values of distance to values of depth and stic statistics
-stic_dist_f <- stic_dist %>% select(ORIG_SEQ, Shape_Length) %>% 
-  arrange(ORIG_SEQ) %>% 
-  mutate(sum = cumsum(Shape_Length),
-         ID = c(11, 12, 13, 14,NA)) %>% #STIC IDs pulled from earlier investigation above
-  select(ID, sum) %>% 
-  drop_na() %>% 
+#point locations- snapped points from above chunk
+w3_stic_locs_r <- vect(w3_stic_locs_snap) %>% 
   left_join(pks, by = "ID")
-#still need to add wetness characteristics of interest, and land surface elevation at these points
-#seismic site IDs are in numerical order, but not quite sequential order
 
-#something is not right with the surface elevations for my seismic measurements, so try extracting values from the DEM I have on R
-#This fixed earlier issue, but now the sequence is messed up- to fix go back to original seismic sheet and just filter the ones that I know are along the stream.
-#seismic sites that are along stream W3, excluding 148
-seis_w3 <- seis %>% filter(grilla_number %in% c(215, 214, 213, 210, 209, 208, 207, 
-                           206, 205, 204, 203, 199, 196, 
-                           194, 192, 191))
+plot(w3_net)
+ggplot()+
+  geom_spatraster(data = hill)+
+  theme_void()+
+  #theme(legend.position = "")+
+  scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
+    guides(fill = "none")+
+    new_scale_fill() +
+  geom_spatraster(data = crop1, alpha = 0.5)+
+    geom_sf(data = w3_outline, fill = NA, color = "black", alpha = 0.3)+
+  geom_sf(data = w3_net, aes(linetype = StrType), colour = "midnightblue") +
+  #geom_sf(data = w3_pour, colour = "black", pch = 8) +
+   scale_fill_hypso_c(palette = "c3t1" )+
+      guides(fill = "none")+
+#, limits = c(200, 1000))+
+    scale_linetype_manual(values = c(3, 2, 1),
+                            labels = c("Ephemeral", "Intermittent", "Perennial"),
+                          name = "Classification")+
+      new_scale_fill() +
+      geom_sf(data = w3_stic_locs_r, aes(fill = pk), pch = 21, size = 2) +
+  #scale_color_continuous(values = c("white", "black"))+
+  scale_fill_gradient(low = "black",
+                         high = "white",
+                         name = str_wrap("Flow Duration (%)", 5),
+                      breaks = c(0.25, 0.5, 0.75),
+                      labels = c("25%", "50%", "75%"))+
+  #theme(rect = element_rect(fill = "transparent", color = NA))+
+  ggspatial::annotation_scale(location = 'br', pad_x = unit(0.5, "cm"), 
+                              pad_y = unit(0.5, "cm"),
+                              line_width = 0.5, text_cex = 1, tick_height = 5)
 
-#convert seismic measurements to spatial data
-#these seismic locations are not snapped to the flowlines, snap to flowline
-
-seis_snapped <- vect("./AGU24posterAnalysis/seis_snap2/seis_snap2.shp")
-plot(dd)
-plot(seis_snapped)
-plot(dd, col = "red", add = TRUE)
-
-#extract elevation from filled DEM
-w3_filled <- "./w3_dems/1mdem_fill.tif"
-seis_w3_ex <- extract(rast(w3_filled), seis_snapped) %>% 
-  mutate(grilla_number = rev(c(215, 214, 213, 210, 209, 208, 207, 
-                           206, 205, 204, 203, 199, 196, 
-                           194, 192, 191))) %>% 
-  rename(elevation_m = `1mdem_fill`) %>% 
-  select(-ID)
-
-#now I need to extract elevation values for the STIC sensor locations
-#snapped stic sensor locations
-w3_stic_locs_2 <- filter(w3_stic_locs_r, ID %in% c(11, 12, 13, 14))
-stic_w3_ex <- extract(rast(w3_filled), w3_stic_locs_2) %>% 
-    rename(elevation_m = `1mdem_fill`) %>% 
-  mutate(ID = c(11, 12, 13, 14)) %>% 
-  left_join(stic_dist_f, by = "ID") %>% 
-  left_join(number_of_dries, by = "ID") #%>% 
-  #pivot_longer(cols = c(pk, count))
-
-seis_w3_ex %>%
-  left_join(seis_dist_f, by = "grilla_number") %>% 
-  left_join(seis, by = "grilla_number") %>% 
-  select(grilla_number, )
-
-#Final Figure
-#####
-seis_w3_ex %>%
-  left_join(seis_dist_f, by = "grilla_number") %>% 
-  left_join(seis, by = "grilla_number") %>% 
-  mutate(surfaceMinusDepth = (elevation_m - as.numeric(depth)*5)) %>% 
-  select(grilla_number, sum, elevation_m, surfaceMinusDepth) %>% 
-  rename(Surface = elevation_m, Bedrock = surfaceMinusDepth) %>% 
-  pivot_longer(cols = c(Surface, Bedrock)) %>% 
-  ggplot(aes(x = sum, y = value))+
-  geom_line(aes(lty = name))+
-  geom_point()+
-    theme_classic()+
-      scale_x_reverse()+
-  geom_point(data = stic_w3_ex, 
-             aes(x = sum, y = elevation_m, color = pk), size = 5)+
-  labs(x = "Distance to outlet (m)",
-       y = "Elevation (m)")+
-  scale_linetype_manual(values = c(2, 1), 
-                        name = "")+
-  scale_color_continuous(name = "Local Persistency",
-                         breaks = c(0.5, 0.60, 0.70, 0.80, 0.90),
-                         #limits = c(0.5, 1),
-                         labels = c("50%", "60%", "70%", "80%", "90%"))
-
-
-
-#calculate average duration of activation, then plot again
-seis_w3_ex %>%
-  left_join(seis_dist_f, by = "grilla_number") %>% 
-  left_join(seis, by = "grilla_number") %>% 
-  mutate(surfaceMinusDepth = elevation_m - as.numeric(depth)) %>% 
-  select(grilla_number, sum, elevation_m, surfaceMinusDepth) %>% 
-  rename(Surface = elevation_m, Bedrock = surfaceMinusDepth) %>% 
-  pivot_longer(cols = c(Surface, Bedrock)) %>% 
-  ggplot(aes(x = sum, y = value))+
-  geom_line(aes(lty = name))+
-    theme_classic()+
-      scale_x_reverse()+
-  geom_point(data = stic_w3_ex, 
-             aes(x = sum, y = elevation_m, color = count), size = 5)+
-  labs(x = "Distance to outlet (m)",
-       y = "Elevation (m)")+
-  scale_linetype_manual(values = c(2, 1), 
-                        name = "")+
-  scale_color_gradient(low = "red4",
-  high = "orange", name = "Dynamism")
-  scale_color_continuous(name = "Local Persistency",
-                         breaks = c(0.5, 0.60, 0.70, 0.80, 0.90),
-                         #limits = c(0.5, 1),
-                         labels = c("50%", "60%", "70%", "80%", "90%"))
+#finished, and it is gorgeous!
 ```
-##attempt 2
-What is different- incorporating feedback from Kevin and JP
+```{r histogram-flow-duration}
+#first calculate pk
+data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, lat, long, binary) %>% 
+  group_by(ID) %>% 
+  summarise(pk = sum(binary)/length(binary)*100) %>% 
+  arrange(pk) %>% 
+  ggplot()+
+  geom_histogram(aes(x = pk, fill = after_stat(x)), color = "black",
+                 binwidth = 10)+
+  theme_classic()+
+  scale_fill_gradient(low = "black",
+  high = "white", name = "Flow Duration (%)")+
+  labs(x = "Flow Duration (%)",
+       title = "sensors = 31")+
+    scale_y_continuous(expand = c(0, 0))
+
+```
+
+#Figure 5: Profiles of Depth-to-bedrock
 ```{r prepare-stream}
 #fresh delineated stream
 #whitebox tools method to snap
@@ -554,7 +519,8 @@ plot2 <- fungal %>%
 fungal
 
 ```
-##cross sections
+
+#Figure 6: Cross sections of Depth-to-bedrock
 ```{r export-all-seismic-locs}
 stream <- "./AGU24posterAnalysis/cross/seis4cross.shp"
 
@@ -660,7 +626,6 @@ gorp2 %>%
                         labels = c("50%", "70%", "90%"))
 ggsave("e4x.plot.png", width = 14, units = "in", scale = 0.4)
 ```
-##E3 profile
 ```{r}
 depth_exaggeration <- 3
 dour <- read_csv("./AGU24posterAnalysis/elev.csv") %>% 
@@ -708,111 +673,7 @@ ggsave("e31.plot.png", width = 16, units = "in", scale = 0.6)
 
 ```
 
-
-#Figure 4: Seismic calibration curve
-
-#Histograms of local persistency, dynamism, and number of days flowing
-##Local persistency
-```{r}
-#first calculate pk
-data_23 %>% 
-  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
-  select(datetime, ID, lat, long, binary) %>% 
-  group_by(ID) %>% 
-  summarise(pk = sum(binary)/length(binary)*100) %>% 
-  arrange(pk) %>% 
-  ggplot()+
-  geom_histogram(aes(x = pk, fill = after_stat(x)), color = "black",
-                 binwidth = 10)+
-  theme_classic()+
-  scale_fill_gradient(low = "black",
-  high = "white", name = "Flow Duration (%)")+
-  labs(x = "Flow Duration (%)",
-       title = "sensors = 31")+
-    scale_y_continuous(expand = c(0, 0))
-
-```
-
-#wet proportion
-```{r}
-#group by date, and find the proportion of time flowing
-
-```
-
-#Maps for poster
-##Map of W3 with flow persistence/total flow duration colored points
-```{r map-total-flow-duration}
-#requiring running of chunk from figures4poster
-#hillshade
-hillshade_out <- "./w3_dems/1mdem_hillshade.tif"
-hill <- rast(hillshade_out)
-
-#dem
-dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
-m1 <- rast(dem)
-#define the rectangular area that will be shown on final map
-ybounds <- c(4870350,4871350)
-xbounds <- c(281350, 282150)
-#crop to rectangular area
-crop1 <- crop(m1, ext(c(xbounds, ybounds)))
-#writeRaster(crop1, "./w3_dems/1mdem_crop.tif", overwrite = TRUE)
-#read in cropped dem
-#w3_crop <- "./w3_dems/1mdem_crop.tif"
-#crop1 <- rast(w3_crop)
-
-#watershed boundary
-w3_shed <- "./w3_dems/w3_shed.tif"
-w3_outline <- as.polygons(rast(w3_shed), extent=FALSE)
-
-#w3 network- thing I need to change
-#read in shapefile of stream converted in ARC
-vect_stream_path <- "./AGU24posterAnalysis/vector_stream/vector_stream.shp"
-#stream as a vector
-vect_stream <- vect(vect_stream_path)
-plot(vect_stream)
-#crop to watershed boundary
-w3_stream_crop <- crop(vect_stream, w3_outline)
-plot(w3_stream_crop)
-#or i could use old classification
-
-#point locations- snapped points from above chunk
-w3_stic_locs_r <- vect(w3_stic_locs_snap) %>% 
-  left_join(pks, by = "ID")
-
-plot(w3_net)
-ggplot()+
-  geom_spatraster(data = hill)+
-  theme_void()+
-  #theme(legend.position = "")+
-  scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
-    guides(fill = "none")+
-    new_scale_fill() +
-  geom_spatraster(data = crop1, alpha = 0.5)+
-    geom_sf(data = w3_outline, fill = NA, color = "black", alpha = 0.3)+
-  geom_sf(data = w3_net, aes(linetype = StrType), colour = "midnightblue") +
-  #geom_sf(data = w3_pour, colour = "black", pch = 8) +
-   scale_fill_hypso_c(palette = "c3t1" )+
-      guides(fill = "none")+
-#, limits = c(200, 1000))+
-    scale_linetype_manual(values = c(3, 2, 1),
-                            labels = c("Ephemeral", "Intermittent", "Perennial"),
-                          name = "Classification")+
-      new_scale_fill() +
-      geom_sf(data = w3_stic_locs_r, aes(fill = pk), pch = 21, size = 2) +
-  #scale_color_continuous(values = c("white", "black"))+
-  scale_fill_gradient(low = "black",
-                         high = "white",
-                         name = str_wrap("Flow Duration (%)", 5),
-                      breaks = c(0.25, 0.5, 0.75),
-                      labels = c("25%", "50%", "75%"))+
-  #theme(rect = element_rect(fill = "transparent", color = NA))+
-  ggspatial::annotation_scale(location = 'br', pad_x = unit(0.5, "cm"), 
-                              pad_y = unit(0.5, "cm"),
-                              line_width = 0.5, text_cex = 1, tick_height = 5)
-
-#finished, and it is gorgeous!
-```
-##Show where topography does not work to predict
+#Figure 7: Agreement with Carrie Topographic model
 ```{r}
 #code from Testing Frameworks markdown
 writeVector(points_w3, "./AGU24posterAnalysis/topo_model_output.shp")
@@ -869,62 +730,8 @@ ggplot()+
                               line_width = 0.5, text_cex = 1, tick_height = 5)
 ```
 
-
-
-
-```{r}
-#lets see how well local persistency lines up with depth
-pks <- data_23 %>% 
-  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
-  select(datetime, ID, lat, long, binary) %>% 
-    group_by(ID, lat, long) %>% 
-  rename("DATETIME" = datetime) %>% 
-  summarise(pk = sum(binary)/length(binary)) %>% 
-  select(-pk) %>% 
-  ungroup()%>% 
-  vect(geom=c("long", "lat"),
-       crs = "+proj=longlat +datum=WGS84")
-
-#make a dataframe with ID, lat and long, and record type for local persistency and for the seismic measurements
-seis2 <- seis %>% 
-  select(grilla_number, lat, long) %>% 
-  rename("ID" = grilla_number)%>% 
-  vect(geom=c("long", "lat"),
-       crs = "+proj=longlat +datum=WGS84")
-#bind rows, make spatial
-dist_setup <- rbind(pks, seis2) %>% 
-  vect(geom=c("long", "lat"),
-       crs = "+proj=longlat +datum=WGS84")
-
-#use st_distance to create distance matrix, filter to rows from the local persistency dataset, then choose the closest point from the other dataset
-dist_matrix <- terra::distance(pks, seis2) %>% 
-  as.data.frame() %>% 
-  mutate("pk_ID" = row_number()) %>% 
-  pivot_longer(!pk_ID, names_to = "seis_ID", values_to = "dist_deg")
-
-output <- rep(1, length(pks$ID), NA)
-distances <- rep(1, length(pks$ID), NA)
-for(i in 1:length(pks$ID)){
-  fil <- filter(dist_matrix, pk_ID == i)
-  minID <- fil$seis_ID[fil$dist_deg == min(fil$dist_deg)]
-  output[i] <- minID
-  distances[i] <- fil$dist_deg[fil$dist_deg == min(fil$dist_deg)]
-}
-
-format_out <- data.frame("seis_ID" = output,
-                         "distance_deg" = distances) %>% 
-  mutate(seis_ID = as.numeric(substr(seis_ID, 2, nchar(seis_ID)))) %>% 
-    mutate("ID" = row_number()) 
-
-
-
-#distance really looks like it is in meters
-
-#try again but with the points already converted to the other projection?
-number_of_dries
-```
-
-```{r}
+#Unused Figures
+```{r depth-versus-pk}
 #now compare the nearest depth to bedrock to the local persistency
 #seismic ID is not the grilla number, but the row number from the filtered dataset
 seis_to_join <- seis %>% 
