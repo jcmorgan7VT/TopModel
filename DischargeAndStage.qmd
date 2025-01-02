@@ -1050,7 +1050,8 @@ hum_names <- as_labeller(
             "max_wettingQ" = "Max"))
 number_of_dries <- test %>% 
   group_by(ID) %>% 
-  filter(state_change == "drying")
+  summarise(count = 1003/length(transition)*0.5)
+  #filter(state_change == "drying")
 
 #calculating the average and sd of delta Q for each sensor when they go dry
 data_23 %>% 
@@ -1195,3 +1196,11 @@ data_23 %>%
 ```
 
 Calculate how dynamic a location is: how often does it switch states? How many times does it switch states in a certain time frame?
+
+12/16/24
+Read in air pressure measured at the headquarters: https://portal.edirepository.org/nis/mapbrowse?packageid=knb-lter-hbr.330.1
+```{r}
+#read in air pressure, use instead of my air pressure for stage-Q relationship
+pressure <- read_csv("https://portal.edirepository.org/nis/dataviewer?packageid=knb-lter-hbr.330.1&entityid=5774f480b38484ba9a954ef2db8b3f1a")
+```
+

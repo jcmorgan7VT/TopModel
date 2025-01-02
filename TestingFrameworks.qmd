@@ -463,6 +463,7 @@ tiny_bagel <- everything_bagel %>%
 #results between 1m resolution and 10 m resolution are very different, as I thought they should be, and the 
 ```
 
+##Fitting my own logistic regression model based on topography
 ```{r}
 #Carrie's model, when averaged across every site and every time is a coinflip
 #fit my own regression to the dataset
@@ -482,10 +483,10 @@ train_full <- ready2split %>%
 #create test dataset
 test  <- anti_join(ready2split, train_full, by = c("DATETIME", "ID"))
 
-train_values <- train %>% 
+train_values <- train_full %>% 
   select(binary, twi, Q_mm_day)
 
-model <- glm(binary ~.,family=binomial(link='logit'),data=train)
+model <- glm(binary ~.,family=binomial(link='logit'),data=train_values)
 summary(model)
 
 ```
@@ -532,6 +533,12 @@ add_thresholds(tested) %>%
   summarise(threshold_90 = compare(binary, per_90, DATETIME),
             count = length(unique(ID)))
 
+#get coordinates for Watershed 3 locations
+locs <- data_23 %>% 
+  filter(wshed == "W3") %>% 
+  select(ID, lat, long) %>% 
+  unique()
+
 out <-  add_thresholds(tested) %>% 
   group_by(ID) %>% 
   summarise(threshold_90 = compare(binary, per_90, DATETIME),
@@ -539,12 +546,20 @@ out <-  add_thresholds(tested) %>%
             threshold_50 = compare(binary, per_50, DATETIME)) %>% 
   pivot_longer(cols = starts_with("threshold"), 
                names_to = "threshold", 
-               values_to = "percent_agreement")
+               values_to = "percent_agreement") %>% 
+  mutate(percent_agreement = percent_agreement * 100) %>% 
+  #append coordinates
+  left_join(locs, by = "ID")
 
 ggplot(out, aes(x = threshold, y = percent_agreement))+
   geom_boxplot()
 
 points_w3 <- vect(out, geom=c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
+
+# 12/4/24- cementing this analysis, saving shapefile with points
+#note that it is in the wrong projection
+writeVector(points_w3, "./AGU24posterAnalysis/topo_model_output.shp")
+
 ggplot()+
   geom_spatvector(data = w3_stream_wgs, color = "grey", lwd = 1.5)+
   geom_spatvector(data = points_w3, aes(color = percent_agreement), size = 3)+
@@ -557,8 +572,11 @@ ggplot()+
                      )+
   labs(title = "Agreement with New model, 7/23 - 11/23")+
   theme(plot.margin=grid::unit(c(0,0,0,0), "mm"))
+
+##make this plot again but with improved geospatial grounding
 ```
 
+#other plots
 ```{r}
 #plot to see under what conditions Carrie and my model work well
 #hydrograph, but colored by the percent agreement

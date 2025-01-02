@@ -6,9 +6,10 @@ editor_options:
 ---
 #Setup and exploration
 ```{r setup}
+#loading packages
 library(pacman)
-
-p_load(stringr, patchwork)
+p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,
+       ggnewscale, sf, rgeoboundaries, elevatr, patchwork, ggspatial, stringr)
 ```
 ```{r read-seismic-data}
 seis <- read_csv("seismic_12_2_24.csv") %>% 
@@ -374,7 +375,7 @@ writeVector(seis_locs, w3_seis_locs_save2, overwrite = TRUE)
 writeRaster(rast(w3_filled), dem_dest, overwrite = TRUE)
 
 #distance along the stream calculated in Arc and excel on other computer, sent here
-depth_exaggeration <- 1
+depth_exaggeration <- 3
 
 fungal <- read_csv("./AGU24posterAnalysis/Final_seis.csv") %>% 
   select(-c(ARCID, GRID_CODE, FROM_NODE, 
@@ -416,12 +417,13 @@ plot1 <- fungal %>%
        y = "Elevation (m)")+
   scale_linetype_manual(values = c(2, 1), 
                         name = "")+
-  scale_color_continuous(type = "viridis",
+  scale_color_continuous(type = "gradient",
                          name = "Flow Duration",
                          breaks = c(50, 70, 90),
                          #limits = c(0.5, 1),
                         labels = c("50%", "70%", "90%"))
-#ggsave("duration.plot.png", width = 16, units = "in", scale = 0.6)
+plot1
+#ggsave("duration.plot.png", width = 16, units = "in", scale = 0.3)
 
   
   
