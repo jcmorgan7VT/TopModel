@@ -576,8 +576,7 @@ wbt_d_inf_flow_accumulation(input = fill_output,
                             output = flowacc_output,
                             out_type = "Specific Contributing Area")
 
-slope_output <- "./fb_dems/10mdem_slope.tif"
-wbt_slope(dem = fill_output,
+çwbt_slope(dem = fill_output,
           output = slope_output,
           units = "degrees")
 
