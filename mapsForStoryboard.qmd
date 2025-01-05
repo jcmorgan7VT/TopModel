@@ -566,31 +566,37 @@ plot(drain)
 
 writeRaster(drain, "./w3_dems/hydem10mlpns_uaa_streams.tif", overwrite = TRUE)
 
-make_files <- functions(uaa){
+make_files <- function(uaa){
   bound_dem <- "./w3_dems/hydem1mlpns_wsbound.tif"
   downdist_calc <- paste0("app exports/",uaa,"_downdist.tif")
-wbt_downslope_distance_to_stream(dem = bound_dem,
-                                 streams = w3_streams_ext,
-                                 output = downdist_calc)
-plot(rast(w3_downdist_ext))
-#then calculate how far the water can go, based on slope and calculation
-##calculate average flowpath slope
+  streams_path <- paste0("app exports/",uaa,"_stream.tif")
+  
+  streams <- ifel(drain >= uaa, 1, NA)
+  writeRaster(streams, streams_path, 
+              overwrite = TRUE)
+  wbt_downslope_distance_to_stream(dem = bound_dem,
+                                   streams = streams_path,
+                                    output = downdist_calc)
+
   flowslope_calc <- paste0("app exports/",uaa,"_flowslope.tif")
 #output already in degrees
-wbt_average_flowpath_slope(dem = bound_dem,
-                           output = flowslope_calc)
-plot(rast(w3_avgflowslope_ext))
-
-writeRaster(x, "app exports/80_downdist.tif")
-writeRaster(x, "app exports/80_avgflowslope.tif")
+  wbt_average_flowpath_slope(dem = bound_dem,
+                             output = flowslope_calc)
 
 }
+make_files(80)
+make_files(200)
+make_files(300)
 
-
+plot(rast(paste0("app exports/",200,"_stream.tif")))
+plot(o)
 plot(ifel(drain >= 80, 1, NA)) #units are 10 m^2, so this is 400,000 m
 plot(ifel(drain >= 200, 1, NA))
 plot(ifel(drain >= 300, 1, NA))
 
+plot(rast(paste0("app exports/",80,"_downdist.tif")))
+plot(rast(paste0("app exports/",200,"_downdist.tif")))
+plot(rast(paste0("app exports/",300,"_downdist.tif")))
 
 #save to app exports folder
 writeRaster(x, "app exports/80_avgflowslope.tif")
@@ -605,9 +611,20 @@ terra::zonal(x,x, sum, na.rm=TRUE)
 
 f <- freq(x)
 f$area <- f$count
+
+hillshade_out <- "./w3_dems/1mdem_hillshade.tif"
+hill <- rast(hillshade_out)
+hcl.colors(20, palette = "Grays")
+plot(hill, col = hcl.colors(20, palette = "Grays"))
+
+#get soil model ready for app
+plot(rast("HB/HBsoils.tif"))
+plot(crop(rast("HB/HBsoils.tif"), ext(c(xbounds, ybounds))))
+writeRaster(crop(rast("HB/HBsoils.tif"), ext(c(xbounds, ybounds))), "soilCrop.tif")
+
 ```
 
-```{r}
+```{r FAILED-vectorize-and-precalc}
 #to avoid whitebox tools, go ahead and figure out all possible drainage distance values for my dataset
 
 plot(drain)
@@ -646,7 +663,36 @@ it <- rast("iterating.tif")
 ```
 
 ```{r}
-#create 2-3 levels of expansion, based on observations
+#first, calculate the expansion for two different wetness conditions
+#use wetness conditions from Carrie
+ext <- vect("CarrieExportShiny/602_extended.shp")
+plot(ext[ext$Connection == "Connected"])
+ret <- vect("CarrieExportShiny/705_retracted.shp")
+plot(ret[ret$Connection == "Connected"])
 
+plot(drain)
+plot(ret[ret$Connection == "Connected"], add = TRUE)
+plot(rasterize(ret[ret$Connection == "Connected"], drain))
+plot(rasterize(ext[ext$Connection == "Connected"], drain))
+
+#save these as rasters, and use them in the calculation
+
+
+#nicely formatted figures for Kevin presentation
+w3_map <- ggplot()+
+  geom_spatraster(data = hill)+
+  theme(legend.position = "")+
+  scale_fill_gradientn(colors = c("gray9", "gray48","lightgray", "white"), guide = 'none')+
+    new_scale_fill() +
+  scale_fill_discrete()+
+  geom_spatraster(data = drop_na(activated), aes(fill = class), alpha = 0.7)+
+  scale_fill_manual(values = c("lightblue", "purple"),
+                    na.translate=FALSE)+
+               theme_void()+
+  geom_sf(data = w3_outline, fill = NA, color = "black", alpha = 0.3, lwd = 1)+
+  theme(rect = element_rect(fill = "transparent", color = NA),
+        legend.title=element_blank())
+
+w3_map
 ```
 
