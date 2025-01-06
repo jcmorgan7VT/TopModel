@@ -662,37 +662,12 @@ it <- rast("iterating.tif")
 
 ```
 
-```{r}
-#first, calculate the expansion for two different wetness conditions
-#use wetness conditions from Carrie
-ext <- vect("CarrieExportShiny/602_extended.shp")
-plot(ext[ext$Connection == "Connected"])
-ret <- vect("CarrieExportShiny/705_retracted.shp")
-plot(ret[ret$Connection == "Connected"])
-
-plot(drain)
-plot(ret[ret$Connection == "Connected"], add = TRUE)
-plot(rasterize(ret[ret$Connection == "Connected"], drain))
-plot(rasterize(ext[ext$Connection == "Connected"], drain))
-
-#save these as rasters, and use them in the calculation
 
 
-#nicely formatted figures for Kevin presentation
-w3_map <- ggplot()+
-  geom_spatraster(data = hill)+
-  theme(legend.position = "")+
-  scale_fill_gradientn(colors = c("gray9", "gray48","lightgray", "white"), guide = 'none')+
-    new_scale_fill() +
-  scale_fill_discrete()+
-  geom_spatraster(data = drop_na(activated), aes(fill = class), alpha = 0.7)+
-  scale_fill_manual(values = c("lightblue", "purple"),
-                    na.translate=FALSE)+
-               theme_void()+
-  geom_sf(data = w3_outline, fill = NA, color = "black", alpha = 0.3, lwd = 1)+
-  theme(rect = element_rect(fill = "transparent", color = NA),
-        legend.title=element_blank())
 
-w3_map
-```
+
+
+
+
+
 

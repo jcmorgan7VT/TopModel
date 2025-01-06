@@ -1,0 +1,244 @@
+---
+title: "QPMJan25_analysisForKevin"
+format: html
+---
+1/6/25
+Formatting code run to generate maps for Kevin for the January 2025 HB QPM meeting. 
+
+Generated plots of the contributing area for lateral flow in W3
+#Calculate travel distance
+```{r}
+#first, calculate the expansion for two different wetness conditions
+#use wetness conditions from Carrie work in 2015
+ext <- vect("CarrieExportShiny/602_extended.shp")
+plot(ext[ext$Connection == "Connected"])
+ret <- vect("CarrieExportShiny/705_retracted.shp")
+plot(ret[ret$Connection == "Connected"])
+
+#make sure I can subset by connection
+plot(drain)
+plot(ret[ret$Connection == "Connected"], add = TRUE)
+plot(rasterize(ret[ret$Connection == "Connected"], drain))
+plot(rasterize(ext[ext$Connection == "Connected"], drain))
+
+#save these as rasters, and use them in the calculation
+#use new DEM to calculate downslope distance to stream
+#or how far the water has to go
+bound_dem <- "./w3_dems/hydem1mlpns_wsbound.tif"
+
+#convert stream to raster
+ext2 <- rasterize(ext[ext$Connection == "Connected"], drain)
+ret2 <- rasterize(ret[ret$Connection == "Connected"], drain)
+
+#define stream raster path for whitebox functions
+ext_stream_path <- "CarrieExportShiny/602_stream.tif"
+ret_stream_path <- "CarrieExportShiny/705_stream.tif"
+#write rasters
+writeRaster(ext2, ext_stream_path, overwrite = TRUE)
+writeRaster(ret2, ret_stream_path, overwrite = TRUE)
+#define path for downdistance raster
+ext_downdist_path <- "CarrieExportShiny/602_downdist.tif"
+ret_downdist_path <- "CarrieExportShiny/705_downdist.tif"
+#calculate downslope distance
+wbt_downslope_distance_to_stream(dem = bound_dem,
+                                 streams = ext_stream_path,
+                                 output = ext_downdist_path)
+wbt_downslope_distance_to_stream(dem = bound_dem,
+                                 streams = ret_stream_path,
+                                 output = ret_downdist_path)
+#define path to flowslope raster
+ext_flowslope_path <- "CarrieExportShiny/602_flowslope.tif"
+ret_flowslope_path <- "CarrieExportShiny/705_flowslope.tif"
+#calculate flowpath slope
+wbt_average_flowpath_slope(dem = bound_dem,
+                           output = ext_flowslope_path)
+wbt_average_flowpath_slope(dem = bound_dem,
+                           output = ret_flowslope_path)
+
+##calculate Lt based on slope and input values
+#input parameters
+Ku_Kl <- 600
+N <- 0.35 #meters
+Cn <- 4.5
+#convert slope to radians, because sin() function in R expects Rads as input
+rads_ext <- rast(ext_flowslope_path) * pi/180
+rads_ret <- rast(ret_flowslope_path) * pi/180
+
+#caluclate Lt, or travel distance of lateral water flux
+Lt_ext <- Ku_Kl * (sin(rads_ext)/((N + Cn)/Cn)) * N
+Lt_ret <- Ku_Kl * (sin(rads_ret)/((N + Cn)/Cn)) * N 
+
+plot(Lt_ext)
+plot(Lt_ret)
+
+#visualize results with a map, showing the contributing area
+#find areas where the Lt is greater than or equal to the downdist
+x_ext <- ifel(rast(ext_downdist_path) <= Lt_ext, 1, NA)
+x_ret <- ifel(rast(ret_downdist_path) <= Lt_ret, 1, NA)
+plot(x_ext)
+#create raster where contributing hillslope pixels are = 1
+#stream pixels = 2
+activated_ext <- ifel(x_ext == rast(ext_stream_path), 2, x_ext)
+activated_ret <- ifel(x_ret == rast(ret_stream_path), 2, x_ret)
+
+#define factor levels of this dataset, ready for plotting
+plot(activated_ret)
+cls <- c("Contributing Hillslope", "Stream")
+df <- data.frame(id = 1:2, class=cls)
+levels(activated_ext) <- df
+levels(activated_ret) <- df
+activated_ext <- mask(activated_ext, x_ext)
+activated_ret <- mask(activated_ret, x_ret)
+```
+
+#Prepare inputs to plot
+```{r read-hillshade-and-soil-model}
+hillshade_out <- "./w3_dems/1mdem_hillshade.tif"
+hill <- rast(hillshade_out)
+#hcl.colors(20, palette = "Grays")
+plot(hill, col = hcl.colors(20, palette = "Grays"))
+
+plot(rast("HB/HBsoils.tif"))
+plot(crop(rast("HB/HBsoils.tif"), ext(c(xbounds, ybounds))))
+writeRaster(crop(rast("HB/HBsoils.tif"), ext(c(xbounds, ybounds))), "soilCrop.tif")
+
+soilmap <- crop(rast("HB/HBsoils.tif"), ext(c(xbounds, ybounds)))
+```
+```{r prototype-plot}
+ggplot()+
+  geom_spatraster(data = hill)+
+  theme(legend.position = "")+
+  scale_fill_gradientn(colors = hcl.colors(20, palette = "Grays"), guide = 'none')+
+    new_scale_fill() +
+  #scale_fill_discrete()+
+  geom_spatraster(data = drop_na(activated_ext), aes(fill = class), alpha = 0.7)+
+  scale_fill_manual(values = c("lightblue", "purple"),
+                    na.translate=FALSE)+
+               theme_void()+
+  geom_sf(data = w3_outline, fill = NA, color = "black", alpha = 0.3, lwd = 1)+
+  theme(rect = element_rect(fill = "transparent", color = NA),
+        legend.title=element_blank())
+```
+```{r soilmap-legend-elements}
+#prepare inputs to soil map legend, get the right colors and labels
+soilmap <- crop(rast("HB/HBsoils.tif"), ext(c(xbounds, ybounds)))
+
+colors <- c("#FFFF73","black",#"#00C5FF",
+            "#004DA8","#CCCCCC","#267300",
+            "#734C00","#55FF00")
+labels <- c("Typical Podzol","Bedrock Histosol",#"Aquept",
+           "Wetland Histosol", "E Podzol","Bimodal Podzol",
+            "Bhs Podzol","Bh Podzol")
+ids <- c(8,7,5,4,3,2,1)
+df2 <- data.frame(id = ids, class=labels)
+soilmap <- as.factor(soilmap)
+levels(soilmap) <- df2
+plot(soilmap, col = colors)
+plot(soilmap)
+```
+```{r prepare-shapefiles}
+#for final map, crop and mask according to a higher resolution shed outline
+#file generated in figures4poster.qmd, chunk w3-map
+w3_shed <- "./w3_dems/w3_shed.tif"
+plot(rast(w3_shed))
+
+#convert raster of watershed area to vector for final mapping
+w3_outline <- as.polygons(rast(w3_shed), extent=FALSE)
+plot(w3_outline)
+
+#create 50 m buffer of watershed area
+buffed <- terra::buffer(w3_outline, 50)
+soil_50mbuff <- rast("HB/HBsoils.tif") %>% 
+  crop(buffed) %>% 
+  mask(buffed)
+plot(soil_50mbuff)
+
+#format sequence of colors
+##convert soil model to factor
+soil_50mbuff <- as.factor(soil_50mbuff)
+levels(soil_50mbuff) <- df2
+
+##convert raster of watershed area to vector for final mapping
+poly_ext <- as.polygons(x_ext, extent=FALSE)
+poly_ret <- as.polygons(x_ret, extent=FALSE)
+
+#get activated area to be highlighted by erasing activated area from watershed shape
+erased <- erase(buffed, poly_ext)
+erased_ret <- erase(buffed, poly_ret)
+
+plot(erase(buffed, poly_ext), col = "black"
+)
+```
+
+#Final Plots
+```{r extended-final-map}
+ggplot()+
+  #add soil model clipped to 50 meter buffer
+  geom_spatraster(data = as.factor(soil_50mbuff))+
+  scale_fill_manual(values = colors, 
+                    breaks = ids, 
+                    labels = labels,
+                    na.translate=FALSE)+
+    new_scale_fill() +
+  #this is unnecessary, but somehow makes the order of the legend nicer
+  scale_fill_manual(values = c("lightblue", "purple"),
+                    na.translate=FALSE)+
+               theme_void()+
+  #add non-contributing area
+  geom_sf(data = erased,
+          fill = "gray", 
+          color = NA, 
+          alpha = 0.8)+
+  #add contributing area, trick onto legend
+  geom_sf(data = poly_ext, 
+          aes(alpha = "Contributing area"),
+          fill = "NA", 
+          color = "lightblue")+
+  #add stream shapes from Carrie Jensen survey 6-02-15
+  geom_sf(data = ext, 
+          aes(lty = Connection),
+          color = "blue")+
+  #add W3 watershed boundary from 1m hydro-enforced DEM
+  geom_sf(data = w3_outline, 
+          fill = NA, 
+          color = "black", 
+          alpha = 0.3, 
+          lwd = 0.5)+
+  theme(rect = element_rect(fill = "transparent", 
+                            color = NA),
+        legend.title=element_blank())
+```
+```{r retracted-final-map}
+#now again but retracted
+ggplot()+
+  #add soil model
+  geom_spatraster(data = as.factor(soil_50mbuff))+
+  scale_fill_manual(values = colors, 
+                    breaks = ids, 
+                    labels = labels,
+                    na.translate=FALSE)+
+    new_scale_fill() +
+  scale_fill_manual(values = c("lightblue", "purple"),
+                    na.translate=FALSE)+
+               theme_void()+
+  #add non-contributing area
+  geom_sf(data = erased_ret,
+          fill = "gray", 
+          color = NA, 
+          alpha = 0.8)+
+  #add contributing area
+  geom_sf(data = poly_ret, 
+          aes(alpha = "Contributing area"),
+          fill = "NA", color = "lightblue")+
+  #add stream network from Carrie Jensen data 7-05-15
+  geom_sf(data = ret, 
+          aes(lty = Connection),
+          color = "blue")+
+  #add W3 boundary from 1m hydro enforced DEM
+  geom_sf(data = w3_outline, 
+          fill = NA, color = "black", 
+          alpha = 0.3, 
+          lwd = 0.5)+
+  theme(rect = element_rect(fill = "transparent", color = NA),
+        legend.title=element_blank())
+```
