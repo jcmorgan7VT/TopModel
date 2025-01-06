@@ -4,10 +4,15 @@ format: html
 ---
 1/6/25
 Formatting code run to generate maps for Kevin for the January 2025 HB QPM meeting. 
+```{r setup}
+#loading packages
+library(pacman)
+p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,ggnewscale, sf, rgeoboundaries, elevatr, patchwork, ggspatial)
+```
 
 Generated plots of the contributing area for lateral flow in W3
 #Calculate travel distance
-```{r}
+```{r calculate-Lt}
 #first, calculate the expansion for two different wetness conditions
 #use wetness conditions from Carrie work in 2015
 ext <- vect("CarrieExportShiny/602_extended.shp")
@@ -242,3 +247,5 @@ ggplot()+
   theme(rect = element_rect(fill = "transparent", color = NA),
         legend.title=element_blank())
 ```
+
+Resolution/scaling for final plots was done by making the plot zoomed to my screen, and saving the resulting images.
