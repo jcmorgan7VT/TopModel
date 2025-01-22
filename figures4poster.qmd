@@ -157,10 +157,8 @@ fb_map <- ggplot()+
 
 fb_map
 ```
-
-Recreate this, but for ZZ
-
 ```{r zigZag-map}
+#map for ZZ
 #read in DEM of whole valley, 1m resolution
 dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
 m1 <- rast(dem)
@@ -300,9 +298,6 @@ zz_map <- ggplot()+
 
 zz_map
 ```
-
-Now do the same for W3!
-
 ```{r w3-map}
 #read in DEM of whole valley, 1m resolution
 dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
@@ -446,11 +441,8 @@ w3_map
 
 
 ```
-
-Combine maps, save
-
 ```{r combine-maps}
-#combine all maps
+#combine and save all maps
 all_map <- w3_map + fb_map + zz_map +
   theme(rect = element_rect(fill = "transparent", color = NA))
 
@@ -499,25 +491,29 @@ plot(hill)
 HB_bounds <- "./HB/hbef_wsheds/hbef_wsheds.shp"
 sheds <- vect(HB_bounds)
 sheds <- terra::project(sheds, crs(hill))
-
+plot(sheds)
 
 #use bounds of sheds to crop NH dem
 ybounds <- c(43.916,43.96219)
 xbounds <- c(-71.80451, -71.69687)
 plot(hill, xlim = xbounds, ylim = ybounds)
+gauge <- c(43.939574, -71.703100)
 
-ggplot()+
+
+NH_map <- ggplot()+
   geom_spatraster(data = hill3)+
   theme_void()+
   theme(legend.position = "")+
   scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"), na.value = NA)+
     new_scale_fill() +
   geom_spatraster(data = big, alpha = 0.5)+
-    geom_sf(data = sheds, fill = "darkslategray3", color = "black", alpha = 0.3) +
-  # geom_sf(data = w3_net, colour = "darkslategray3") +
-  #   geom_sf(data = lcc, colour = "midnightblue", pch = 19) +
-  # geom_sf(data = w3_pour, colour = "black", pch = 8) +
+  #plot star to represent hubbard brook location
+    geom_point(aes(y=43.939574, x=-71.703100), colour="black", pch = 20, size = 8)+
    scale_fill_hypso_c(palette = "dem_screen")
+NH_map
+
+ggsave("NH.png", plot = NH_map, scale = 1, limitsize = FALSE, #height = 11,width = 4, units = "in"
+       bg = NULL,)
 
 ggplot()+
   geom_spatraster(data = hill3)+
@@ -576,7 +572,7 @@ wbt_d_inf_flow_accumulation(input = fill_output,
                             output = flowacc_output,
                             out_type = "Specific Contributing Area")
 
-çwbt_slope(dem = fill_output,
+wbt_slope(dem = fill_output,
           output = slope_output,
           units = "degrees")
 
