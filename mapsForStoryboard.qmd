@@ -494,7 +494,6 @@ ggplot(q_23_f, aes(x  = DATETIME, y = Q_mm_day))+
   theme_classic()
 
 ```
-
 ```{r flow-permanence-W3}
 #just summer 2023
 data_23$binary <- 1
@@ -601,8 +600,11 @@ pks_zz <- data_23 %>%
 rbind(pks_w3, pks_fb, pks_zz) %>% 
   ggplot(aes(x = wshed, y = pk))+
   geom_boxplot()+
-    geom_jitter()+
-  theme_classic()
+  geom_jitter(width = 0.1, alpha = 0.5)+
+  theme_classic()+
+  labs(title = "Distributions of Flow Permanence",
+       x = "Watershed",
+       y = "Flow Permanence")
 ```
 
 ```{r}
@@ -611,6 +613,37 @@ rbind(pks_w3, pks_fb, pks_zz) %>%
 ```
 
 ## Average Duration of Flow
+```{r}
+#successfully calculating the average duration of flow for an event
+dur <- data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+    #group_by(ID) %>% 
+  #rename("DATETIME" = datetime) #%>%
+  mutate(group = data.table::rleid(binary)) %>%
+  group_by(group, ID) %>%
+  summarise(state = first(binary), 
+            timeperiod = dplyr::last(datetime) - dplyr::first(datetime)) %>% 
+  mutate(timeperiod = as.numeric(timeperiod, units = "days")) %>% 
+  group_by(ID) %>% 
+  filter(state == 1) %>% 
+  summarise(avg_days_flowing = mean(timeperiod))
+
+dur <- data_24 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+    #group_by(ID) %>% 
+  #rename("DATETIME" = datetime) #%>%
+  mutate(group = data.table::rleid(binary)) %>%
+  group_by(group, ID) %>%
+  summarise(state = first(binary), 
+            timeperiod = dplyr::last(datetime) - dplyr::first(datetime)) %>% 
+  mutate(timeperiod = as.numeric(timeperiod, units = "days")) %>% 
+  group_by(ID) %>% 
+  filter(state == 1) %>% 
+  summarise(avg_days_flowing = mean(timeperiod))
+```
+
 
 
 

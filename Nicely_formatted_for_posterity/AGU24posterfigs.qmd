@@ -443,7 +443,7 @@ data_23 %>%
   select(ID, pk) %>% 
   ungroup()
 
-data_23 %>% 
+test <- data_23 %>% 
   filter(wshed == "W3", mins %in% c(0, 30)) %>% 
   select(datetime, ID, binary) %>% 
     group_by(ID) %>% 
