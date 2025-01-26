@@ -16,6 +16,7 @@ Revisiting, and actually working on figures
 #loading packages
 library(pacman)
 p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,ggnewscale, sf, rgeoboundaries, elevatr, patchwork, ggspatial)
+whitebox::install_whitebox()
 ```
 # Figure 1: maps and distributions of topo variables
 ## Maps
@@ -1097,12 +1098,18 @@ Use above chunk to write a function to take an upstream and downstream sensor, a
 ```{r define-function}
 #testing pairs of sensors
 #filter to two upstream/downstream sensors
-calc_support <- function(up, down){
-
+calc_support <- function(up, down, input){
+#up <- "r_10"
+#down <- "r_6"
+incase <- data.frame(up = c(0,0), down = c(0,0))
+colnames(incase) <- c(up, down)
 mod3 <- input %>% select(up,down, -datetime)
 no_dupes <- mod3 %>%
   filter(row_number() == 1 | !apply(. == lag(.), 1, all))
 #make it so that there cannot be a sequence without change
+
+#error when both locations flowed the whole time; 
+if(length(no_dupes[,1]) == 1) no_dupes <- rbind(no_dupes, no_dupes, incase)
 
 # Define window size
 window_size <- 2
@@ -1136,12 +1143,68 @@ points <- sum(sub$Frequency)
 
 #create output with the total and the sub, also the two input locations
 output <- data.frame(up, down, points, total)
+#error handling- in situation where both points flowed 100% of the time
+if(length(no_dupes[,1]) == 1) output$points <- NA
+if(length(no_dupes[,1]) == 1) output$total <- NA
+
 return(output)
 }
 
-calc_support("r_4", "r_5")
+calc_support("r_10", "r_6", input)
 ```
 
+```{r define-function-no-pandering}
+#testing pairs of sensors
+#filter to two upstream/downstream sensors
+calc_support <- function(up, down, input){
+#up <- "r_10"
+#down <- "r_6"
+
+mod3 <- input %>% select(up,down, -datetime)
+no_dupes <- mod3 %>%
+  filter(row_number() == 1 | !apply(. == lag(.), 1, all))
+#make it so that there cannot be a sequence without change
+
+#error when both locations flowed the whole time; 
+
+# Define window size
+window_size <- 2
+
+# Create sliding windows
+windows <- rollapply(
+  no_dupes,
+  width = window_size,
+  by.column = FALSE,
+  FUN = function(x) paste(as.vector(t(x)), collapse = "")
+)
+
+# Count and sort sequences
+sequence_counts <- table(windows)
+sorted_counts <- sort(sequence_counts, decreasing = TRUE)
+
+# Display all sequences and their frequencies
+sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
+colnames(sequence_df) <- c("Sequence", "Frequency")
+#View(sequence_df)
+
+total <- sum(sequence_df$Frequency)
+#write some way to score the sequence_df
+#award one point for one of these configs:
+supports <- c("0001", "0011", "0111", "1110", "1100", "1101", "0100")
+#subset from the 16 possibilities, except it is fewer because
+#0000, 1111, 0101, 1010 are removed...
+
+sub <- filter(sequence_df, Sequence %in% supports)
+points <- sum(sub$Frequency)
+
+#create output with the total and the sub, also the two input locations
+output <- data.frame(up, down, points, total)
+
+return(output)
+}
+
+calc_support("r_10", "r_6", input)
+```
 Iterating through each pair of sensors, using the upstream sensor as the id, and the downstream sensor as the secondary or dependent. Seeing how often pairs of sensors wet up or dry down relative to each other.
 ##looping by relative position
 ```{r looping-W3}
@@ -1162,13 +1225,14 @@ for(x in 1:length(routes$sensor)){
   up <- paste0("r_",routes$sensor[x])
   down <- paste0("r_",routes$down[x])
   
-  out <- calc_support(up, down)
+  out <- calc_support(up, down, input)
   if(x == 1) alldat <- out
   if(x > 1) alldat <- rbind(alldat, out)
 
 }
 
 alldat$prop <- alldat$points/alldat$total
+alldat
 w3_pairs <- alldat
 #this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
 hist(alldat$prop)
@@ -1226,6 +1290,7 @@ zz_pairs <- alldat
 hist(alldat$prop)
 ```
 ##looping by drainage area UNFINISHED
+Lost in a file hell
 ```{r create-3m-network}
 streams <- "./HB/1m hydro enforced DEM/dem3m_streams.tif"
 wbt_extract_streams(flow_accum = flowacc_output,
@@ -1240,13 +1305,23 @@ points(lcc)
 #zz () zoom
 ybounds <- c(4866400,4867500)
 xbounds <- c(277200, 277650)
+
+#use these networks, snap points to them before extracting values
+plot(vect("./HB/hbstream/ZZ_subcatchment_flowlines.shp"))
+plot(rast(streams), add = TRUE, alpha = 0.5)
+
+plot(vect("./HB/hbstream/FB_subcatchment_flowlines.shp"))
+plot(rast(streams), add = TRUE, alpha = 0.5)
+
+plot(vect("./HB/hbstream/hb42_master_startend.shp"))
+plot(rast(streams), add = TRUE, alpha = 0.5)
+
+
 ```
 
 ```{r extract-drainage-area-W3}
 #flow accumulation/upslope drainage area at 3 m resolution calculated earlier in markdown
 #flowacc_output <- "./HB/1m hydro enforced DEM/dem3m_flowacc.tif"
-
-#calculate for W3
 locs <- data_24 %>% 
   filter(wshed == "W3") %>% 
   select(number, lat, long) %>% 
@@ -1259,8 +1334,27 @@ locs_shape <- vect(locs,
 plot(locs_shape)
 #reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
 lcc <- terra::project(locs_shape, crs(rast(flowacc_output)))
+#snap points to lines using wbt
+#use 5 m lines? or convert 1 m dem based shapefiles to raster
+#for some reason 5m w3 raster is not working, but I can use the other ones I do believe
+# found already snapped W3 STIC locations
+w3_lcc_path <- "./mapsForStoryboardFiles/w3_stics.shp"
+writeVector(lcc, w3_lcc_path, overwrite = TRUE)
+w3_lcc_path_snap <- "./mapsForStoryboardFiles/w3_stics_snapped.shp"
+wbt_jenson_snap_pour_points(pour_pts = w3_lcc_path,
+                            streams = "./HB/hbstream/w3_5m.tif",
+                            output = w3_lcc_path_snap,
+                            snap_dist = 10)
+plot(rast("./HB/hbstream/zz_5m.tif"))
+plot(vect(w3_lcc_path_snap))
+plot(vect(w3_lcc_path), add = TRUE, col = "red")
+plot(vect("w3_stic_locs_snap.shp"))
+w3_stics <- (vect("w3_stic_locs_snap.shp"))
 
-W3_uaa_ex <- extract(rast(flowacc_output), lcc)
+#calculate for W3
+
+plot(rast("HB/hbstream/zz_5m.tif"))
+W3_uaa_ex <- extract(rast(flowacc_output), w3_stics) #should be in units of 3 m2, so 200 is 600 m2 I 
 
 #make list that makes pairs of sites based on topography
 ```
@@ -1277,11 +1371,22 @@ locs_shape <- vect(locs,
                    crs = "+proj=longlat +datum=WGS84")
 plot(locs_shape)
 #reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
-lcc <- terra::project(locs_shape, crs(rast(flowacc_output)))
+fb_lcc <- terra::project(locs_shape, crs(rast(flowacc_output)))
 
+#snap points to streamlines, use 5m FB streams
+plot(rast("./HB/hbstream/fb_5m.tif"))
+fb_lcc_path <- "./mapsForStoryboardFiles/fb_stics.shp"
+writeVector(fb_lcc, fb_lcc_path, overwrite = TRUE)
+fb_lcc_path_snap <- "./mapsForStoryboardFiles/fb_stics_snapped.shp"
+fb_streams <- "./fb_dems/fb_streams.tif"
+plot(rast(fb_streams))
+wbt_jenson_snap_pour_points(pour_pts = fb_lcc_path,
+                            streams = fb_streams,
+                            output = fb_lcc_path_snap,
+                            snap_dist = 10)
 #before extracting, I should snap points to stream network based on this resolution perhaps... ugh
 
-FB_uaa_ex <- extract(rast(flowacc_output), lcc)
+FB_uaa_ex <- extract(rast(flowacc_output), fb_lcc)
 
 ```
 
@@ -1320,31 +1425,34 @@ hist(w3_pairs$prop)
 ```
 ```{r looping-FB}
 #make list that make pairs of sites based on local persistency
-routes <- pks_w3 %>% 
+#REMOVE SITES WHERE FLOW IS 100% OF THE TIME
+routes <- pks_fb %>% 
+  filter(pk != 1) %>% 
   arrange(desc(pk)) %>% 
   mutate(down = lag(ID)) %>% 
   rename("up" = ID) %>% drop_na() %>% 
-  select(up, down)
+  select(up, down) %>% 
+  mutate(up = paste0("r_",up),
+         down = paste0("r_",down))
 
 input <- rbind(bind23, bind24) %>%
-  filter(wshed == "W3", mins %in% c(0, 30)) %>%
+  filter(wshed == "FB", mins %in% c(0, 30)) %>%
   select(datetime, binary, ID) %>%
   mutate(ID = paste0("r_",ID)) %>% 
   pivot_wider(names_from = ID, values_from = binary)
-#now make loop to loop through all pairs of sensors
 
 for(x in 1:length(routes$up)){
-  up <- paste0("r_",routes$up[x])
-  down <- paste0("r_",routes$down[x])
   
-  out <- calc_support(up, down)
+  out <- calc_support(routes$up[x], routes$down[x], input)
   if(x == 1) alldat <- out
   if(x > 1) alldat <- rbind(alldat, out)
 
 }
 
 alldat$prop <- alldat$points/alldat$total
-w3_pairs_pk <- alldat
+fb_pairs <- alldat
+#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
+hist(alldat$prop)
 #this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
 hist(w3_pairs_pk$prop)
 hist(w3_pairs$prop)
