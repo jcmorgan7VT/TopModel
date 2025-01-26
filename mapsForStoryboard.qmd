@@ -613,27 +613,17 @@ rbind(pks_w3, pks_fb, pks_zz) %>%
 ```
 
 ## Average Duration of Flow
-```{r}
+```{r dof-w3}
 #successfully calculating the average duration of flow for an event
-dur <- data_23 %>% 
-  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
-  select(datetime, ID, binary) %>% 
-    #group_by(ID) %>% 
-  #rename("DATETIME" = datetime) #%>%
-  mutate(group = data.table::rleid(binary)) %>%
-  group_by(group, ID) %>%
-  summarise(state = first(binary), 
-            timeperiod = dplyr::last(datetime) - dplyr::first(datetime)) %>% 
-  mutate(timeperiod = as.numeric(timeperiod, units = "days")) %>% 
-  group_by(ID) %>% 
-  filter(state == 1) %>% 
-  summarise(avg_days_flowing = mean(timeperiod))
+bind23 <- data_23 %>% 
+  select(datetime, ID, wshed, binary, mins)
+bind24 <- data_24 %>% 
+  select(datetime, number, wshed, binary, mins) %>% 
+  rename("ID" = number)
 
-dur <- data_24 %>% 
+dof_w3 <- rbind(bind23, bind24) %>% 
   filter(wshed == "W3", mins %in% c(0, 30)) %>% 
   select(datetime, ID, binary) %>% 
-    #group_by(ID) %>% 
-  #rename("DATETIME" = datetime) #%>%
   mutate(group = data.table::rleid(binary)) %>%
   group_by(group, ID) %>%
   summarise(state = first(binary), 
@@ -641,25 +631,749 @@ dur <- data_24 %>%
   mutate(timeperiod = as.numeric(timeperiod, units = "days")) %>% 
   group_by(ID) %>% 
   filter(state == 1) %>% 
-  summarise(avg_days_flowing = mean(timeperiod))
+  summarise(avg_days_flowing = mean(timeperiod)) %>% 
+  mutate(wshed = "W3")
+
+```
+```{r dof-fb}
+dof_fb <- rbind(bind23, bind24) %>% 
+  filter(wshed == "FB", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(group = data.table::rleid(binary)) %>%
+  group_by(group, ID) %>%
+  summarise(state = first(binary), 
+            timeperiod = dplyr::last(datetime) - dplyr::first(datetime)) %>% 
+  mutate(timeperiod = as.numeric(timeperiod, units = "days")) %>% 
+  group_by(ID) %>% 
+  filter(state == 1) %>% 
+  summarise(avg_days_flowing = mean(timeperiod)) %>% 
+  mutate(wshed = "FB") %>% 
+  #remove outlier left out over winter
+  filter(ID != 32)
+```
+```{r dof-zz}
+dof_zz <- rbind(bind23, bind24) %>% 
+  filter(wshed == "ZZ", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(group = data.table::rleid(binary)) %>%
+  group_by(group, ID) %>%
+  summarise(state = first(binary), 
+            timeperiod = dplyr::last(datetime) - dplyr::first(datetime)) %>% 
+  mutate(timeperiod = as.numeric(timeperiod, units = "days")) %>% 
+  group_by(ID) %>% 
+  filter(state == 1) %>% 
+  summarise(avg_days_flowing = mean(timeperiod)) %>% 
+  mutate(wshed = "ZZ")
+```
+```{r combine-boxplot}
+rbind(dof_w3, dof_fb, dof_zz) %>% 
+  ggplot(aes(x = wshed, y = (avg_days_flowing)))+
+  geom_boxplot()+
+  geom_jitter(width = 0.1, alpha = 0.5)+
+  theme_classic()+
+  labs(title = "Distributions of Average Duration of Flow",
+       x = "Watershed",
+       y = "Duration of Flow (days)")
+
 ```
 
+#Figure 4: How often does the network wet up, dry down, etc?
+```{r}
+test <- data_23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+    group_by(ID) %>% 
+  rename("DATETIME" = datetime) %>% 
+  left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  #filter(ID == 1)%>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) #%>% 
+  filter(transition %in% c(-1, 1))
+
+test$state_change <- "none"
+test$state_change[test$transition == -1] <- "wetting"
+test$state_change[test$transition == 1] <- "drying"
+```
+First thing to try that I have tried before: determine all unique combinations of wet and dry sensors
+```{r}
+#find all unique combinations of wet and dry sensors
+hush2 <- rbind(bind23, bind24) %>%
+  filter(wshed == "W3", mins %in% c(0, 30)) %>%
+  select(datetime, binary, ID) %>%
+  pivot_wider(names_from = ID, values_from = binary)
+
+hush3 <- hush2[1:5,-1]
+hush3
+hush3[-1, ]
+
+hush3[-5,] - hush3[-1, ]
+
+# xy.list <- as.list(as.data.frame(t(hush2[,-1])))
+# length(xy.list)
+# length(unique(data$datetime))
+# #unique combinations of flow
+# length(unique(xy.list))
+
+#perhaps subset it so that I am working with one pair of consecutive sensors at a time
+hush3[-5,15:17] - hush3[-1, 15:17]
+hush3[,15:17]
+
+#how often does 17 activate before 16?
+#filter to every time that 17 transitions to flowing- value of -1
+l <- 20 #length of time
+hush3 <- hush2[1:l,-1] #get the number of time steps equal to l, get rid of time id col
+
+hush3[-l,16:17] - hush3[-1, 16:17] #find the change with lagged cols, output does not have last delta
+
+#find every time that 17 is -1
+hush4 <- hush3[-l,16:17] - hush3[-1, 16:17]
+colnames(hush4) <- c("up", "down")
+
+hush4
+
+#how often does the upstream sensor go to -1 after the downstream sensor?
+require(data.table)
+data.table:::duplist(hush4[, 3:5]) 
+
+hush4 %>% 
+mutate(group = data.table::rleid(down)) %>%
+  group_by(group) %>%
+  summarise(state = first(down),
+            rows = length(group)) #%>% 
+  mutate(timeperiod = as.numeric(timeperiod, units = "days"))
+
+#how can I calculate seqeunce of activation?
+data <- data.frame(
+  Var1 = c(1, 0, 1, 1, 0),
+  Var2 = c(0, 1, 1, 0, 1),
+  Var3 = c(1, 1, 1, 1, 0)
+)
+
+target_sequence <- c(1, 0, 1)
+
+matches <- apply(data, 1, function(row) all(row == target_sequence))
+count <- sum(matches)
+proportion <- count / nrow(data)
+
+cat("Number of matches:", count, "\n")
+cat("Proportion of matches:", proportion, "\n")
+
+
+
+#one idea- fit a logistic regression of every sensor to every other sensor. If a sensor is always flowing when another is, it would be a good predictor
+mod <- hush2[,16:17]
+colnames(mod) <- c("up", "down")
+
+mod2 <- hush2
+colnames(mod2) <- as.character(paste0("r_",colnames(hush2)))
+
+model <- glm(r_1 ~.,family=binomial(link='logit'),data=mod2)
+summary(model)
+```
+```{r}
+#how often does x activate after y?
+p_load(zoo)
+
+data <- data.frame(
+  Var1 = c(1, 0, 1, 1, 0, 1, 1),
+  Var2 = c(0, 1, 1, 0, 1, 0, 0),
+  Var3 = c(1, 1, 1, 1, 0, 1, 1)
+)
+target_sequence <- matrix(
+  c(1, 0, 1,
+    0, 1, 1),
+  nrow = 2, byrow = TRUE
+)
+
+# Flatten the target sequence for comparison
+target_vector <- as.vector(t(target_sequence))
+
+# Use rollapply to create sliding windows
+windows <- rollapply(data, width = nrow(target_sequence), by.column = FALSE, FUN = function(x) as.vector(t(x)))
+
+# Check for matches
+matches <- apply(windows, 1, function(window) all(window == target_vector))
+
+# Get indices of matches
+match_indices <- which(matches)
+
+cat("Matching sequence found at indices:", match_indices, "\n")
+
+
+#now test on my data
+mod3 <- select(mod2,r_15, r_16, r_17)
+target_sequence <- matrix(
+  c(
+    0, 0, 1,
+    0, 1, 1,
+    1, 1, 1),
+  nrow = 3, byrow = TRUE
+)
+target_vector <- as.vector(t(target_sequence))
+
+# Use rollapply to create sliding windows
+windows <- rollapply(mod3, width = nrow(target_sequence), by.column = FALSE, FUN = function(x) as.vector(t(x)))
+
+# Check for matches
+matches <- apply(windows, 1, function(window) all(window == target_vector))
+
+# Get indices of matches
+match_indices <- which(matches)
+length(match_indices)
+
+###another attempt
+
+# Example data
+mod3 <- select(mod2,r_15, r_16, r_17)
+
+
+# Define window size
+window_size <- 6
+
+# Create sliding windows
+windows <- rollapply(
+  mod3,
+  width = window_size,
+  by.column = FALSE,
+  FUN = function(x) paste(as.vector(t(x)), collapse = "")
+)
+
+# Count and sort sequences
+sequence_counts <- table(windows)
+sorted_counts <- sort(sequence_counts, decreasing = TRUE)
+
+# Get most common sequence
+most_common_sequence <- names(sorted_counts)[1]
+cat("Most common sequence:", most_common_sequence, "\n")
+cat("Frequency:", sorted_counts[1], "\n")
+
+# Display all sequences and their frequencies
+sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
+colnames(sequence_df) <- c("Sequence", "Frequency")
+print(sequence_df)
+
+```
+
+```{r}
+#find the most common sequence of activation during the rising limb, or times when slope of discharge is positive
+mod3 <- drop_na(mod2[,-1])
+no_dupes <- mod3 %>%
+  filter(row_number() == 1 | !apply(. == lag(.), 1, all))
+#make it so that there cannot be a sequence without change
+
+# Define window size
+window_size <- 4
+
+# Create sliding windows
+windows <- rollapply(
+  no_dupes,
+  width = window_size,
+  by.column = FALSE,
+  FUN = function(x) paste(as.vector(t(x)), collapse = "")
+)
+
+# Count and sort sequences
+sequence_counts <- table(windows)
+sorted_counts <- sort(sequence_counts, decreasing = TRUE)
+
+# Display all sequences and their frequencies
+sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
+colnames(sequence_df) <- c("Sequence", "Frequency")
+View(sequence_df)
+```
+
+```{r}
+#convert this result into a plot
+#number of panes dictated by window size
+window_size
+
+number_in_list <- 4
+#left join the sequence to the locations of the sensors and plot
+head(sequence_df)
+
+status <- data.frame("ID" = as.numeric(rep(substr(colnames(no_dupes), 3,4),window_size)),
+                     "status" = unlist(strsplit(sequence_df$Sequence[number_in_list], split = "")),
+                     "timestep" = c(rep(1, 31), rep(2, 31), rep(3, 31), rep(4, 31)))
+
+#get sensor locations from STIC data, format
+locs <- data_23 %>% 
+  filter(wshed == "W3") %>% 
+  select(ID, lat, long) %>% 
+  unique() %>% 
+  left_join(status, by = "ID")
+#convert STIC data to a SpatVector data format
+locs_shape <- vect(locs, 
+                   geom=c("long", "lat"), 
+                   crs = "+proj=longlat +datum=WGS84")
+#reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
+lcc <- terra::project(locs_shape, crs(m1))
+
+ggplot()+
+  geom_spatraster(data = hill)+
+  theme_void()+
+  #theme(legend.position = "")+
+  scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
+    new_scale_fill() +
+  geom_spatraster(data = crop1, alpha = 0.5)+
+    geom_sf(data = w3_outline, fill = NA, color = "black", alpha = 0.3)+
+  geom_sf(data = w3_net, colour = "darkslategray3") +
+    geom_sf(data = lcc, aes(colour = status), pch = 19) +
+  facet_wrap(~timestep)+
+   scale_fill_hypso_c(palette = "dem_screen" , limits = c(200, 1000))+
+  theme(rect = element_rect(fill = "transparent", color = NA))
+```
+
+```{r w3-map}
+#read in DEM of whole valley, 1m resolution
+dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
+m1 <- rast(dem)
+plot(m1)
+
+#get sensor locations from STIC data, format
+locs <- data_23 %>% 
+  filter(wshed == "W3") %>% 
+  select(ID, lat, long) %>% 
+  unique()
+#convert STIC data to a SpatVector data format
+locs_shape <- vect(locs, 
+                   geom=c("long", "lat"), 
+                   crs = "+proj=longlat +datum=WGS84")
+plot(locs_shape)
+#reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
+lcc <- terra::project(locs_shape, crs(m1))
+plot(lcc)
+#define the rectangular area that will be shown on final map
+ybounds <- c(4870350,4871350)
+xbounds <- c(281350, 282150)
+plot(m1, xlim = xbounds, ylim = ybounds)
+points(lcc)
+
+#create a SpatExtent from a vector (length=4; order=xmin, xmax, ymin, ymax)
+crop1 <- crop(m1, ext(c(xbounds, ybounds)))
+plot(crop1)
+#save cropped 1m dem to reduce processing time below, and gurantee that everything has the same extent
+writeRaster(crop1, "./w3_dems/1mdem_crop.tif", overwrite = TRUE)
+#read in cropped dem
+w3_crop <- "./w3_dems/1mdem_crop.tif"
+
+#read in shapefile of stream network shape from ARC file on windows computer
+w3_net <- vect("./carrieZigZag/w3_network.shp")
+plot(w3_net)
+
+###pour point to define where the watershed boundary is
+#manually type coords from windows computer
+ 
+ 
+w3_pour_coords <- data.frame("easting" = 281537.46,
+                             "northing" = 4870424.50)
+#convert to SpatVector object
+w3_pour <- vect(w3_pour_coords,
+                geom = c("easting", "northing"),
+                   crs = crs(m1))
+#snap pour point to make sure it lies on flowlines
+#fb_pour <- snap(fb_pour, fb_net, tol = 1)
+
+#save to file for use in whitebox functions
+w3_pour_filename <- "./w3_dems/w3_pour.shp"
+writeVector(w3_pour, w3_pour_filename, overwrite=TRUE)
+
+####delineate watershed and keep watershed boundary
+#breach and fill I guess
+w3_crop <- "./w3_dems/1mdem_crop.tif"
+
+w3_breached <- "./w3_dems/1mdem_breach.tif"
+wbt_breach_depressions_least_cost(
+  dem = w3_crop,
+  output = w3_breached,
+  dist = 1,
+  fill = TRUE)
+
+w3_filled <- "./w3_dems/1mdem_fill.tif"
+wbt_fill_depressions_wang_and_liu(
+  dem = w3_breached,
+  output = w3_filled
+)
+#calculate flow accumulation and direction
+w3_flowacc <- "./w3_dems/1mdem_w3_flowacc.tif"
+wbt_d8_flow_accumulation(input = w3_filled,
+                         output = w3_flowacc)
+plot(rast(w3_flowacc))
+w3_d8pt <- "./w3_dems/1mdem_w3_d8pt.tif"
+wbt_d8_pointer(dem = w3_filled,
+               output = w3_d8pt)
+plot(rast(w3_d8pt))
+
+
+#delineate streams
+w3_streams <- "./w3_dems/w3_streams.tif"
+wbt_extract_streams(flow_accum = w3_flowacc,
+                    output = w3_streams,
+                    threshold = 8000)
+plot(rast(w3_streams))
+points(lcc)
+#snap pour point to streams
+w3_pour_snap <- "./w3_dems/w3_pour_snap.shp"
+wbt_jenson_snap_pour_points(pour_pts = w3_pour_filename,
+                            streams = w3_streams,
+                            output = w3_pour_snap,
+                            snap_dist = 10)
+w3_pour_snap_read <- vect("./w3_dems/w3_pour_snap.shp")
+plot(rast(w3_streams), 
+     xlim = c(281400, 282000),
+     ylim = c(4870400, 4870800))
+points(w3_pour_snap_read, pch = 1)
+
+w3_shed <- "./w3_dems/w3_shed.tif"
+wbt_watershed(d8_pntr = w3_d8pt,
+              pour_pts = w3_pour_snap,
+              output = w3_shed)
+
+plot(rast(w3_shed))
+#convert raster of watershed area to vector for final mapping
+w3_outline <- as.polygons(rast(w3_shed), extent=FALSE)
+plot(w3_outline)
+
+
+
+#assign destination for hillshade calculation
+hillshade_out <- "./w3_dems/1mdem_hillshade.tif"
+wbt_hillshade(
+  dem = w3_crop,
+  output = hillshade_out,
+)
+hill <- rast(hillshade_out)
+plot(hill)
+
+#final plot with cropped hillshade and dem, STIC locations, watershed boundary, and stream network.
 
 
 
 
 
+```
+
+Whenever there is a change in state, does it follow the wetting up, drying down, or flow permanence hypothesis?
+
+```{r}
+#testing pairs of sensors
+#filter to two upstream/downstream sensors
+mod3 <- drop_na(mod2[,-1]) %>% select("r_22", "r_23")
+no_dupes <- mod3 %>%
+  filter(row_number() == 1 | !apply(. == lag(.), 1, all))
+#make it so that there cannot be a sequence without change
+
+# Define window size
+window_size <- 2
+
+# Create sliding windows
+windows <- rollapply(
+  no_dupes,
+  width = window_size,
+  by.column = FALSE,
+  FUN = function(x) paste(as.vector(t(x)), collapse = "")
+)
+
+# Count and sort sequences
+sequence_counts <- table(windows)
+sorted_counts <- sort(sequence_counts, decreasing = TRUE)
+
+# Display all sequences and their frequencies
+sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
+colnames(sequence_df) <- c("Sequence", "Frequency")
+View(sequence_df)
+
+total <- sum(sequence_df$Frequency)
+#write some way to score the sequence_df
+#award one point for one of these configs:
+supports <- c("0001", "0011", "0111", "1110", "1100")
+
+sub <- filter(sequence_df, Sequence %in% supports)
+points <- sum(sub$Frequency)
+
+#create output with the total and the sub, also the two input locations
+
+```
+Use above chunk to write a function to take an upstream and downstream sensor, and determine what proportion of the times it changes state follow the systematic behavior I am looking for.
+```{r define-function}
+#testing pairs of sensors
+#filter to two upstream/downstream sensors
+calc_support <- function(up, down){
+
+mod3 <- drop_na(input[,-1]) %>% select(up,down)
+no_dupes <- mod3 %>%
+  filter(row_number() == 1 | !apply(. == lag(.), 1, all))
+#make it so that there cannot be a sequence without change
+
+# Define window size
+window_size <- 2
+
+# Create sliding windows
+windows <- rollapply(
+  no_dupes,
+  width = window_size,
+  by.column = FALSE,
+  FUN = function(x) paste(as.vector(t(x)), collapse = "")
+)
+
+# Count and sort sequences
+sequence_counts <- table(windows)
+sorted_counts <- sort(sequence_counts, decreasing = TRUE)
+
+# Display all sequences and their frequencies
+sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
+colnames(sequence_df) <- c("Sequence", "Frequency")
+#View(sequence_df)
+
+total <- sum(sequence_df$Frequency)
+#write some way to score the sequence_df
+#award one point for one of these configs:
+supports <- c("0001", "0011", "0111", "1110", "1100", "1101", "0100")
+#subset from the 16 possibilities, except it is fewer because
+#0000, 1111, 0101, 1010 are removed...
+
+sub <- filter(sequence_df, Sequence %in% supports)
+points <- sum(sub$Frequency)
+
+#create output with the total and the sub, also the two input locations
+output <- data.frame(up, down, points, total)
+return(output)
+}
+
+calc_support("r_22", "r_23")
+```
+
+```{r looping-W3}
+#equivalent to hush 2 from earlier,
+#make a new input for each watershed chunk
+input <- rbind(bind23, bind24) %>%
+  filter(wshed == "W3", mins %in% c(0, 30)) %>%
+  select(datetime, binary, ID) %>%
+  mutate(ID = paste0("r_",ID)) %>% 
+  pivot_wider(names_from = ID, values_from = binary)
+#now make loop to loop through all pairs of sensors
+routes <- read_csv("w3_flowrouting.csv") %>% 
+  rename("up" = drains_from, "down" = drains_to) %>% 
+  select(sensor, down) %>% 
+  filter(down != 100)
+
+for(x in 1:length(routes$sensor)){
+  up <- paste0("r_",routes$sensor[x])
+  down <- paste0("r_",routes$down[x])
+  
+  out <- calc_support(up, down)
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
+
+}
+
+alldat$prop <- alldat$points/alldat$total
+w3_pairs <- alldat
+#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
+hist(alldat$prop)
+```
+```{r looping-FB}
+#equivalent to hush 2 from earlier,
+#make a new input for each watershed chunk
+input <- rbind(bind23, bind24) %>%
+  filter(wshed == "FB", mins %in% c(0, 30)) %>%
+  select(datetime, binary, ID) %>%
+  mutate(ID = paste0("r_",ID)) %>% 
+  pivot_wider(names_from = ID, values_from = binary)
+#now make loop to loop through all pairs of sensors
+routes <- read_csv("fb_flowrouting.csv") %>% drop_na() %>% 
+  mutate(up = paste0("r_",up),
+         down = paste0("r_",down))
+
+calc_support("r_4", "r_5")
+
+#####TROUBLE SHOOTING
+#####################
+#####################
+up <- "r_4"
+down <- "r_5"
+mod3 <- input %>% select(up,down, -datetime)
+no_dupes <- mod3 %>%
+  filter(row_number() == 1 | !apply(. == lag(.), 1, all))
+#make it so that there cannot be a sequence without change
+
+# Define window size
+window_size <- 2
+
+# Create sliding windows
+windows <- rollapply(
+  no_dupes,
+  width = window_size,
+  by.column = FALSE,
+  FUN = function(x) paste(as.vector(t(x)), collapse = "")
+)
+
+# Count and sort sequences
+sequence_counts <- table(windows)
+sorted_counts <- sort(sequence_counts, decreasing = TRUE)
+
+# Display all sequences and their frequencies
+sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
+colnames(sequence_df) <- c("Sequence", "Frequency")
+#View(sequence_df)
+
+total <- sum(sequence_df$Frequency)
+#write some way to score the sequence_df
+#award one point for one of these configs:
+supports <- c("0001", "0011", "0111", "1110", "1100", "1101", "0100")
+#subset from the 16 possibilities, except it is fewer because
+#0000, 1111, 0101, 1010 are removed...
+
+sub <- filter(sequence_df, Sequence %in% supports)
+points <- sum(sub$Frequency)
+
+#create output with the total and the sub, also the two input locations
+output <- data.frame(up, down, points, total)
+
+# successfully fixed problem- something wrong with method of subsetting dataframe
+###############
+for(x in 1:length(routes$up)){
+  
+  out <- calc_support(routes$up[x], routes$down[x])
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
+
+}
+
+alldat$prop <- alldat$points/alldat$total
+fb_pairs <- alldat
+#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
+hist(alldat$prop)
+```
+```{r looping-ZZ}
+#equivalent to hush 2 from earlier,
+#make a new input for each watershed chunk
+input <- rbind(bind23, bind24) %>%
+  filter(wshed == "ZZ", mins %in% c(0, 30)) %>%
+  select(datetime, binary, ID) %>%
+  mutate(ID = paste0("r_",ID)) %>% 
+  pivot_wider(names_from = ID, values_from = binary)
+#now make loop to loop through all pairs of sensors
+routes <- read_csv("zz_flowrouting.csv") %>% drop_na() %>% 
+  mutate(up = paste0("r_",up),
+         down = paste0("r_",down))
+z <- 10
+input %>% select((routes$up[10]),(routes$down[10]))
 
 
+for(x in 1:length(routes$up)){
+  
+  out <- calc_support(routes$up[x], routes$down[x])
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
 
+}
 
+alldat$prop <- alldat$points/alldat$total
+zz_pairs <- alldat
+#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
+hist(alldat$prop)
+```
+Test pairs for other watersheds:
+```{r}
+#now make loop to loop through all pairs of sensors
+fb_routes <- read_csv("fb_flowrouting.csv") %>% drop_na()
 
+for(x in 1:length(fb_routes$up)){
+  up <- paste0("r_",fb_routes$up[x])
+  down <- paste0("r_",fb_routes$down[x])
+  
+  out <- calc_support(up, down)
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
 
+}
 
+alldat$prop <- alldat$points/alldat$total
+fb_pairs <- alldat
+#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
 
+#calculate the same for ZZ
+#now make loop to loop through all pairs of sensors
+fb_routes <- read_csv("fb_flowrouting.csv") %>% drop_na()
 
+for(x in 1:length(fb_routes$up)){
+  up <- paste0("r_",fb_routes$up[x])
+  down <- paste0("r_",fb_routes$down[x])
+  
+  out <- calc_support(up, down)
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
 
+}
 
+alldat$prop <- alldat$points/alldat$total
+fb_pairs <- alldat
+```
 
+Now I can test pairs of sensors with any scheme, such as paired based on local persistency, or topographic metrics
 
+```{r}
+#make list that make pairs of sites based on local persistency
+
+#make list that makes pairs of sites based on topography
+```
+
+Test individual tribs, and the whole network
+```{r}
+
+```
+
+Try for a sequence of 3 times- also shows that this systematic wetting is very common
+```{r window3}
+calc_support <- function(up, down){
+mod3 <- drop_na(mod2[,-1]) %>% select(all_of(up),all_of(down))
+no_dupes <- mod3 %>%
+  filter(row_number() == 1 | !apply(. == lag(.), 1, all))
+#make it so that there cannot be a sequence without change
+
+# Define window size
+window_size <- 3
+
+# Create sliding windows
+windows <- rollapply(
+  no_dupes,
+  width = window_size,
+  by.column = FALSE,
+  FUN = function(x) paste(as.vector(t(x)), collapse = "")
+)
+
+# Count and sort sequences
+sequence_counts <- table(windows)
+sorted_counts <- sort(sequence_counts, decreasing = TRUE)
+
+# Display all sequences and their frequencies
+sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
+colnames(sequence_df) <- c("Sequence", "Frequency")
+#View(sequence_df)
+
+total <- sum(sequence_df$Frequency)
+#write some way to score the sequence_df
+#award one point for one of these configs:
+
+supports <- c("000111", "110100", "011101", "110111", "000100")
+#subset from the 16 possibilities, except it is fewer because
+#0000, 1111, 0101, 1010 are removed...
+
+sub <- filter(sequence_df, Sequence %in% supports)
+points <- sum(sub$Frequency)
+
+#create output with the total and the sub, also the two input locations
+output <- data.frame(up, down, points, total)
+return(output)
+}
+
+calc_support("r_22", "r_23")
+```
+
+#final plot
+```{r}
+#boxplots or distributions of the percentage of state changes that follow some system, different colors/boxes for each scheme or system, and x axis is the number of sensors.
+
+#facet for each watershed
+```
 
