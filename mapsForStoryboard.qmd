@@ -1099,7 +1099,7 @@ Use above chunk to write a function to take an upstream and downstream sensor, a
 #filter to two upstream/downstream sensors
 calc_support <- function(up, down){
 
-mod3 <- drop_na(input[,-1]) %>% select(up,down)
+mod3 <- input %>% select(up,down, -datetime)
 no_dupes <- mod3 %>%
   filter(row_number() == 1 | !apply(. == lag(.), 1, all))
 #make it so that there cannot be a sequence without change
@@ -1139,9 +1139,11 @@ output <- data.frame(up, down, points, total)
 return(output)
 }
 
-calc_support("r_22", "r_23")
+calc_support("r_4", "r_5")
 ```
 
+Iterating through each pair of sensors, using the upstream sensor as the id, and the downstream sensor as the secondary or dependent. Seeing how often pairs of sensors wet up or dry down relative to each other.
+##looping by relative position
 ```{r looping-W3}
 #equivalent to hush 2 from earlier,
 #make a new input for each watershed chunk
@@ -1184,53 +1186,6 @@ routes <- read_csv("fb_flowrouting.csv") %>% drop_na() %>%
   mutate(up = paste0("r_",up),
          down = paste0("r_",down))
 
-calc_support("r_4", "r_5")
-
-#####TROUBLE SHOOTING
-#####################
-#####################
-up <- "r_4"
-down <- "r_5"
-mod3 <- input %>% select(up,down, -datetime)
-no_dupes <- mod3 %>%
-  filter(row_number() == 1 | !apply(. == lag(.), 1, all))
-#make it so that there cannot be a sequence without change
-
-# Define window size
-window_size <- 2
-
-# Create sliding windows
-windows <- rollapply(
-  no_dupes,
-  width = window_size,
-  by.column = FALSE,
-  FUN = function(x) paste(as.vector(t(x)), collapse = "")
-)
-
-# Count and sort sequences
-sequence_counts <- table(windows)
-sorted_counts <- sort(sequence_counts, decreasing = TRUE)
-
-# Display all sequences and their frequencies
-sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
-colnames(sequence_df) <- c("Sequence", "Frequency")
-#View(sequence_df)
-
-total <- sum(sequence_df$Frequency)
-#write some way to score the sequence_df
-#award one point for one of these configs:
-supports <- c("0001", "0011", "0111", "1110", "1100", "1101", "0100")
-#subset from the 16 possibilities, except it is fewer because
-#0000, 1111, 0101, 1010 are removed...
-
-sub <- filter(sequence_df, Sequence %in% supports)
-points <- sum(sub$Frequency)
-
-#create output with the total and the sub, also the two input locations
-output <- data.frame(up, down, points, total)
-
-# successfully fixed problem- something wrong with method of subsetting dataframe
-###############
 for(x in 1:length(routes$up)){
   
   out <- calc_support(routes$up[x], routes$down[x])
@@ -1256,9 +1211,6 @@ input <- rbind(bind23, bind24) %>%
 routes <- read_csv("zz_flowrouting.csv") %>% drop_na() %>% 
   mutate(up = paste0("r_",up),
          down = paste0("r_",down))
-z <- 10
-input %>% select((routes$up[10]),(routes$down[10]))
-
 
 for(x in 1:length(routes$up)){
   
@@ -1273,54 +1225,139 @@ zz_pairs <- alldat
 #this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
 hist(alldat$prop)
 ```
-Test pairs for other watersheds:
-```{r}
-#now make loop to loop through all pairs of sensors
-fb_routes <- read_csv("fb_flowrouting.csv") %>% drop_na()
-
-for(x in 1:length(fb_routes$up)){
-  up <- paste0("r_",fb_routes$up[x])
-  down <- paste0("r_",fb_routes$down[x])
-  
-  out <- calc_support(up, down)
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
-
-}
-
-alldat$prop <- alldat$points/alldat$total
-fb_pairs <- alldat
-#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
-
-#calculate the same for ZZ
-#now make loop to loop through all pairs of sensors
-fb_routes <- read_csv("fb_flowrouting.csv") %>% drop_na()
-
-for(x in 1:length(fb_routes$up)){
-  up <- paste0("r_",fb_routes$up[x])
-  down <- paste0("r_",fb_routes$down[x])
-  
-  out <- calc_support(up, down)
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
-
-}
-
-alldat$prop <- alldat$points/alldat$total
-fb_pairs <- alldat
+##looping by drainage area UNFINISHED
+```{r create-3m-network}
+streams <- "./HB/1m hydro enforced DEM/dem3m_streams.tif"
+wbt_extract_streams(flow_accum = flowacc_output,
+                    output = streams,
+                    threshold = 500)
+plot(rast(streams))
+#w3 zoom
+ybounds <- c(4870350,4871350)
+xbounds <- c(281350, 282150)
+plot(rast(streams), xlim = xbounds, ylim = ybounds)
+points(lcc)
+#zz () zoom
+ybounds <- c(4866400,4867500)
+xbounds <- c(277200, 277650)
 ```
 
-Now I can test pairs of sensors with any scheme, such as paired based on local persistency, or topographic metrics
+```{r extract-drainage-area-W3}
+#flow accumulation/upslope drainage area at 3 m resolution calculated earlier in markdown
+#flowacc_output <- "./HB/1m hydro enforced DEM/dem3m_flowacc.tif"
 
-```{r}
-#make list that make pairs of sites based on local persistency
+#calculate for W3
+locs <- data_24 %>% 
+  filter(wshed == "W3") %>% 
+  select(number, lat, long) %>% 
+  rename("ID" = number) %>% 
+  unique()
+#convert STIC data to a SpatVector data format
+locs_shape <- vect(locs, 
+                   geom=c("long", "lat"), 
+                   crs = "+proj=longlat +datum=WGS84")
+plot(locs_shape)
+#reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
+lcc <- terra::project(locs_shape, crs(rast(flowacc_output)))
+
+W3_uaa_ex <- extract(rast(flowacc_output), lcc)
 
 #make list that makes pairs of sites based on topography
 ```
+```{rextract-drainage-area-FB}
+#calculate for FB
+locs <- data_24 %>% 
+  filter(wshed == "FB") %>% 
+  select(number, lat, long) %>% 
+  rename("ID" = number) %>% 
+  unique()
+#convert STIC data to a SpatVector data format
+locs_shape <- vect(locs, 
+                   geom=c("long", "lat"), 
+                   crs = "+proj=longlat +datum=WGS84")
+plot(locs_shape)
+#reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
+lcc <- terra::project(locs_shape, crs(rast(flowacc_output)))
 
+#before extracting, I should snap points to stream network based on this resolution perhaps... ugh
+
+FB_uaa_ex <- extract(rast(flowacc_output), lcc)
+
+```
+
+##looping by local persistency
+```{r looping-W3}
+#make list that make pairs of sites based on local persistency
+routes <- pks_w3 %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+input <- rbind(bind23, bind24) %>%
+  filter(wshed == "W3", mins %in% c(0, 30)) %>%
+  select(datetime, binary, ID) %>%
+  mutate(ID = paste0("r_",ID)) %>% 
+  pivot_wider(names_from = ID, values_from = binary)
+#now make loop to loop through all pairs of sensors
+
+for(x in 1:length(routes$up)){
+  up <- paste0("r_",routes$up[x])
+  down <- paste0("r_",routes$down[x])
+  
+  out <- calc_support(up, down)
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
+
+}
+
+alldat$prop <- alldat$points/alldat$total
+w3_pairs_pk <- alldat
+#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
+hist(w3_pairs_pk$prop)
+hist(w3_pairs$prop)
+
+```
+```{r looping-FB}
+#make list that make pairs of sites based on local persistency
+routes <- pks_w3 %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+input <- rbind(bind23, bind24) %>%
+  filter(wshed == "W3", mins %in% c(0, 30)) %>%
+  select(datetime, binary, ID) %>%
+  mutate(ID = paste0("r_",ID)) %>% 
+  pivot_wider(names_from = ID, values_from = binary)
+#now make loop to loop through all pairs of sensors
+
+for(x in 1:length(routes$up)){
+  up <- paste0("r_",routes$up[x])
+  down <- paste0("r_",routes$down[x])
+  
+  out <- calc_support(up, down)
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
+
+}
+
+alldat$prop <- alldat$points/alldat$total
+w3_pairs_pk <- alldat
+#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
+hist(w3_pairs_pk$prop)
+hist(w3_pairs$prop)
+
+pks_fb
+pks_zz
+```
+##looping by dof
 Test individual tribs, and the whole network
 ```{r}
-
+dof_w3
+dof_fb
+dof_zz
 ```
 
 Try for a sequence of 3 times- also shows that this systematic wetting is very common
