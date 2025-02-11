@@ -32,6 +32,36 @@ plot(dd)
 ```
 ```{r depth-measurement-locations-map}
 #map of watershed 3 with depth to bedrock
+hillshade_out <- "./w3_dems/1mdem_hillshade.tif"
+hill <- rast(hillshade_out)
+
+#dem
+dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
+m1 <- rast(dem)
+
+ybounds <- c(4870350,4871350)
+xbounds <- c(281350, 282150)
+#crop to rectangular area
+crop1 <- crop(m1, ext(c(xbounds, ybounds)))
+
+#watershed boundary
+w3_shed <- "./w3_dems/w3_shed.tif"
+w3_outline <- as.polygons(rast(w3_shed), extent=FALSE)
+
+#w3 network- thing I need to change
+#read in shapefile of stream converted in ARC
+vect_stream_path <- "./AGU24posterAnalysis/vector_stream/vector_stream.shp"
+#stream as a vector
+vect_stream <- vect(vect_stream_path)
+plot(vect_stream)
+#crop to watershed boundary
+w3_stream_crop <- crop(vect_stream, w3_outline)
+plot(w3_stream_crop)
+#or i could use old classification
+
+#point locations- snapped points from above chunk
+w3_stic_locs_r <- vect(w3_stic_locs_snap) %>% 
+  left_join(pks, by = "ID")
 
 ggplot()+
   geom_spatraster(data = hill)+
