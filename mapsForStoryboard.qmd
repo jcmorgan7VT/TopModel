@@ -1925,6 +1925,7 @@ calc_support("r_22", "r_23")
 ```
 
 #Figure 6: relationship between flow permanence and topography, dof and topography
+Conclusion- No clear relationship, this might not make the final cut.
 ```{r flow-permanence}
 #drainage area
 W3_topo_pk <- W3_uaa_ex %>% 
@@ -1946,7 +1947,6 @@ rbind(W3_topo_pk, FB_topo_pk, ZZ_topo_pk) %>%
        x = "Drainage area",
        y = "Flow Permanence")
 ```
-
 ```{r dof}
 rbind(dof_w3, dof_fb, dof_zz) %>% 
   ggplot(aes(x = wshed, y = (avg_days_flowing)))+
@@ -2493,7 +2493,7 @@ calc_support("r_28", "r_6", input)
 ```
 
 #maps of hierarchical behavior
-```{r}
+```{r prepare-sensor-locs}
 sults_so_far
 
 pk_prop <- w3_pairs_pk %>% select(up, prop) %>% 
@@ -2514,7 +2514,6 @@ locs_shape <- vect(locs,
 lcc <- terra::project(locs_shape, crs(m1))
 
 ```
-
 ```{r map-template}
 #map of watershed 3 with depth to bedrock
 hillshade_out <- "./w3_dems/1mdem_hillshade.tif"
@@ -2563,8 +2562,7 @@ ggplot()+
   ggspatial::annotation_scale(location = 'br', pad_y = unit(1, "cm"), pad_x = unit(1, "cm"))+
   ggtitle("Flow Permanence (Pk), W3")
 ```
-
-```{r}
+```{r define-plotting-function}
 #use above code to write a function to plot the prop for each hierarchy and each watershed
 
 #first, specify input dataset
@@ -2671,12 +2669,11 @@ named_plot <- ggplot()+
   ggspatial::annotation_scale(location = 'br', pad_y = unit(1, "cm"), pad_x = unit(1, "cm"))+
   ggtitle(paste0(hierarchy_label,", ", watershed))
 named_plot
-  ggsave(paste0("hierarchy_maps/",watershed,"_",hierarchy,".jpg"), named_plot)
+  #ggsave(paste0("hierarchy_maps/",watershed,"_",hierarchy,".jpg"), named_plot)
 
 }
 ```
-
-```{r}
+```{r run-function-for-scenarios}
 #position
 plot_in_space(w3_pairs, "W3", "position")
 plot_in_space(fb_pairs, "FB", "position")
@@ -2703,7 +2700,188 @@ plot_in_space(zz_pairs_topo, "ZZ", "uaa")
 
 ```
 
+After meeting on 2/6/25, I am going to plot the proportion of time each point follows the hierarchy using a square divided into 4 sections, one for each hierarchy
+#showing all hierarchies on one plot- square plot (pigs in space)
+```{r define-function}
+#change to have 4 inputs, the 4 hierarchies... actually better to format hierarchy before plotting
+format_outputs <- function(dataset, name){
+  dataset %>% select(up, prop) %>%
+    mutate(ID = as.numeric(substr(up, 3, 4))) %>%
+    select(ID, prop)
+}
+
+position_formatted <- format_outputs(w3_pairs) %>% rename("Pos" = prop)
+pk_formatted <- format_outputs(w3_pairs_pk) %>% rename("Pk" = prop)
+dof_formatted <- format_outputs(w3_pairs_dof) %>% rename("Dof" = prop)
+topo_formatted <- format_outputs(w3_pairs_topo) %>% rename("Topo" = prop)
+
+#reformat to take 4 formatted datasets as input
+pigs_in_space <- function(position_formatted,
+                          pk_formatted, 
+                          dof_formatted,
+                          topo_formatted,
+                          watershed, offset, size){
+  
+  ##get correct geospatial files depending on input watershed
+if(watershed == "W3") {
+  #background rasters
+  hill <- rast("./w3_dems/1mdem_hillshade.tif")
+  m1 <- rast("./w3_dems/1mdem_crop.tif")
+  #watershed boundary
+  outline <- as.polygons(rast("./w3_dems/w3_shed.tif"), extent=FALSE)
+  #stream network
+  vect_stream <- vect("./AGU24posterAnalysis/vector_stream/vector_stream.shp")
+  stream_crop <- crop(vect_stream, w3_outline)
+  
+} else if(watershed == "FB"){
+  #background rasters
+  hill <- rast("./fb_dems/1mdem_hillshade.tif")
+  m1 <- rast("./fb_dems/1mdem_crop.tif")
+  #watershed boundary
+  outline <- as.polygons(rast("./fb_dems/fb_shed.tif"), extent=FALSE)
+  #stream network
+  vect_stream <- vect("./carrieZigZag/FB_network.shp")
+  stream_crop <- crop(vect_stream, outline)
+  
+} else if(watershed == "ZZ"){
+  #background rasters
+  hill <- rast("./zz_dems/1mdem_hillshade.tif")
+  m1 <- rast("./zz_dems/1mdem_crop.tif")
+  #watershed boundary
+  outline <- as.polygons(rast("./zz_dems/zz_shed.tif"), extent=FALSE)
+  #stream network
+  vect_stream <- vect("./carrieZigZag/zigzag_streams.shp")
+  stream_crop <- crop(vect_stream, outline)
+  
+} else {
+  stop("Not a study watershed!")
+}
+  
+  #take the input dataset of props, and format for plotting
+  
+  locs <- data_24 %>%
+    filter(wshed == watershed) %>%
+    rename("ID" = number) %>% 
+    select(ID, lat, long) %>%
+    unique() %>%
+    left_join(position_formatted, by = "ID") %>% 
+    left_join(pk_formatted, by = "ID") %>% 
+    left_join(dof_formatted, by = "ID") %>% 
+    left_join(topo_formatted, by = "ID") #%>% drop_na()
+  
+  locs_shape <- vect(locs, geom = c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
+  #reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
+  lcc <- terra::project(locs_shape, crs(m1))
+  
+  lcc <- as.data.frame(lcc, geom = "XY")
+
+
+
+#specify plotting depending on hierarchy being tested
+
+#final plot
+named_plot <- ggplot()+
+  geom_spatraster(data = hill, show.legend=FALSE)+
+  theme_void()+
+  #theme(legend.position = "")+
+  scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
+    new_scale_fill() +
+  geom_spatraster(data = m1, alpha = 0.5, , show.legend=FALSE)+
+     scale_fill_hypso_c(palette = "dem_screen" , limits = c(200, 1000))+
+    new_scale_fill() +
+  geom_sf(data = outline, fill = NA, color = "black", alpha = 0.3)+
+  geom_sf(data = stream_crop, colour = "midnightblue", alpha = 0.3) +
+    #geom_sf(data = lcc, colour = "midnightblue", pch = 19, size = 6) +
+  #plot the squares, but offset from center point
+  #geom_sf(data = lcc, aes(fill = "Position"),color = "dodgerblue3", pch = 22, size = 1, position = position_nudge(x = offset, y = offset)) +
+  #geom_sf(data = lcc, aes(fill = "Pk"), color ="#FFA400",  pch = 22, size = 1, position = position_nudge(x = offset, y = -offset)) +
+  geom_point(data = lcc, aes(x = x, y = y, fill = Pos),  
+               pch = 22, size = size, position = position_nudge(x = offset, y = -offset)) + 
+  scale_fill_gradient(low = "white",
+                         high = "dodgerblue3",
+                         #name = str_wrap("Proportion of time following hierarchy (%)", width = 15),
+                      breaks = c(0.25, 0.5, 0.75),
+                      labels = c("25%", "50%", "75%"),
+                      na.value = NA)+
+      new_scale_fill() +
+    geom_point(data = lcc, aes(x = x, y = y, fill = Pk),  
+               pch = 22, size = size, position = position_nudge(x = offset, y = offset)) + 
+scale_fill_gradient(low = "white",
+                         high = "#FFA400",
+                         #name = str_wrap("Proportion of time following hierarchy (%)", width = 15),
+                      breaks = c(0.25, 0.5, 0.75),
+                      labels = c("25%", "50%", "75%"),
+                      na.value = NA)+
+  new_scale_fill() +
+    geom_point(data = lcc, aes(x = x, y = y, fill = Dof),  
+               pch = 22, size = size, position = position_nudge(x = -offset, y = -offset)) + 
+  scale_fill_gradient(low = "white",
+                         high = "#397367",
+                         #name = str_wrap("Proportion of time following hierarchy (%)", width = 15),
+                      breaks = c(0.25, 0.5, 0.75),
+                      labels = c("25%", "50%", "75%"),
+                      na.value = NA)+
+  new_scale_fill() +
+    geom_point(data = lcc, aes(x = x, y = y, fill = Topo),  
+               pch = 22, size = size, position = position_nudge(x = -offset, y = offset)) + 
+  scale_fill_gradient(low = "white",
+                         high = "#7E6B8F",
+                         #name = str_wrap("Proportion of time following hierarchy (%)", width = 15),
+                      breaks = c(0.25, 0.5, 0.75),
+                      labels = c("25%", "50%", "75%"),
+                      na.value = NA)+
+
+
+  theme(rect = element_rect(fill = "transparent", color = NA))+
+  # scale_fill_gradient(low = "white",
+  #                        high = hierarchy_color,
+  #                        name = str_wrap("Proportion of time following hierarchy (%)", width = 15),
+  #                     breaks = c(0.25, 0.5, 0.75),
+  #                     labels = c("25%", "50%", "75%"))+
+  ggspatial::annotation_scale(location = 'br', pad_y = unit(1, "cm"), pad_x = unit(1, "cm"))
+  # ggtitle(paste0(hierarchy_label,", ", watershed))
+named_plot
+  #ggsave(paste0("hierarchy_maps/",watershed,"_",hierarchy,".jpg"), named_plot)
+
+}
+
+#formatting that looks decent on big screen, in plot viewer pane
+pigs_in_space(position_formatted,
+                          pk_formatted, 
+                          dof_formatted,
+                          topo_formatted,
+                          "W3", 8, size = 5)
+
+
+```
+```{r pigs-in-space-FB}
+
+position_formatted <- format_outputs(fb_pairs) %>% rename("Pos" = prop)
+pk_formatted <- format_outputs(fb_pairs_pk) %>% rename("Pk" = prop)
+dof_formatted <- format_outputs(fb_pairs_dof) %>% rename("Dof" = prop)
+topo_formatted <- format_outputs(fb_pairs_topo) %>% rename("Topo" = prop)
+
+pigs_in_space(position_formatted,
+                          pk_formatted, 
+                          dof_formatted,
+                          topo_formatted,
+                          "FB", 8, size = 5)
+```
+```{r pigs-in-space-ZZ}
+
+position_formatted <- format_outputs(zz_pairs) %>% rename("Pos" = prop)
+pk_formatted <- format_outputs(zz_pairs_pk) %>% rename("Pk" = prop)
+dof_formatted <- format_outputs(zz_pairs_dof) %>% rename("Dof" = prop)
+topo_formatted <- format_outputs(zz_pairs_topo) %>% rename("Topo" = prop)
+
+pigs_in_space(position_formatted,
+                          pk_formatted, 
+                          dof_formatted,
+                          topo_formatted,
+                          "ZZ", 9, size = 5)
+```
 #test with Botter & Durighetto data
+Conclusion- the max number of observations of the whole network in the dataset they used for their analysis was 7-35 observations. I have 10,000 observations of my network. Doing this kind of analysis on their data will not work I think.
 ```{r show-number-of-obs}
 #read in Botter et al 2021 data
 bigdata <- read_csv("https://researchdata.cab.unipd.it/376/2/states.csv")
@@ -2741,7 +2919,7 @@ bigdata
 ```
 
 #New idea, make network maps where points are connected 
-```{r relative-position}
+```{r relative-position-UNFINISHED}
 
 ```
 
@@ -2790,8 +2968,8 @@ scale_color_continuous(type = "viridis")+
 #line connecting 
 ```
 
-PLOT CHANGE VERSUS NO CHANGE IN TIME
-```{r}
+#Nick's idea: PLOT CHANGE VERSUS NO CHANGE IN TIME
+```{r unfinished}
 w3_pairs
 
 input <- rbind(bind23, bind24) %>%
@@ -2806,8 +2984,10 @@ no_dupes <- mod3 %>%
 
 ```
 
+
+Also test what happens if I only do hourly, daily, etc timestep for my earlier loops
+
 Test with and without replacement
 
 Determine if there is something systematic that defines the sequence iteratively or randomly determined
 
-Also test what happens if I only do hourly, daily, etc timestep for my earlier loops
