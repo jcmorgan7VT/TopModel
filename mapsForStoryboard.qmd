@@ -703,6 +703,7 @@ rbind(dof_w3, dof_fb, dof_zz) %>%
 ```
 
 #Figure 4: How often does the network wet up, dry down, etc?
+##Figure out how to test this behavior
 ```{r}
 test <- data_23 %>% 
   filter(wshed == "W3", mins %in% c(0, 30)) %>% 
@@ -1214,7 +1215,8 @@ colnames(sequence_df) <- c("Sequence", "Frequency")
 total <- sum(sequence_df$Frequency)
 #write some way to score the sequence_df
 #award one point for one of these configs:
-supports <- c("0001", "0011", "0111", "1110", "1100", "1101", "0100")
+supports <- c("0001","0111","1101", "0100")
+#ones that I included before: c("0011", "1110", "1100")
 #subset from the 16 possibilities, except it is fewer because
 #0000, 1111, 0101, 1010 are removed...
 
@@ -1229,6 +1231,65 @@ return(output)
 
 calc_support("r_10", "r_6", input)
 ```
+
+```{r function-final-version}
+calc_support <- function(up, down, input){
+#up <- routes$up[i] #input
+#down <- routes$down[i]
+incase <- data.frame(up = c(0,0), down = c(0,0))
+colnames(incase) <- c(up, down)
+mod3 <- input %>% select(up,down, -datetime)
+no_dupes <- mod3 %>%
+  filter(row_number() == 1 | !apply(. == lag(.), 1, all))
+#all flowing all the time?
+check <- nrow(no_dupes)
+#make it so that there cannot be a sequence without change
+
+#error when both locations flowed the whole time; 
+if(check == 1) no_dupes <- rbind(no_dupes, no_dupes, incase)
+
+# Define window size
+window_size <- 2
+
+# Create sliding windows
+windows <- rollapply(
+  no_dupes,
+  width = window_size,
+  by.column = FALSE,
+  FUN = function(x) paste(as.vector(t(x)), collapse = "")
+)
+
+# Count and sort sequences
+sequence_counts <- table(windows)
+sorted_counts <- sort(sequence_counts, decreasing = TRUE)
+
+# Display all sequences and their frequencies
+sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
+colnames(sequence_df) <- c("Sequence", "Frequency")
+#View(sequence_df)
+
+total <- sum(sequence_df$Frequency)
+#write some way to score the sequence_df
+#award one point for one of these configs:
+supports <- c("0001","0111","1101", "0100")
+#subset from the 16 possibilities, except it is fewer because
+#0000, 1111, 0101, 1010 are removed...
+
+sub <- filter(sequence_df, Sequence %in% supports)
+points <- sum(sub$Frequency)
+
+#create output with the total and the sub, also the two input locations
+output <- data.frame(up, down, points, total)
+#error handling- in situation where both points flowed 100% of the time
+if(check == 1) output$points <- NA
+if(check == 1) output$total <- NA
+
+return(output)
+}
+
+calc_support("r_28", "r_6", input)
+```
+
 Iterating through each pair of sensors, using the upstream sensor as the id, and the downstream sensor as the secondary or dependent. Seeing how often pairs of sensors wet up or dry down relative to each other.
 ##looping by relative position
 ```{r looping-W3}
@@ -1260,6 +1321,8 @@ alldat
 w3_pairs <- alldat
 #this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
 hist(alldat$prop)
+hist(w3_pairs$prop)
+
 ```
 ```{r looping-FB}
 #equivalent to hush 2 from earlier,
@@ -2126,7 +2189,7 @@ set.seed(123)  # For reproducibility
 iterations <- 1000
 
 combos <- FB_uaa_ex %>% 
-  rename("up" = ID, "uaa" = '10mdem_flowacc') %>%
+  rename("up" = ID, "uaa" = 'dem3m_flowacc') %>%
   arrange(desc(uaa)) %>% 
   mutate(down = lag(up)) %>% 
    drop_na() %>% 
@@ -2435,7 +2498,7 @@ biggest_keep %>% group_by(start) %>%
 ```
 ```{r fixed-function}
 
-#calc_support <- function(up, down, input){
+calc_support <- function(up, down, input){
 up <- routes$up[i] #input
 down <- routes$down[i]
 incase <- data.frame(up = c(0,0), down = c(0,0))
@@ -2473,7 +2536,7 @@ colnames(sequence_df) <- c("Sequence", "Frequency")
 total <- sum(sequence_df$Frequency)
 #write some way to score the sequence_df
 #award one point for one of these configs:
-supports <- c("0001", "0011", "0111", "1110", "1100", "1101", "0100")
+supports <- c("0001","0111","1101", "0100")
 #subset from the 16 possibilities, except it is fewer because
 #0000, 1111, 0101, 1010 are removed...
 
@@ -2986,6 +3049,384 @@ no_dupes <- mod3 %>%
 
 
 Also test what happens if I only do hourly, daily, etc timestep for my earlier loops
+#Determine all alternate scenarios
+##testing to see if there will be differences
+```{r hourly-W3}
+#equivalent to hush 2 from earlier,
+#make a new input for each watershed chunk
+input <- rbind(bind23, bind24) %>%
+  filter(wshed == "W3", mins %in% c(0)) %>%
+  select(datetime, binary, ID) %>%
+  mutate(ID = paste0("r_",ID)) %>% 
+  pivot_wider(names_from = ID, values_from = binary)
+#now make loop to loop through all pairs of sensors
+routes <- read_csv("w3_flowrouting.csv") %>% 
+  rename("up" = drains_from, "down" = drains_to) %>% 
+  select(sensor, down) %>% 
+  filter(down != 100)
+
+for(x in 1:length(routes$sensor)){
+  up <- paste0("r_",routes$sensor[x])
+  down <- paste0("r_",routes$down[x])
+  
+  out <- calc_support(up, down, input)
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
+
+}
+
+alldat$prop <- alldat$points/alldat$total
+w3_hourly <- alldat
+#w3_pairs <- alldat
+#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
+hist(w3_new$prop)
+hist(w3_pairs$prop)
+hist(w3_hourly$prop)
+
+plot(ecdf(w3_hourly$prop))
+plot(ecdf(alldat$prop))
+ggplot()+
+  stat_ecdf(data = w3_pairs, aes(prop))+
+  stat_ecdf(data = w3_new, aes(prop), color = "blue")
+
+#plot them both on a boxplot just to put it in terms that I have been using
+w3_30min_form <- data.frame("prop" = w3_pairs$prop, "type" = "pk", "shed" = "W3", timing = "30mins")
+w3_hourly_form <- data.frame("prop" = w3_hourly$prop, "type" = "pk", "shed" = "W3", timing = "hourly")
+w3_4hr_form <- data.frame("prop" = alldat$prop, "type" = "pk", "shed" = "W3", timing = "4hr")
+w3_daily_form <- data.frame("prop" = alldat$prop, "type" = "pk", "shed" = "W3", timing = "daily")
+
+
+
+sults_so_far <- rbind(w3_30min_form, w3_hourly_form, w3_4hr_form, w3_daily_form)
+
+sults_so_far %>% 
+  ggplot(aes(x = shed, y = prop, color = timing)) +
+  geom_boxplot()+
+  theme_classic()+
+    geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
+  geom_hline(yintercept = 0.5, lty = 2)+
+  labs(x = "Watershed",
+       y = "Proportion",
+       title = "How often do adjacent sensors follow a hierarchy?")+
+  scale_color_manual(
+                     values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+                     
+                     name = "Organizing Scheme")+
+  facet_wrap(~type)
+```
+```{r 4hrs-W3}
+input <- rbind(bind23, bind24) %>%
+  mutate(hour = hour(datetime)) %>% 
+  filter(wshed == "W3", hour %in% c(0,4,8,12,16,20,24), mins %in% c(0)) %>%
+  select(datetime, binary, ID) %>%
+  mutate(ID = paste0("r_",ID)) %>% 
+  pivot_wider(names_from = ID, values_from = binary)
+#now make loop to loop through all pairs of sensors
+routes <- read_csv("w3_flowrouting.csv") %>% 
+  rename("up" = drains_from, "down" = drains_to) %>% 
+  select(sensor, down) %>% 
+  filter(down != 100)
+
+for(x in 1:length(routes$sensor)){
+  up <- paste0("r_",routes$sensor[x])
+  down <- paste0("r_",routes$down[x])
+  
+  out <- calc_support(up, down, input)
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
+
+}
+
+alldat$prop <- alldat$points/alldat$total
+hist(alldat$prop)
+```
+```{r daily-W3}
+#equivalent to hush 2 from earlier,
+#make a new input for each watershed chunk
+input <- rbind(bind23, bind24) %>%
+  mutate(hour = hour(datetime)) %>% 
+  filter(wshed == "W3", hour %in% c(12), mins %in% c(0)) %>%
+  select(datetime, binary, ID) %>%
+  mutate(ID = paste0("r_",ID)) %>% 
+  pivot_wider(names_from = ID, values_from = binary)
+#now make loop to loop through all pairs of sensors
+routes <- read_csv("w3_flowrouting.csv") %>% 
+  rename("up" = drains_from, "down" = drains_to) %>% 
+  select(sensor, down) %>% 
+  filter(down != 100)
+
+for(x in 1:length(routes$sensor)){
+  up <- paste0("r_",routes$sensor[x])
+  down <- paste0("r_",routes$down[x])
+  
+  out <- calc_support(up, down, input)
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
+
+}
+
+alldat$prop <- alldat$points/alldat$total
+w3_daily <- alldat
+#w3_pairs <- alldat
+#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
+hist(w3_new$prop)
+hist(w3_pairs$prop)
+hist(w3_hourly$prop)
+hist(w3_daily$prop)
+
+
+
+```
+##now trying across all scenarios
+```{r define-fucntion}
+#write function to go through different timescales quickly. 
+#specify routes as an input
+run_scenario <- function(routes, hierarchy, watershed, timescale){
+
+  #if statements to detect timescale, calculate appropriate inputs
+  if(timescale == "30mins"){
+    input <- rbind(bind23, bind24) %>%
+      filter(wshed == watershed, mins %in% c(0, 30)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+  } 
+  else if(timescale == "hourly"){
+    input <- rbind(bind23, bind24) %>%
+      filter(wshed == watershed, mins %in% c(0)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+  } 
+  else if(timescale == "4hr"){
+    input <- rbind(bind23, bind24) %>%
+      mutate(hour = hour(datetime)) %>% 
+      filter(wshed == "W3", hour %in% c(0,4,8,12,16,20,24), mins %in% c(0)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+  } 
+  else if(timescale == "daily"){
+    input <- rbind(bind23, bind24) %>%
+      mutate(hour = hour(datetime)) %>% 
+      filter(wshed == "W3", hour %in% c(12), mins %in% c(0)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+  } 
+  else {
+    stop("Not a timescale anticipated!")
+  }
+
+#loop through sensors using calc_support function
+for(x in 1:length(routes$up)){
+  up <- paste0("r_",routes$up[x])
+  down <- paste0("r_",routes$down[x])
+  
+  out <- calc_support(up, down, input)
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
+
+}
+
+alldat$prop <- alldat$points/alldat$total
+#format output for boxplot and cdf plotting
+formatted_output <- data.frame("prop" = alldat$prop, "type" = hierarchy, "shed" = watershed, timing = timescale)
+
+return(formatted_output)
+}
+#end of function
+#define routes
+routes_w3_position <- read_csv("w3_flowrouting.csv") %>% 
+  rename("up" = drains_from, "down" = drains_to) %>% 
+  select(sensor, down) %>% 
+  filter(down != 100)
+
+routes_w3_pk <- pks_w3 %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+#test function
+sults_so_far <- rbind(run_scenario(routes_w3_position, "position", "W3", "30mins"),
+                      run_scenario(routes_w3_position, "position", "W3", "hourly"),
+                      run_scenario(routes_w3_position, "position", "W3", "4hr"),
+                      run_scenario(routes_w3_position, "position", "W3", "daily"),
+                      
+                      run_scenario(routes_w3_pk, "pk", "W3", "30mins"),
+                      run_scenario(routes_w3_pk, "pk", "W3", "hourly"),
+                      run_scenario(routes_w3_pk, "pk", "W3", "4hr"),
+                      run_scenario(routes_w3_pk, "pk", "W3", "daily"))
+
+sults_so_far %>% 
+  mutate(timing = fct_relevel(timing,
+                              c("30mins", "hourly", "4hr", "daily"))) %>% 
+  ggplot(aes(x = timing, y = prop, color = timing)) +
+  geom_boxplot()+
+  theme_classic()+
+    geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
+  geom_hline(yintercept = 0.5, lty = 2)+
+  labs(x = "",
+       y = "Proportion",
+       title = "How often do adjacent sensors follow a hierarchy?")+
+  scale_color_manual(
+                     values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+                     
+                     name = "Organizing Scheme")+
+  facet_wrap(shed~type)
+```
+
+```{r pit-crew}
+#chunk to trouble shoot non-functioning instances to figure out why they are not working
+#instance not working:
+#run_scenario(routes_w3_pk, "pk", "W3", "daily")
+
+routes <- pks_w3 %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+input <- rbind(bind23, bind24) %>%
+      mutate(hour = hour(datetime)) %>% 
+      filter(wshed == "W3", hour %in% c(12), mins %in% c(0)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+
+
+#calc_support <- function(up, down, input){
+i <- 1
+up <- paste0("r_",routes$up[i]) #input
+down <- paste0("r_",routes$down[i])
+#incase <- data.frame("up" = c(0,0), "down" = c(0,0))
+#colnames(incase) <- c(up, down)
+mod3 <- input %>% select(up,down, -datetime)
+no_dupes <- mod3 %>%
+  filter(row_number() == 1 | !apply(. == lag(.), 1, all))
+#all flowing all the time?
+check <- nrow(no_dupes)
+#make it so that there cannot be a sequence without change
+
+#error when both locations flowed the whole time; 
+#if(check == 1) no_dupes <- rbind(no_dupes, no_dupes, incase)
+
+# Define window size
+window_size <- 2
+
+# Create sliding windows
+windows <- rollapply(
+  no_dupes,
+  width = window_size,
+  by.column = FALSE,
+  FUN = function(x) paste(as.vector(t(x)), collapse = "")
+)
+
+# Count and sort sequences
+sequence_counts <- table(windows)
+sorted_counts <- sort(sequence_counts, decreasing = TRUE)
+
+# Display all sequences and their frequencies
+sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
+colnames(sequence_df) <- c("Sequence", "Frequency")
+#View(sequence_df)
+
+total <- sum(sequence_df$Frequency)
+#write some way to score the sequence_df
+#award one point for one of these configs:
+supports <- c("0001","0111","1101", "0100")
+#subset from the 16 possibilities, except it is fewer because
+#0000, 1111, 0101, 1010 are removed...
+
+sub <- filter(sequence_df, Sequence %in% supports)
+points <- sum(sub$Frequency)
+
+#create output with the total and the sub, also the two input locations
+output <- data.frame(up, down, points, total)
+#error handling- in situation where both points flowed 100% of the time
+if(check == 1) output$points <- NA
+if(check == 1) output$total <- NA
+
+return(output)
+}
+
+calc_support("r_19", "r_12", input)
+
+for(x in 1:length(routes$up)){
+  up <- paste0("r_",routes$up[x])
+  down <- paste0("r_",routes$down[x])
+  print(up)
+  out <- calc_support(up, down, input)
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
+
+}
+```
+
+```{r additional-quality-control}
+#figure out what is going on for sensors 19 and 12 in watershed 3
+#figure out a way to quickly diagnose/quality control all sensor pairs
+rbind(bind23, bind24) %>%
+      mutate(hour = hour(datetime)) %>% 
+      filter(wshed == "W3", hour %in% c(12), mins %in% c(0),
+             ID %in% c(19, 12)) %>%
+      select(datetime, binary, ID) %>%
+  ggplot()+
+  geom_tile(aes(x = datetime, y = as.character(ID), fill = as.integer(binary)))
+      
+#for each pair, we are limited by the maximum extent of the record...
+# to incorporate uncertainty, also provide the proportion of observations not used?
+# also need to separate into separate chunks to account for gaps in record
+
+rbind(bind23, bind24) %>%
+      mutate(hour = hour(datetime)) %>% 
+      filter(wshed == "W3", hour %in% c(12), mins %in% c(0),
+             ID %in% c(19, 12)) %>%
+      select(datetime, binary, ID) %>%
+  filter(binary == 0)
+```
+
+#statistical test- one sample rank wilcoxon test
+```{r}
+# determine if the median of the sample (m) is greater than the theoretical value (mu)
+wiltest <- sults_so_far %>% 
+  filter(type == "position", shed == "W3")
+median(wiltest$prop)
+
+randomtest <- random_fb %>% 
+  filter(iteration == 2)
+median(randomtest$prop)
+wilcox.test(wiltest$prop, mu = 0.5, alternative = "greater", exact = TRUE, conf.int = TRUE)
+wilcox.test(randomtest$prop, mu = 0.5, alternative = "greater", exact = FALSE, conf.int = TRUE)
+
+binom <- binom.test(sum(wiltest$prop > 0.5), length(wiltest$prop), p = 0.5, alternative = "greater")
+binom.test(sum(randomtest$prop > 0.5), length(randomtest$prop), p = 0.5, alternative = "greater")
+
+test_results <- wilcox.test(wiltest$prop, mu = 0.5, alternative = "greater", exact = TRUE, conf.int = TRUE)
+pvalue <- test_results$p.value
+upperb <- test_results$conf.int[1]
+lowerb <- test_results$conf.int[2]
+
+binom$p.value
+binom$conf.int[1:2]
+
+```
+
+```{r run-test-on-everything}
+#calculate the test statistics on results so far- without temporal degradation
+sults_so_far %>% 
+  group_by(type, shed) %>% 
+  summarise(wcx_pvalue = wilcox.test(prop, mu = 0.5, alternative = "greater", exact = FALSE, conf.int = TRUE)$p.value,
+            wcx_upperb = wilcox.test(prop, mu = 0.5, alternative = "greater", exact = FALSE, conf.int = TRUE)$conf.int[1],
+            wcx_lowerb = wilcox.test(prop, mu = 0.5, alternative = "greater", exact = FALSE, conf.int = TRUE)$conf.int[2])
+
+sults_so_far %>% 
+  group_by(type, shed) %>% 
+  summarise(sign_p = binom.test(sum(prop > 0.5), length(prop), p = 0.5, alternative = "greater")$p.value,
+            sign_upperb = binom.test(sum(prop > 0.5), length(prop), p = 0.5, alternative = "greater")$conf.int[1],
+            sign_lowerb = binom.test(sum(prop > 0.5), length(prop), p = 0.5, alternative = "greater")$conf.int[2]
+)
+```
 
 Test with and without replacement
 
