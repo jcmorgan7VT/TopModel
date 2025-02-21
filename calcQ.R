@@ -70,4 +70,4 @@ calcQ <- function(path){
 }
 
 
-
+#maybe also write a function to preview the RC calculations, determine how many to omit

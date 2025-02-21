@@ -484,6 +484,7 @@ ggplot(all_twi)+
 #q <- read_csv("https://portal.edirepository.org/nis/dataviewer?packageid=knb-lter-hbr.1.17&entityid=efc477b3ef1bb3dd8b9355c9115cd849")
 #write.csv(q, "HB_5minQ.csv")
 q <- read_csv("HB_5minQ.csv")
+
 #input discharge needs to be in mm/day?
 #reference to understand difference between daily mean and instantaneous streamflow:
 #https://hydrofunctions.readthedocs.io/en/master/notebooks/DailyMean_vs_Instant.html
@@ -514,6 +515,28 @@ ggplot(q_23_f, aes(x  = DATETIME, y = Q_mm_day))+
        y = "Instantaneous Q (mm/day)")+
   theme_classic()
 
+#also read in provisional 2024 data
+q_24 <- read_csv("w3_discharge_24.csv")
+
+#find the range of dates that I need discharge for
+start24 <- ymd_hms("2024-05-15 00:00:00 UTC")
+stop24 <- max(data_24$datetime)
+
+#filtering discharge down to the range of dates
+q_24 <- q_24 %>% 
+  mutate(datetime = mdy_hm(datetime)) %>% 
+  filter(datetime > start24 & datetime < stop24)  
+q_24$mins <- minute(q_24$datetime)
+
+#removing times that are not coincident with STIC observations
+q_24_f <- filter(q_24, mins %in% c(0, 30))
+
+ggplot(q_24_f, aes(x  = datetime, y = Q_mmperday))+
+  geom_line()+
+  labs(title = "Discharge from W3, May to July 2024",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()
 ```
 ```{r flow-permanence-W3}
 #just summer 2023
@@ -1924,7 +1947,75 @@ sults_so_far %>%
                                 "Drainage Area"),
                      name = "Organizing Scheme")
 
-# I think that both position and DOF are better than PK for ZZ, meaning that relative position and average duration of flow are more likely to be followed than flow duration...
+#instead of boxplots, show the ecdf and one-sided violin plot
+sults_so_far %>% 
+  ggplot(aes(x = shed, y = prop, fill = type)) +
+  geom_violin()+
+  theme_classic()+
+    #geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
+  geom_hline(yintercept = 0.5, lty = 2)+
+  labs(x = "Watershed",
+       y = "Proportion",
+       title = "How often do adjacent sensors follow a hierarchy?")+
+  scale_fill_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+                     labels = c("Duration of Flow",
+                                "Flow Permanence",
+                                "Relative Position",
+                                "Drainage Area"),
+                     name = "Organizing Scheme")
+
+#one sided violin plot
+p_load(devtools)
+devtools::install_github("psyteachr/introdataviz")
+library(introdataviz)
+
+sults_so_far %>% 
+  ggplot(aes(x = shed, y = prop, color = type)) +
+  geom_split_violin()+
+  theme_classic()+
+    #geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
+  geom_hline(yintercept = 0.5, lty = 2)+
+  labs(x = "Watershed",
+       y = "Proportion",
+       title = "How often do adjacent sensors follow a hierarchy?")+
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+                     labels = c("Duration of Flow",
+                                "Flow Permanence",
+                                "Relative Position",
+                                "Drainage Area"),
+                     name = "Organizing Scheme")+
+  facet_wrap(~type)
+
+#plot ecdf instead of boxplots or violin plots
+plot(ecdf(w3_hourly$prop))
+plot(ecdf(alldat$prop))
+ggplot()+
+  stat_ecdf(data = w3_pairs, aes(prop))+
+  stat_ecdf(data = w3_new, aes(prop), color = "blue")
+
+sults_so_far %>% 
+  ggplot(aes(prop, color = type)) +
+  stat_ecdf(geom = "line")+
+  theme_classic()+
+    #geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
+  geom_hline(yintercept = 0.5, lty = 2)+
+    geom_vline(xintercept = 0.5, lty = 2)+
+
+  labs(x = "Prop",
+       y = "Percentage of values less than or equal",
+       title = "How often do adjacent sensors follow a hierarchy?")+
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+                     labels = c("Duration of Flow",
+                                "Flow Permanence",
+                                "Relative Position",
+                                "Drainage Area"),
+                     name = "Organizing Scheme")+
+  facet_wrap(~shed)+
+  lims(x = c(0.5,1),
+       y = c(0.5, 1))
+
+#maybe it would look better to add the randomly generated hierarchies for a comparison
+
 ```
 ##find times when the network goes from very dry to very wet
 ```{r}
@@ -2048,7 +2139,7 @@ Test every possible combination of pairs of sensors, see which one works the mos
 ```{r figuring-it-out}
 #maybe best way to do this is make random lists of up and downstream sensors like 1000 times, then run through hierarchical testing algorithm
 combos <- W3_uaa_ex %>% 
-  rename("up" = ID, "uaa" = '10mdem_flowacc') %>%
+  rename("up" = ID, "uaa" = 'dem3m_flowacc') %>%
   arrange(desc(uaa)) %>% 
   mutate(down = lag(up)) %>% 
    drop_na() %>% 
@@ -2123,6 +2214,18 @@ Finding 1000 random combinations
 ```{r random-W3}
 set.seed(124)  # For reproducibility
 iterations <- 1000
+
+combos <- W3_uaa_ex %>% 
+  rename("up" = ID, "uaa" = 'dem3m_flowacc') %>%
+  arrange(desc(uaa)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) %>% 
+  mutate(up = paste0("r_",up),
+         down = paste0("r_",down)) %>% 
+  select(up)
+
+combos <- unique(combos$up)
 sample_perms <- replicate(iterations, sample(combos))  # Generate 10 random permutations
 sample <- as_tibble(sample_perms, .name_repair = "minimal")
 #colnames(sample) <- paste0("I_",seq(1, iterations, 1))
@@ -2157,9 +2260,9 @@ for(t in 1:iterations){
 reference <- sults_so_far %>% group_by(type, shed) %>% 
   summarise(mean = mean(prop),
             sd = sd(prop))
-random_w3 <- alldat2
+random_w3 <- alldat3
 #alldat is seed 123
-alldat2 %>% group_by(iteration) %>% 
+random_w3 %>% group_by(iteration) %>% 
   summarise(mean = mean(prop),
             sd = sd(prop)) %>% 
   ggplot(aes(x = mean, y = sd))+
@@ -2498,14 +2601,33 @@ biggest_keep %>% group_by(start) %>%
 ```
 ```{r fixed-function}
 
-calc_support <- function(up, down, input){
-up <- routes$up[i] #input
-down <- routes$down[i]
+#calc_support <- function(up, down, input){
+#up <- routes$up[i] #input
+#down <- routes$down[i]
+up <- "r_28"
+down <- "r_6"
 incase <- data.frame(up = c(0,0), down = c(0,0))
 colnames(incase) <- c(up, down)
-mod3 <- input %>% select(up,down, -datetime)
+mod3 <- input %>% select(up,down, datetime)#, -datetime)
 no_dupes <- mod3 %>%
-  filter(row_number() == 1 | !apply(. == lag(.), 1, all))
+  #filter(row_number() == 1 | !apply(. == lag(.), 1, all))
+      filter(row_number() == 1 | !apply(select(., up, down) == lag(select(., up, down)), 1, all))
+
+#filter no dupes to drying/wetting, then plot these on a hydrograph
+filter(no_dupes, up == )
+no_dupes_q <- no_dupes %>% rename(DATETIME = datetime) %>% 
+  left_join(q_23_f, by = "DATETIME")
+
+ggplot(q_23_f, aes(x  = DATETIME, y = Q_mm_day))+
+  geom_line()+
+  geom_point(data = no_dupes_q)+
+  labs(title = "Discharge from W3, July to Nov 2023",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()+
+  lims(x = c(min(q_23_f$DATETIME), max(q_23_f$DATETIME)))
+
+#should I distinguish between wetting and drying sequences?
 #all flowing all the time?
 check <- nrow(no_dupes)
 #make it so that there cannot be a sequence without change
@@ -2518,7 +2640,7 @@ window_size <- 2
 
 # Create sliding windows
 windows <- rollapply(
-  no_dupes,
+  select(no_dupes, -datetime),
   width = window_size,
   by.column = FALSE,
   FUN = function(x) paste(as.vector(t(x)), collapse = "")
@@ -3231,7 +3353,10 @@ for(x in 1:length(routes$up)){
 
 alldat$prop <- alldat$points/alldat$total
 #format output for boxplot and cdf plotting
-formatted_output <- data.frame("prop" = alldat$prop, "type" = hierarchy, "shed" = watershed, timing = timescale)
+formatted_output <- data.frame("prop" = alldat$prop, 
+                               "type" = hierarchy, 
+                               "shed" = watershed, 
+                               "timing" = timescale)
 
 return(formatted_output)
 }
@@ -3276,6 +3401,42 @@ sults_so_far %>%
   facet_wrap(shed~type)
 ```
 
+```{r}
+input <- rbind(bind23, bind24) %>%
+  filter(wshed == "W3", mins %in% c(0)) %>%
+  select(datetime, binary, ID) %>%
+  mutate(ID = paste0("r_",ID)) %>% 
+  pivot_wider(names_from = ID, values_from = binary)
+#now make loop to loop through all pairs of sensors
+routes <- read_csv("w3_flowrouting.csv") %>% 
+  rename("up" = drains_from, "down" = drains_to) %>% 
+  select(sensor, down) %>% 
+  filter(down != 100)
+
+for(x in 1:length(routes$sensor)){
+  up <- paste0("r_",routes$sensor[x])
+  down <- paste0("r_",routes$down[x])
+  
+  out <- calc_support(up, down, input)
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
+
+}
+
+alldat$prop <- alldat$points/alldat$total
+w3_hourly <- alldat
+```
+
+#finalized versions of analysis functions
+Finished on 2/21/25, fixed calc_support and the nest of for loops so that they work smoothly with any set of routes, inputs, and timesteps.
+
+Structure of functions:
+- calculate hierarchy (routes, input, timestep (as duration))
+  |- for loop, number of pairs dictated by routes
+    |- iterate groups (up, down, input, timestep (as duration))
+      |- for loop, number of groups of uninterrupted dates, dictated by timestep
+        |- calc_support (up, down, input) 
+        
 ```{r pit-crew}
 #chunk to trouble shoot non-functioning instances to figure out why they are not working
 #instance not working:
@@ -3289,34 +3450,48 @@ routes <- pks_w3 %>%
 
 input <- rbind(bind23, bind24) %>%
       mutate(hour = hour(datetime)) %>% 
-      filter(wshed == "W3", hour %in% c(12), mins %in% c(0)) %>%
+        filter(wshed == "W3", mins %in% c(0, 30)) %>%
+      #filter(wshed == "W3", hour %in% c(12), mins %in% c(0)) %>%
       select(datetime, binary, ID) %>%
       mutate(ID = paste0("r_", ID)) %>%
-      pivot_wider(names_from = ID, values_from = binary)
+      pivot_wider(names_from = ID, values_from = binary) #%>% 
+  #filter(datetime < stop24 & datetime > start24)
 
 
-#calc_support <- function(up, down, input){
-i <- 1
-up <- paste0("r_",routes$up[i]) #input
-down <- paste0("r_",routes$down[i])
-#incase <- data.frame("up" = c(0,0), "down" = c(0,0))
-#colnames(incase) <- c(up, down)
-mod3 <- input %>% select(up,down, -datetime)
-no_dupes <- mod3 %>%
-  filter(row_number() == 1 | !apply(. == lag(.), 1, all))
+calc_support <- function(up, down, input){
+#inputs to function- comment out in final version
+# i <- 4
+# up <- paste0("r_",routes$up[i])
+# down <- paste0("r_",routes$down[i])
+#input <- filtered_input
+
+#create output with the total and the sub, also the two input locations
+output <- data.frame(up, down)
+
+  
+no_dupes <- input %>% 
+      select(up,down, datetime) %>% #remove date
+      # make it so that there cannot be a sequence without change
+      # keep date column for indexing purposes later
+      filter(row_number() == 1 | !apply(select(., up, down) == lag(select(., up, down)), 1, all)) %>% 
+      #remove rows where one of the sensors is missing data
+      drop_na()
+#View(no_dupes)
 #all flowing all the time?
 check <- nrow(no_dupes)
-#make it so that there cannot be a sequence without change
 
-#error when both locations flowed the whole time; 
-#if(check == 1) no_dupes <- rbind(no_dupes, no_dupes, incase)
-
+if(check <= 2){
+  output$total <- NA
+  output$points <- NA
+  return(output)
+} 
+else {
 # Define window size
 window_size <- 2
 
 # Create sliding windows
 windows <- rollapply(
-  no_dupes,
+  select(no_dupes, -datetime),
   width = window_size,
   by.column = FALSE,
   FUN = function(x) paste(as.vector(t(x)), collapse = "")
@@ -3328,39 +3503,119 @@ sorted_counts <- sort(sequence_counts, decreasing = TRUE)
 
 # Display all sequences and their frequencies
 sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
-colnames(sequence_df) <- c("Sequence", "Frequency")
-#View(sequence_df)
+if(check > 1) colnames(sequence_df) <- c("Sequence", "Frequency")
 
-total <- sum(sequence_df$Frequency)
+output$total <- sum(sequence_df$Frequency)
 #write some way to score the sequence_df
 #award one point for one of these configs:
 supports <- c("0001","0111","1101", "0100")
-#subset from the 16 possibilities, except it is fewer because
-#0000, 1111, 0101, 1010 are removed...
+
 
 sub <- filter(sequence_df, Sequence %in% supports)
-points <- sum(sub$Frequency)
+output$points <- sum(sub$Frequency)
 
-#create output with the total and the sub, also the two input locations
-output <- data.frame(up, down, points, total)
+
+#create output with transitions
 #error handling- in situation where both points flowed 100% of the time
-if(check == 1) output$points <- NA
-if(check == 1) output$total <- NA
 
-return(output)
+return(output)}
+}
+#separate function to determine when on hydrograph transitions occur
+determine_transitions <- function(up, down, input){
+#inputs to function- comment out in final version
+# i <- 3
+# up <- paste0("r_",routes$up[i])
+# down <- paste0("r_",routes$down[i])
+
+no_dupes <- input %>% 
+      select(up,down, datetime) %>% #remove date
+      # make it so that there cannot be a sequence without change
+      # keep date column for indexing purposes later
+      filter(row_number() == 1 | !apply(select(., up, down) == lag(select(., up, down)), 1, all)) %>% 
+  drop_na()
+
+colnames(no_dupes) <- c("up", "down", "datetime")
+#determine if it is a wetting or drying transition by lagging up and down columns, then concatenating into a single number
+coded_times <- no_dupes %>% 
+  mutate(up_lag = lag(up),
+         down_lag = lag(down)) %>% 
+  mutate(coded = paste0(up_lag, down_lag, up, down)) %>% 
+  mutate(direction = case_when(coded == "0001"| coded == "0111" ~ "wetting",
+                               coded == "1101"| coded == "0100" ~ "drying")) %>% 
+  filter(direction %in% c("wetting", "drying"))
+return(coded_times)
 }
 
-calc_support("r_19", "r_12", input)
+#I think it makes more sense to make the calc_support function, then put that inside a loop that will iterate through groups and add up the support for each group, to find a total for the scenario
 
-for(x in 1:length(routes$up)){
+#testing
+
+calc_support("r_23", "r_6", input)
+determine_transitions("r_23", "r_6", input)
+
+#function to break up groups of continuous measurements, ensure that gaps are not considered
+#contains calc_support function
+iterate_groups <- function(up, down, input, timestep){
+  #create group column that identifies gaps in continuous data in time
+
+# i <- 4
+# up <- paste0("r_",routes$up[i])
+# down <- paste0("r_",routes$down[i])
+# timestep <- minutes(30)
+  input$group <- cumsum(c(TRUE, diff(input$datetime) != timestep))
+  #View(input)
+
+  for(u in 1:length(unique(input$group))){
+  # u <- 1
+  #   print(u)
+    filtered_input <- input %>% filter(group == u)
+    #this line throws error if 
+    output <- calc_support(up, down, filtered_input)
+    
+
+     if(u == 1) iterate_groups_alldat <- output
+     if(u > 1) iterate_groups_alldat <- rbind(iterate_groups_alldat, output)
+  }
+  # final_iterate_groups_alldat <- iterate_groups_alldat %>% 
+  #   drop_na() %>% 
+  #   group_by(up, down) %>% 
+  #   summarise(total = sum(total),
+  #             points = sum(points))
+  return(iterate_groups_alldat)
+}
+
+iterate_groups("r_23", "r_6", input, minutes(30))
+#function to take a list of routes and input dataset
+#contains group iteration function
+#for loop to iterate through full list of combinations of up and downstream locations
+calculate_hierarchy <- function(routes, input, timestep){
+  for(x in 1:length(routes$up)){
   up <- paste0("r_",routes$up[x])
   down <- paste0("r_",routes$down[x])
-  print(up)
-  out <- calc_support(up, down, input)
+  #print(x)
+  
+  out <- iterate_groups(up, down, input, timestep)
+    #out <- calc_support(up, down, input)
+
+
   if(x == 1) alldat <- out
   if(x > 1) alldat <- rbind(alldat, out)
 
+  }
+  final_output <- alldat %>% 
+    drop_na() %>%
+    group_by(up, down) %>%
+    summarise(total = sum(total),
+              points = sum(points)) %>% 
+    mutate(prop = points/total)
+  return(final_output)
 }
+
+calculate_hierarchy(routes, input, minutes(30))
+
+
+#final conclusion- do need to break it up into groups! gets rid of 1-4 erroneous pairs, which will matter more at lower temporal resolutions
+#for each scenario create the routes, inputs, and specify the timestep
 ```
 
 ```{r additional-quality-control}
@@ -3387,6 +3642,7 @@ rbind(bind23, bind24) %>%
 ```
 
 #statistical test- one sample rank wilcoxon test
+Way to ultimately summarise all of these scenarios- with the single test statistic from wilcoxon test
 ```{r}
 # determine if the median of the sample (m) is greater than the theoretical value (mu)
 wiltest <- sults_so_far %>% 
@@ -3431,4 +3687,11 @@ sults_so_far %>%
 Test with and without replacement
 
 Determine if there is something systematic that defines the sequence iteratively or randomly determined
+#calculating discharge
+```{r}
+#source function I wrote in separate script
+source("calcQ.R")
+```
 
+#plot hypsometric curves for each stream network
+Extract elevation along the streams (might need ARC), then plot versus distance
