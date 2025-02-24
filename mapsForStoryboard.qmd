@@ -1313,323 +1313,300 @@ return(output)
 calc_support("r_28", "r_6", input)
 ```
 
-Iterating through each pair of sensors, using the upstream sensor as the id, and the downstream sensor as the secondary or dependent. Seeing how often pairs of sensors wet up or dry down relative to each other.
-##looping by relative position
-```{r looping-W3}
-#equivalent to hush 2 from earlier,
-#make a new input for each watershed chunk
-input <- rbind(bind23, bind24) %>%
-  filter(wshed == "W3", mins %in% c(0, 30)) %>%
-  select(datetime, binary, ID) %>%
-  mutate(ID = paste0("r_",ID)) %>% 
-  pivot_wider(names_from = ID, values_from = binary)
-#now make loop to loop through all pairs of sensors
-routes <- read_csv("w3_flowrouting.csv") %>% 
-  rename("up" = drains_from, "down" = drains_to) %>% 
-  select(sensor, down) %>% 
-  filter(down != 100)
+#finalized versions of analysis functions
+Finished on 2/21/25, fixed calc_support and the nest of for loops so that they work smoothly with any set of routes, inputs, and timesteps.
 
-for(x in 1:length(routes$sensor)){
-  up <- paste0("r_",routes$sensor[x])
-  down <- paste0("r_",routes$down[x])
-  
-  out <- calc_support(up, down, input)
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
+Structure of functions:
+- fantastic_four (routes, shed("W3", "FB", "ZZ"))
+|- for loop, 4 different test timescales
+  |- calculate hierarchy (routes, input, timestep (as duration))
+    |- for loop, number of pairs dictated by routes
+      |- iterate groups (up, down, input, timestep (as duration))
+        |- for loop, number of groups of uninterrupted dates, dictated by timestep
+          |- calc_support (up, down, input) 
+        
+```{r refined-functions}
+#chunk to trouble shoot non-functioning instances to figure out why they are not working
+#instance not working:
+#run_scenario(routes_w3_pk, "pk", "W3", "daily")
 
-}
-
-alldat$prop <- alldat$points/alldat$total
-alldat
-w3_pairs <- alldat
-#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
-hist(alldat$prop)
-hist(w3_pairs$prop)
-
-```
-```{r looping-FB}
-#equivalent to hush 2 from earlier,
-#make a new input for each watershed chunk
-input <- rbind(bind23, bind24) %>%
-  filter(wshed == "FB", mins %in% c(0, 30)) %>%
-  select(datetime, binary, ID) %>%
-  mutate(ID = paste0("r_",ID)) %>% 
-  pivot_wider(names_from = ID, values_from = binary)
-#now make loop to loop through all pairs of sensors
-routes <- read_csv("fb_flowrouting.csv") %>% drop_na() %>% 
-  mutate(up = paste0("r_",up),
-         down = paste0("r_",down))
-
-for(x in 1:length(routes$up)){
-  
-  out <- calc_support(routes$up[x], routes$down[x], input)
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
-
-}
-
-alldat$prop <- alldat$points/alldat$total
-fb_pairs <- alldat
-#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
-hist(alldat$prop)
-```
-```{r looping-ZZ}
-#equivalent to hush 2 from earlier,
-#make a new input for each watershed chunk
-input <- rbind(bind23, bind24) %>%
-  filter(wshed == "ZZ", mins %in% c(0, 30)) %>%
-  select(datetime, binary, ID) %>%
-  mutate(ID = paste0("r_",ID)) %>% 
-  pivot_wider(names_from = ID, values_from = binary)
-#now make loop to loop through all pairs of sensors
-routes <- read_csv("zz_flowrouting.csv") %>% drop_na() %>% 
-  mutate(up = paste0("r_",up),
-         down = paste0("r_",down))
-
-for(x in 1:length(routes$up)){
-  
-  out <- calc_support(routes$up[x], routes$down[x], input)
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
-
-}
-
-alldat$prop <- alldat$points/alldat$total
-zz_pairs <- alldat
-#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
-hist(alldat$prop)
-```
-##looping by local persistency
-```{r looping-W3}
-#make list that make pairs of sites based on local persistency
 routes <- pks_w3 %>% 
   arrange(desc(pk)) %>% 
   mutate(down = lag(ID)) %>% 
   rename("up" = ID) %>% drop_na() %>% 
   select(up, down)
 
-pks_w3 %>% 
-  arrange(desc(pk))
-
 input <- rbind(bind23, bind24) %>%
-  filter(wshed == "W3", mins %in% c(0, 30)) %>%
-  select(datetime, binary, ID) %>%
-  mutate(ID = paste0("r_",ID)) %>% 
-  pivot_wider(names_from = ID, values_from = binary)
-#now make loop to loop through all pairs of sensors
+      mutate(hour = hour(datetime)) %>% 
+        filter(wshed == "W3", mins %in% c(0, 30)) %>%
+      #filter(wshed == "W3", hour %in% c(12), mins %in% c(0)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary) #%>% 
+  #filter(datetime < stop24 & datetime > start24)
 
-rbind(bind23, bind24) %>%
-  filter(wshed == "W3", mins %in% c(0, 30)) %>%
-  select(datetime, binary, ID)
 
-for(x in 1:length(routes$up)){
+calc_support <- function(up, down, input){
+#inputs to function- comment out in final version
+# i <- 4
+# up <- paste0("r_",routes$up[i])
+# down <- paste0("r_",routes$down[i])
+#input <- filtered_input
+
+#create output with the total and the sub, also the two input locations
+output <- data.frame(up, down)
+
+  
+no_dupes <- input %>% 
+      select(up,down, datetime) %>% #remove date
+      # make it so that there cannot be a sequence without change
+      # keep date column for indexing purposes later
+      filter(row_number() == 1 | !apply(select(., up, down) == lag(select(., up, down)), 1, all)) %>% 
+      #remove rows where one of the sensors is missing data
+      drop_na()
+#View(no_dupes)
+#all flowing all the time?
+check <- nrow(no_dupes)
+
+if(check <= 2){
+  output$total <- NA
+  output$points <- NA
+  return(output)
+} 
+else {
+# Define window size
+window_size <- 2
+
+# Create sliding windows
+windows <- rollapply(
+  select(no_dupes, -datetime),
+  width = window_size,
+  by.column = FALSE,
+  FUN = function(x) paste(as.vector(t(x)), collapse = "")
+)
+
+# Count and sort sequences
+sequence_counts <- table(windows)
+sorted_counts <- sort(sequence_counts, decreasing = TRUE)
+
+# Display all sequences and their frequencies
+sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
+if(check > 1) colnames(sequence_df) <- c("Sequence", "Frequency")
+
+output$total <- sum(sequence_df$Frequency)
+#write some way to score the sequence_df
+#award one point for one of these configs:
+supports <- c("0001","0111","1101", "0100")
+
+
+sub <- filter(sequence_df, Sequence %in% supports)
+output$points <- sum(sub$Frequency)
+
+
+#create output with transitions
+#error handling- in situation where both points flowed 100% of the time
+
+return(output)}
+}
+
+#test function
+calc_support("r_23", "r_6", input)
+
+#function to break up groups of continuous measurements, ensure that gaps are not considered
+#contains calc_support function
+iterate_groups <- function(up, down, input, timestep){
+  #create group column that identifies gaps in continuous data in time
+
+# i <- 4
+# up <- paste0("r_",routes$up[i])
+# down <- paste0("r_",routes$down[i])
+# timestep <- hours(1)
+  input$group <- cumsum(c(TRUE, diff(input$datetime) != timestep))
+  #View(input)
+
+  for(u in 1:length(unique(input$group))){
+  # u <- 1
+  #   print(u)
+    filtered_input <- input %>% filter(group == u)
+    #this line throws error if 
+    output <- calc_support(up, down, filtered_input)
+    
+
+     if(u == 1) iterate_groups_alldat <- output
+     if(u > 1) iterate_groups_alldat <- rbind(iterate_groups_alldat, output)
+  }
+  # final_iterate_groups_alldat <- iterate_groups_alldat %>% 
+  #   drop_na() %>% 
+  #   group_by(up, down) %>% 
+  #   summarise(total = sum(total),
+  #             points = sum(points))
+  return(iterate_groups_alldat)
+}
+
+iterate_groups("r_23", "r_6", input, hours(1))
+#function to take a list of routes and input dataset
+#contains group iteration function
+#for loop to iterate through full list of combinations of up and downstream locations
+#IMPORTANT- calculate hierarchy and iterate groups only work if the input timestep is approriate
+calculate_hierarchy <- function(routes, input, timestep){
+  for(x in 1:length(routes$up)){
   up <- paste0("r_",routes$up[x])
   down <- paste0("r_",routes$down[x])
+  #print(x)
   
-  out <- calc_support(up, down, input)
+  out <- iterate_groups(up, down, input, timestep)
+    #out <- calc_support(up, down, input)
+
+
   if(x == 1) alldat <- out
   if(x > 1) alldat <- rbind(alldat, out)
 
+  }
+  final_output <- alldat %>% 
+    drop_na() %>%
+    group_by(up, down) %>%
+    summarise(total = sum(total),
+              points = sum(points)) %>% 
+    mutate(prop = points/total)
+  return(final_output)
 }
 
-alldat$prop <- alldat$points/alldat$total
-w3_pairs_pk <- alldat
-#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
-hist(w3_pairs_pk$prop)
-hist(w3_pairs$prop)
+calculate_hierarchy(routes, input, minutes(30))
+#calculate_hierarchy(routes, input, days(1))
 
+
+#make a function to loop through the four possible timesteps, and combine the output just for ease of applying this many different variations
+fantastic_four <- function(routes, shed){
+  theFour <- c("30mins", "hourly", "4hr", "daily")
+  
+  for(q in 1:length(theFour)){
+    #if statements to detect timescale, calculate appropriate inputs
+    timescale <- theFour[q]
+  if(timescale == "30mins"){
+    input <- rbind(bind23, bind24) %>%
+      filter(wshed == shed, mins %in% c(0, 30)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- minutes(30)
+  } 
+  else if(timescale == "hourly"){
+    input <- rbind(bind23, bind24) %>%
+      filter(wshed == shed, mins %in% c(0)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- hours(1)
+  } 
+  else if(timescale == "4hr"){
+    input <- rbind(bind23, bind24) %>%
+      mutate(hour = hour(datetime)) %>% 
+      filter(wshed == shed, hour %in% c(0,4,8,12,16,20,24), mins %in% c(0)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- hours(4)
+  } 
+  else if(timescale == "daily"){
+    input <- rbind(bind23, bind24) %>%
+      mutate(hour = hour(datetime)) %>% 
+      filter(wshed == "W3", hour %in% c(12), mins %in% c(0)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- days(1)
+  } 
+  else {
+    stop("Not a timescale anticipated!")
+  }
+    out <- calculate_hierarchy(routes, input, timestep)
+    out$timescale <- theFour[q]
+    
+    if(q == 1) fanfar <- out
+    if(q > 1) fanfar <- rbind(fanfar, out)
+  }
+  fanfar$shed <- shed
+  return(fanfar)
+}
+
+
+#final conclusion- do need to break it up into groups! gets rid of 1-4 erroneous pairs, which will matter more at lower temporal resolutions
+#for each scenario create the routes, inputs, and specify the timestep
 ```
-```{r looping-FB}
+Iterating through each pair of sensors, using the upstream sensor as the id, and the downstream sensor as the secondary or dependent. Seeing how often pairs of sensors wet up or dry down relative to each other.
+#Running analysis using refined functions
+```{r relative-position}
+#set routes for all 3 watersheds
+routes_w3 <- read_csv("w3_flowrouting.csv") %>% 
+  rename("up" = drains_from, "down" = sensor) %>% 
+  select(up, down) %>% 
+  filter(down != 100, up != 0)
+routes_fb <- read_csv("fb_flowrouting.csv") %>% drop_na()
+routes_zz <- read_csv("zz_flowrouting.csv") %>% drop_na()
+
+#run calc_support for all sheds and timesteps for relative position
+all_position <- rbind(fantastic_four(routes_w3, "W3"),
+                      fantastic_four(routes_fb, "FB"),
+                      fantastic_four(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Relative Position")
+
+write_csv(all_position, "./hierarchy_analysis_results/relativePosition.csv")
+```
+```{r flow-permanence}
 #make list that make pairs of sites based on local persistency
-#REMOVE SITES WHERE FLOW IS 100% OF THE TIME
-routes <- pks_fb %>% 
+routes_w3 <- pks_w3 %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+routes_fb <- pks_fb %>% 
   filter(pk != 1) %>% 
   arrange(desc(pk)) %>% 
   mutate(down = lag(ID)) %>% 
   rename("up" = ID) %>% drop_na() %>% 
-  select(up, down) %>% 
-  mutate(up = paste0("r_",up),
-         down = paste0("r_",down))
+  select(up, down)
 
-input <- rbind(bind23, bind24) %>%
-  filter(wshed == "FB", mins %in% c(0, 30)) %>%
-  select(datetime, binary, ID) %>%
-  mutate(ID = paste0("r_",ID)) %>% 
-  pivot_wider(names_from = ID, values_from = binary)
-
-for(x in 1:length(routes$up)){
-  
-  out <- calc_support(routes$up[x], routes$down[x], input)
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
-
-}
-
-alldat$prop <- alldat$points/alldat$total
-fb_pairs_pk <- alldat
-#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
-#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
-hist(fb_pairs_pk$prop)
-hist(fb_pairs$prop)
-
-```
-```{r looping-ZZ}
-#equivalent to hush 2 from earlier,
-#make a new input for each watershed chunk
-input <- rbind(bind23, bind24) %>%
-  filter(wshed == "ZZ", mins %in% c(0, 30)) %>%
-  select(datetime, binary, ID) %>%
-  mutate(ID = paste0("r_",ID)) %>% 
-  pivot_wider(names_from = ID, values_from = binary)
-#now make loop to loop through all pairs of sensors
-routes <- pks_zz %>% 
+routes_zz <- pks_zz %>% 
   filter(pk != 1) %>% 
   arrange(desc(pk)) %>% 
   mutate(down = lag(ID)) %>% 
   rename("up" = ID) %>% drop_na() %>% 
-  select(up, down) %>% 
-  mutate(up = paste0("r_",up),
-         down = paste0("r_",down))
+  select(up, down)
 
-for(x in 1:length(routes$up)){
-  
-  out <- calc_support(routes$up[x], routes$down[x], input)
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
+all_pk <- rbind(fantastic_four(routes_w3, "W3"),
+                fantastic_four(routes_fb, "FB"),
+                fantastic_four(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Flow Permanence")
 
-}
-
-alldat$prop <- alldat$points/alldat$total
-zz_pairs_pk <- alldat
-#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
-hist(zz_pairs_pk$prop)
-hist(zz_pairs$prop)
+write_csv(all_pk, "./hierarchy_analysis_results/flowPermanence.csv")
 ```
-##Compile all of my results so far
-Consolidate the gains!!
-```{r consolidating-progress}
-#prop stands for proportion or percentage of transitions that support the hypothesis
-w3_result_position <- data.frame("prop" = w3_pairs$prop, "type" = "position", "shed" = "W3")
-w3_result_pk <- data.frame("prop" = w3_pairs_pk$prop, "type" = "pk", "shed" = "W3")
-
-fb_result_position <- data.frame("prop" = fb_pairs$prop, "type" = "position", "shed" = "FB")
-fb_result_pk <- data.frame("prop" = fb_pairs_pk$prop, "type" = "pk", "shed" = "FB")
-
-zz_result_position <- data.frame("prop" = zz_pairs$prop, "type" = "position", "shed" = "ZZ")
-zz_result_pk <- data.frame("prop" = zz_pairs_pk$prop, "type" = "pk", "shed" = "ZZ")
-
-sults_so_far <- rbind(w3_result_position, w3_result_pk,
-                      fb_result_position, fb_result_pk,
-                      zz_result_position, zz_result_pk)
-
-sults_so_far %>% 
-  ggplot(aes(x = shed, y = prop, color = type)) +
-  geom_boxplot()+
-  theme_classic()+
-    geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
-  labs(x = "Watershed",
-       y = "Proportion",
-       title = "Proportion of times that adjacent sensors follow the hierarchy")
-
-
-```
-
-##looping by dof
-```{r looping-W3}
+```{r duration-of-flow}
 #make list that make pairs of sites based on local persistency
-routes <- dof_w3 %>% 
+routes_w3 <- dof_w3 %>% 
   arrange(desc(avg_days_flowing)) %>% 
   mutate(down = lag(ID)) %>% 
   rename("up" = ID) %>% drop_na() %>% 
-  select(up, down) %>% 
-  mutate(up = paste0("r_",up),
-         down = paste0("r_",down))
+  select(up, down)
 
-input <- rbind(bind23, bind24) %>%
-  filter(wshed == "W3", mins %in% c(0, 30)) %>%
-  select(datetime, binary, ID) %>%
-  mutate(ID = paste0("r_",ID)) %>% 
-  pivot_wider(names_from = ID, values_from = binary)
-#now make loop to loop through all pairs of sensors
-
-for(x in 1:length(routes$up)){
-  
-  out <- calc_support(routes$up[x], routes$down[x], input)
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
-
-}
-
-alldat$prop <- alldat$points/alldat$total
-w3_pairs_dof <- alldat
-#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
-hist(w3_pairs_dof$prop)
-hist(w3_pairs$prop)
-
-```
-```{r looping-FB}
-#make list that make pairs of sites based on local persistency
-#REMOVE SITES WHERE FLOW IS 100% OF THE TIME
-routes <- dof_fb %>% 
+routes_fb <- dof_fb %>% 
   arrange(desc(avg_days_flowing)) %>% 
   mutate(down = lag(ID)) %>% 
   rename("up" = ID) %>% drop_na() %>% 
-  select(up, down) %>% 
-  mutate(up = paste0("r_",up),
-         down = paste0("r_",down))
+  select(up, down)
 
-input <- rbind(bind23, bind24) %>%
-  filter(wshed == "FB", mins %in% c(0, 30)) %>%
-  select(datetime, binary, ID) %>%
-  mutate(ID = paste0("r_",ID)) %>% 
-  pivot_wider(names_from = ID, values_from = binary)
-
-for(x in 1:length(routes$up)){
-  
-  out <- calc_support(routes$up[x], routes$down[x], input)
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
-
-}
-
-alldat$prop <- alldat$points/alldat$total
-fb_pairs_dof <- alldat
-#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
-#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
-hist(fb_pairs_dof$prop)
-hist(fb_pairs$prop)
-
-```
-```{r looping-ZZ}
-#equivalent to hush 2 from earlier,
-#make a new input for each watershed chunk
-input <- rbind(bind23, bind24) %>%
-  filter(wshed == "ZZ", mins %in% c(0, 30)) %>%
-  select(datetime, binary, ID) %>%
-  mutate(ID = paste0("r_",ID)) %>% 
-  pivot_wider(names_from = ID, values_from = binary)
-#now make loop to loop through all pairs of sensors
-routes <- dof_zz %>% 
+routes_zz <- dof_zz %>% 
   arrange(desc(avg_days_flowing)) %>% 
   mutate(down = lag(ID)) %>% 
   rename("up" = ID) %>% drop_na() %>% 
-  select(up, down) %>% 
-  mutate(up = paste0("r_",up),
-         down = paste0("r_",down))
+  select(up, down)
 
-for(x in 1:length(routes$up)){
-  
-  out <- calc_support(routes$up[x], routes$down[x], input)
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
+all_dof <- rbind(fantastic_four(routes_w3, "W3"),
+                 fantastic_four(routes_fb, "FB"),
+                 fantastic_four(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Duration of Flow")
 
-}
-
-alldat$prop <- alldat$points/alldat$total
-zz_pairs_dof <- alldat
-#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
-hist(zz_pairs_dof$prop)
-hist(zz_pairs$prop)
+write_csv(all_pk, "./hierarchy_analysis_results/durationOfFlow.csv")
 ```
 
 ##looping by drainage area UNFINISHED
@@ -1795,106 +1772,38 @@ plot(rast(zz_streams))
 
 plot(vect(zz_lcc_path_snap), add = TRUE)
 ```
-###loop through topography
-```{r looping-W3}
+
+```{r drainage-area}
 #make list that make pairs of sites based on local persistency
-routes <- W3_uaa_ex %>% 
+routes_w3 <- W3_uaa_ex %>% 
   rename("up" = ID, "uaa" = 'dem3m_flowacc') %>%
   arrange(desc(uaa)) %>% 
   mutate(down = lag(up)) %>% 
    drop_na() %>% 
-  select(up, down) %>% 
-  mutate(up = paste0("r_",up),
-         down = paste0("r_",down))
+  select(up, down) 
 
-input <- rbind(bind23, bind24) %>%
-  filter(wshed == "W3", mins %in% c(0, 30)) %>%
-  select(datetime, binary, ID) %>%
-  mutate(ID = paste0("r_",ID)) %>% 
-  pivot_wider(names_from = ID, values_from = binary)
-#now make loop to loop through all pairs of sensors
-
-for(x in 1:length(routes$up)){
-  
-  out <- calc_support(routes$up[x], routes$down[x], input)
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
-
-}
-
-alldat$prop <- alldat$points/alldat$total
-w3_pairs_topo <- alldat
-#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
-hist(w3_pairs_topo$prop)
-hist(w3_pairs$prop)
-
-```
-```{r looping-FB}
-#make list that make pairs of sites based on local persistency
-#REMOVE SITES WHERE FLOW IS 100% OF THE TIME
-routes <- FB_uaa_ex %>%
+routes_fb <- FB_uaa_ex %>%
   rename("up" = ID, "uaa" = 'dem3m_flowacc') %>%
   arrange(desc(uaa)) %>% 
   mutate(down = lag(up)) %>% 
   drop_na() %>% 
-  select(up, down) %>% 
-  mutate(up = paste0("r_",up),
-         down = paste0("r_",down))
+  select(up, down)
 
-input <- rbind(bind23, bind24) %>%
-  filter(wshed == "FB", mins %in% c(0, 30)) %>%
-  select(datetime, binary, ID) %>%
-  mutate(ID = paste0("r_",ID)) %>% 
-  pivot_wider(names_from = ID, values_from = binary)
-
-for(x in 1:length(routes$up)){
-  
-  out <- calc_support(routes$up[x], routes$down[x], input)
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
-
-}
-
-alldat$prop <- alldat$points/alldat$total
-fb_pairs_topo <- alldat
-#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
-#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
-hist(fb_pairs_topo$prop)
-hist(fb_pairs$prop)
-
-```
-```{r looping-ZZ}
-#equivalent to hush 2 from earlier,
-#make a new input for each watershed chunk
-input <- rbind(bind23, bind24) %>%
-  filter(wshed == "ZZ", mins %in% c(0, 30)) %>%
-  select(datetime, binary, ID) %>%
-  mutate(ID = paste0("r_",ID)) %>% 
-  pivot_wider(names_from = ID, values_from = binary)
-#now make loop to loop through all pairs of sensors
-routes <- ZZ_uaa_ex %>%
+routes_zz <- ZZ_uaa_ex %>%
   rename("up" = ID, "uaa" = 'dem3m_flowacc') %>%
   arrange(desc(uaa)) %>% 
   mutate(down = lag(up)) %>%
   drop_na() %>% 
-  select(up, down) %>% 
-  mutate(up = paste0("r_",up),
-         down = paste0("r_",down))
+  select(up, down)
 
-for(x in 1:length(routes$up)){
-  
-  out <- calc_support(routes$up[x], routes$down[x], input)
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
+all_uaa <- rbind(fantastic_four(routes_w3, "W3"),
+                 fantastic_four(routes_fb, "FB"),
+                 fantastic_four(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Drainage Area")
 
-}
-
-alldat$prop <- alldat$points/alldat$total
-zz_pairs_topo <- alldat
-#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
-hist(zz_pairs_topo$prop)
-hist(zz_pairs$prop)
+write_csv(all_pk, "./hierarchy_analysis_results/drainageArea.csv")
 ```
+
 
 ##Compile all of my results so far 2
 Consolidate the gains!!
@@ -3427,99 +3336,11 @@ alldat$prop <- alldat$points/alldat$total
 w3_hourly <- alldat
 ```
 
-#finalized versions of analysis functions
-Finished on 2/21/25, fixed calc_support and the nest of for loops so that they work smoothly with any set of routes, inputs, and timesteps.
-
-Structure of functions:
-- calculate hierarchy (routes, input, timestep (as duration))
-  |- for loop, number of pairs dictated by routes
-    |- iterate groups (up, down, input, timestep (as duration))
-      |- for loop, number of groups of uninterrupted dates, dictated by timestep
-        |- calc_support (up, down, input) 
-        
-```{r pit-crew}
-#chunk to trouble shoot non-functioning instances to figure out why they are not working
-#instance not working:
-#run_scenario(routes_w3_pk, "pk", "W3", "daily")
-
-routes <- pks_w3 %>% 
-  arrange(desc(pk)) %>% 
-  mutate(down = lag(ID)) %>% 
-  rename("up" = ID) %>% drop_na() %>% 
-  select(up, down)
-
-input <- rbind(bind23, bind24) %>%
-      mutate(hour = hour(datetime)) %>% 
-        filter(wshed == "W3", mins %in% c(0, 30)) %>%
-      #filter(wshed == "W3", hour %in% c(12), mins %in% c(0)) %>%
-      select(datetime, binary, ID) %>%
-      mutate(ID = paste0("r_", ID)) %>%
-      pivot_wider(names_from = ID, values_from = binary) #%>% 
-  #filter(datetime < stop24 & datetime > start24)
 
 
-calc_support <- function(up, down, input){
-#inputs to function- comment out in final version
-# i <- 4
-# up <- paste0("r_",routes$up[i])
-# down <- paste0("r_",routes$down[i])
-#input <- filtered_input
-
-#create output with the total and the sub, also the two input locations
-output <- data.frame(up, down)
-
-  
-no_dupes <- input %>% 
-      select(up,down, datetime) %>% #remove date
-      # make it so that there cannot be a sequence without change
-      # keep date column for indexing purposes later
-      filter(row_number() == 1 | !apply(select(., up, down) == lag(select(., up, down)), 1, all)) %>% 
-      #remove rows where one of the sensors is missing data
-      drop_na()
-#View(no_dupes)
-#all flowing all the time?
-check <- nrow(no_dupes)
-
-if(check <= 2){
-  output$total <- NA
-  output$points <- NA
-  return(output)
-} 
-else {
-# Define window size
-window_size <- 2
-
-# Create sliding windows
-windows <- rollapply(
-  select(no_dupes, -datetime),
-  width = window_size,
-  by.column = FALSE,
-  FUN = function(x) paste(as.vector(t(x)), collapse = "")
-)
-
-# Count and sort sequences
-sequence_counts <- table(windows)
-sorted_counts <- sort(sequence_counts, decreasing = TRUE)
-
-# Display all sequences and their frequencies
-sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
-if(check > 1) colnames(sequence_df) <- c("Sequence", "Frequency")
-
-output$total <- sum(sequence_df$Frequency)
-#write some way to score the sequence_df
-#award one point for one of these configs:
-supports <- c("0001","0111","1101", "0100")
-
-
-sub <- filter(sequence_df, Sequence %in% supports)
-output$points <- sum(sub$Frequency)
-
-
-#create output with transitions
-#error handling- in situation where both points flowed 100% of the time
-
-return(output)}
-}
+Separate chunk for discharge stuff
+#Where on the hydrograph do transitions in states between two sensors occur?
+```{r hydrograph-analysis}
 #separate function to determine when on hydrograph transitions occur
 determine_transitions <- function(up, down, input){
 #inputs to function- comment out in final version
@@ -3546,55 +3367,15 @@ coded_times <- no_dupes %>%
 return(coded_times)
 }
 
-#I think it makes more sense to make the calc_support function, then put that inside a loop that will iterate through groups and add up the support for each group, to find a total for the scenario
-
-#testing
-
-calc_support("r_23", "r_6", input)
+#test functions
 determine_transitions("r_23", "r_6", input)
-
-#function to break up groups of continuous measurements, ensure that gaps are not considered
-#contains calc_support function
-iterate_groups <- function(up, down, input, timestep){
-  #create group column that identifies gaps in continuous data in time
-
-# i <- 4
-# up <- paste0("r_",routes$up[i])
-# down <- paste0("r_",routes$down[i])
-# timestep <- minutes(30)
-  input$group <- cumsum(c(TRUE, diff(input$datetime) != timestep))
-  #View(input)
-
-  for(u in 1:length(unique(input$group))){
-  # u <- 1
-  #   print(u)
-    filtered_input <- input %>% filter(group == u)
-    #this line throws error if 
-    output <- calc_support(up, down, filtered_input)
-    
-
-     if(u == 1) iterate_groups_alldat <- output
-     if(u > 1) iterate_groups_alldat <- rbind(iterate_groups_alldat, output)
-  }
-  # final_iterate_groups_alldat <- iterate_groups_alldat %>% 
-  #   drop_na() %>% 
-  #   group_by(up, down) %>% 
-  #   summarise(total = sum(total),
-  #             points = sum(points))
-  return(iterate_groups_alldat)
-}
-
-iterate_groups("r_23", "r_6", input, minutes(30))
-#function to take a list of routes and input dataset
-#contains group iteration function
-#for loop to iterate through full list of combinations of up and downstream locations
-calculate_hierarchy <- function(routes, input, timestep){
+all_transitions <- function(routes, input){
   for(x in 1:length(routes$up)){
   up <- paste0("r_",routes$up[x])
   down <- paste0("r_",routes$down[x])
   #print(x)
   
-  out <- iterate_groups(up, down, input, timestep)
+  out <- determine_transitions(up, down, input)
     #out <- calc_support(up, down, input)
 
 
@@ -3602,20 +3383,29 @@ calculate_hierarchy <- function(routes, input, timestep){
   if(x > 1) alldat <- rbind(alldat, out)
 
   }
-  final_output <- alldat %>% 
-    drop_na() %>%
-    group_by(up, down) %>%
-    summarise(total = sum(total),
-              points = sum(points)) %>% 
-    mutate(prop = points/total)
-  return(final_output)
+  
+  return(alldat)
 }
 
-calculate_hierarchy(routes, input, minutes(30))
+all_trans <- all_transitions(routes, input)
 
+all_trans$binary <- 1
+all_trans$binary[all_trans$direction == "drying"] <- -1
 
-#final conclusion- do need to break it up into groups! gets rid of 1-4 erroneous pairs, which will matter more at lower temporal resolutions
-#for each scenario create the routes, inputs, and specify the timestep
+testtt <- all_trans %>% group_by(datetime) %>% 
+  filter(binary == -1) %>% 
+  summarise(prop_wetting = sum(binary)) %>% 
+  rename(DATETIME = datetime) %>% 
+  right_join(q_23_f, by = "DATETIME")
+
+ggplot(testtt, aes(x  = DATETIME, y = Q_mm_day))+
+  geom_line()+
+  geom_point(data = drop_na(testtt), aes(x  = DATETIME, y = Q_mm_day, color = prop_wetting))+
+  labs(title = "Discharge from W3, July to Nov 2023",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()+
+  scale_color_viridis_c(name = "Number of Drying")
 ```
 
 ```{r additional-quality-control}
