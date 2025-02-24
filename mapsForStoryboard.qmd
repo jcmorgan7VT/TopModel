@@ -1814,7 +1814,14 @@ sults_so_far <- rbind(all_position,
                       all_dof,
                       all_uaa) %>% 
   mutate(timescale = fct_relevel(timescale,
-                              c("30mins", "hourly", "4hr", "daily")))
+                              c("30mins", "hourly", "4hr", "daily")),
+         hierarchy = as.factor(str_trim(as.character(hierarchy))),
+         
+         hierarchy = fct_relevel(hierarchy, 
+                                 c("Duration of Flow",
+                                "Flow Permanence",
+                                "Relative Position",
+                                "Drainage Area")))
 sults_so_far %>% 
   ggplot(aes(x = shed, y = prop, color = hierarchy)) +
   geom_boxplot()+
@@ -1845,10 +1852,21 @@ sults_so_far %>%
        y = "Proportion",
        title = "How often do adjacent sensors follow a hierarchy?")+
   scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
-                     labels = c("Duration of Flow",
-                                "Flow Permanence",
-                                "Relative Position",
-                                "Drainage Area"),
+                     name = "Organizing Scheme")+
+  facet_wrap(~timescale)
+
+#violin plot of just 30 min timescale
+sults_so_far %>% 
+  filter(timescale == "30mins") %>% 
+  ggplot(aes(x = shed, y = prop, color = hierarchy)) +
+  geom_violin()+
+  theme_classic()+
+  geom_point(position = position_jitterdodge(jitter.width = 0.1), alpha = 0.5)+
+  geom_hline(yintercept = 0.5, lty = 2)+
+  labs(x = "Watershed",
+       y = "Proportion",
+       title = "How often do adjacent sensors follow a hierarchy?")+
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
                      name = "Organizing Scheme")+
   facet_wrap(~timescale)
 
@@ -1894,10 +1912,6 @@ sults_so_far %>%
        y = "Percentage of values less than or equal",
        title = "How often do adjacent sensors follow a hierarchy?")+
   scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
-                     labels = c("Duration of Flow",
-                                "Flow Permanence",
-                                "Relative Position",
-                                "Drainage Area"),
                      name = "Organizing Scheme")+
   facet_wrap(~shed)#+
   lims(x = c(0.5,1),
@@ -1916,12 +1930,25 @@ geom_density(alpha = 0.5)+
        y = "Density",
        title = "How often do adjacent sensors follow a hierarchy?")+
   scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
-                     labels = c("Duration of Flow",
-                                "Flow Permanence",
-                                "Relative Position",
-                                "Drainage Area"),
                      name = "Organizing Scheme")+
   facet_wrap(~shed)#+
+
+#try plain histogram
+sults_so_far %>% 
+  filter(timescale == "30mins") %>% 
+  ggplot(aes(prop, fill = hierarchy)) +
+geom_histogram(binwidth = 0.1)+
+    theme_classic()+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+
+    #geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
+  labs(x = "Prop",
+       y = "Density",
+       title = "How often do adjacent sensors follow a hierarchy?")+
+  scale_fill_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+                     
+                     name = "Organizing Scheme")+
+  facet_grid(hierarchy~shed)
 
 #maybe it would look better to add the randomly generated hierarchies for a comparison
 
@@ -3474,22 +3501,35 @@ sults_so_far %>%
   summarise(wcx_pvalue = wilcox.test(prop, mu = 0.5, alternative = "greater", exact = FALSE, conf.int = TRUE)$p.value,
             wcx_upperb = wilcox.test(prop, mu = 0.5, alternative = "greater", exact = FALSE, conf.int = TRUE)$conf.int[1],
             wcx_lowerb = wilcox.test(prop, mu = 0.5, alternative = "greater", exact = FALSE, conf.int = TRUE)$conf.int[2]) %>% 
-  filter(wcx_pvalue <= 0.1) %>% 
+  #filter(wcx_pvalue <= 0.1) %>% 
   knitr::kable()
 
+intermediate <- sults_so_far %>% 
+  filter(shed == "FB", timescale == "30mins", hierarchy == "Drainage Area") 
+
+#testing binom test
+test <- intermediate$prop
+binom.test(sum(test > 0.5), length(test), p = 0.5, alternative = "greater")$p.value
+length(test > 0.5)
+Mode(test)
 
 sults_so_far %>% 
   group_by(shed, hierarchy, timescale) %>% 
   summarise(sign_p = binom.test(sum(prop > 0.5), length(prop), p = 0.5, alternative = "greater")$p.value,
             sign_upperb = binom.test(sum(prop > 0.5), length(prop), p = 0.5, alternative = "greater")$conf.int[1],
             sign_lowerb = binom.test(sum(prop > 0.5), length(prop), p = 0.5, alternative = "greater")$conf.int[2]) %>% 
-  filter(sign_p <= 0.1) %>% 
+  #filter(sign_p <= 0.1) %>% 
   knitr::kable()
 
+p_load(DescTools)
+
 sults_so_far %>% 
+  filter(shed == "ZZ") %>% 
     group_by(shed, hierarchy, timescale) %>% 
-  summarise(median = median(prop)) %>% 
-View()
+  summarise(median = median(prop),
+            mode1 = Mode(prop)[1],
+            mode2 = Mode(prop)[2]) %>% 
+  knitr::kable()
 ```
 
 Test with and without replacement
