@@ -1809,22 +1809,14 @@ write_csv(all_pk, "./hierarchy_analysis_results/drainageArea.csv")
 Consolidate the gains!!
 ```{r consolidating-progress}
 #prop stands for proportion or percentage of transitions that support the hypothesis
-w3_result_dof <- data.frame("prop" = w3_pairs_dof$prop, "type" = "dof", "shed" = "W3")
-w3_result_topo <- data.frame("prop" = w3_pairs_topo$prop, "type" = "topo", "shed" = "W3")
-
-fb_result_dof <- data.frame("prop" = fb_pairs_dof$prop, "type" = "dof", "shed" = "FB")
-fb_result_topo <- data.frame("prop" = fb_pairs_topo$prop, "type" = "topo", "shed" = "FB")
-
-zz_result_dof <- data.frame("prop" = zz_pairs_dof$prop, "type" = "dof", "shed" = "ZZ")
-zz_result_topo <- data.frame("prop" = zz_pairs_topo$prop, "type" = "topo", "shed" = "ZZ")
-
-
-sults_so_far <- rbind(w3_result_position, w3_result_pk, w3_result_dof, w3_result_topo, 
-                      fb_result_position, fb_result_pk, fb_result_dof, fb_result_topo,
-                      zz_result_position, zz_result_pk, zz_result_dof, zz_result_topo)
-
+sults_so_far <- rbind(all_position,
+                      all_pk,
+                      all_dof,
+                      all_uaa) %>% 
+  mutate(timescale = fct_relevel(timescale,
+                              c("30mins", "hourly", "4hr", "daily")))
 sults_so_far %>% 
-  ggplot(aes(x = shed, y = prop, color = type)) +
+  ggplot(aes(x = shed, y = prop, color = hierarchy)) +
   geom_boxplot()+
   theme_classic()+
     geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
@@ -1838,51 +1830,16 @@ sults_so_far %>%
                                 "Relative Position",
                                 "Drainage Area"),
                      name = "Organizing Scheme")+
-  facet_wrap(~type)
+  facet_wrap(~timescale)
 
-sults_so_far %>% 
-  ggplot(aes(x = shed, y = prop, color = type)) +
-  geom_boxplot()+
-  theme_classic()+
-    geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
-  geom_hline(yintercept = 0.5, lty = 2)+
-  labs(x = "Watershed",
-       y = "Proportion",
-       title = "How often do adjacent sensors follow a hierarchy?")+
-  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
-                     labels = c("Duration of Flow",
-                                "Flow Permanence",
-                                "Relative Position",
-                                "Drainage Area"),
-                     name = "Organizing Scheme")
 
 #instead of boxplots, show the ecdf and one-sided violin plot
 sults_so_far %>% 
-  ggplot(aes(x = shed, y = prop, fill = type)) +
+  #filter(timescale == "30mins") %>% 
+  ggplot(aes(x = shed, y = prop, color = hierarchy)) +
   geom_violin()+
   theme_classic()+
-    #geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
-  geom_hline(yintercept = 0.5, lty = 2)+
-  labs(x = "Watershed",
-       y = "Proportion",
-       title = "How often do adjacent sensors follow a hierarchy?")+
-  scale_fill_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
-                     labels = c("Duration of Flow",
-                                "Flow Permanence",
-                                "Relative Position",
-                                "Drainage Area"),
-                     name = "Organizing Scheme")
-
-#one sided violin plot
-p_load(devtools)
-devtools::install_github("psyteachr/introdataviz")
-library(introdataviz)
-
-sults_so_far %>% 
-  ggplot(aes(x = shed, y = prop, color = type)) +
-  geom_split_violin()+
-  theme_classic()+
-    #geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
+  geom_point(position = position_jitterdodge(jitter.width = 0.1), alpha = 0.5)+
   geom_hline(yintercept = 0.5, lty = 2)+
   labs(x = "Watershed",
        y = "Proportion",
@@ -1893,7 +1850,29 @@ sults_so_far %>%
                                 "Relative Position",
                                 "Drainage Area"),
                      name = "Organizing Scheme")+
-  facet_wrap(~type)
+  facet_wrap(~timescale)
+
+#one sided violin plot
+# p_load(devtools)
+# devtools::install_github("psyteachr/introdataviz")
+# library(introdataviz)
+
+# sults_so_far %>% 
+#   ggplot(aes(x = shed, y = prop, color = type)) +
+#   geom_split_violin()+
+#   theme_classic()+
+#     #geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
+#   geom_hline(yintercept = 0.5, lty = 2)+
+#   labs(x = "Watershed",
+#        y = "Proportion",
+#        title = "How often do adjacent sensors follow a hierarchy?")+
+#   scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+#                      labels = c("Duration of Flow",
+#                                 "Flow Permanence",
+#                                 "Relative Position",
+#                                 "Drainage Area"),
+#                      name = "Organizing Scheme")+
+#   facet_wrap(~type)
 
 #plot ecdf instead of boxplots or violin plots
 plot(ecdf(w3_hourly$prop))
@@ -1903,7 +1882,8 @@ ggplot()+
   stat_ecdf(data = w3_new, aes(prop), color = "blue")
 
 sults_so_far %>% 
-  ggplot(aes(prop, color = type)) +
+  filter(timescale == "30mins") %>% 
+  ggplot(aes(prop, color = hierarchy)) +
   stat_ecdf(geom = "line")+
   theme_classic()+
     #geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
@@ -1919,9 +1899,29 @@ sults_so_far %>%
                                 "Relative Position",
                                 "Drainage Area"),
                      name = "Organizing Scheme")+
-  facet_wrap(~shed)+
+  facet_wrap(~shed)#+
   lims(x = c(0.5,1),
        y = c(0.5, 1))
+
+#just plain distributions might look better?
+sults_so_far %>% 
+  filter(timescale == "30mins") %>% 
+  ggplot(aes(prop, color = hierarchy)) +
+geom_density(alpha = 0.5)+
+    theme_classic()+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+
+    #geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
+  labs(x = "Prop",
+       y = "Density",
+       title = "How often do adjacent sensors follow a hierarchy?")+
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+                     labels = c("Duration of Flow",
+                                "Flow Permanence",
+                                "Relative Position",
+                                "Drainage Area"),
+                     name = "Organizing Scheme")+
+  facet_wrap(~shed)#+
 
 #maybe it would look better to add the randomly generated hierarchies for a comparison
 
@@ -2810,10 +2810,7 @@ dof_formatted <- format_outputs(w3_pairs_dof) %>% rename("Dof" = prop)
 topo_formatted <- format_outputs(w3_pairs_topo) %>% rename("Topo" = prop)
 
 #reformat to take 4 formatted datasets as input
-pigs_in_space <- function(position_formatted,
-                          pk_formatted, 
-                          dof_formatted,
-                          topo_formatted,
+pigs_in_space <- function(results,
                           watershed, offset, size){
   
   ##get correct geospatial files depending on input watershed
@@ -2858,10 +2855,7 @@ if(watershed == "W3") {
     rename("ID" = number) %>% 
     select(ID, lat, long) %>%
     unique() %>%
-    left_join(position_formatted, by = "ID") %>% 
-    left_join(pk_formatted, by = "ID") %>% 
-    left_join(dof_formatted, by = "ID") %>% 
-    left_join(topo_formatted, by = "ID") #%>% drop_na()
+    left_join(results, by = "ID")
   
   locs_shape <- vect(locs, geom = c("long", "lat"), crs = "+proj=longlat +datum=WGS84")
   #reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
@@ -2889,7 +2883,7 @@ named_plot <- ggplot()+
   #plot the squares, but offset from center point
   #geom_sf(data = lcc, aes(fill = "Position"),color = "dodgerblue3", pch = 22, size = 1, position = position_nudge(x = offset, y = offset)) +
   #geom_sf(data = lcc, aes(fill = "Pk"), color ="#FFA400",  pch = 22, size = 1, position = position_nudge(x = offset, y = -offset)) +
-  geom_point(data = lcc, aes(x = x, y = y, fill = Pos),  
+  geom_point(data = lcc, aes(x = x, y = y, fill = pos),  
                pch = 22, size = size, position = position_nudge(x = offset, y = -offset)) + 
   scale_fill_gradient(low = "white",
                          high = "dodgerblue3",
@@ -2898,7 +2892,7 @@ named_plot <- ggplot()+
                       labels = c("25%", "50%", "75%"),
                       na.value = NA)+
       new_scale_fill() +
-    geom_point(data = lcc, aes(x = x, y = y, fill = Pk),  
+    geom_point(data = lcc, aes(x = x, y = y, fill = pk),  
                pch = 22, size = size, position = position_nudge(x = offset, y = offset)) + 
 scale_fill_gradient(low = "white",
                          high = "#FFA400",
@@ -2907,7 +2901,7 @@ scale_fill_gradient(low = "white",
                       labels = c("25%", "50%", "75%"),
                       na.value = NA)+
   new_scale_fill() +
-    geom_point(data = lcc, aes(x = x, y = y, fill = Dof),  
+    geom_point(data = lcc, aes(x = x, y = y, fill = dof),  
                pch = 22, size = size, position = position_nudge(x = -offset, y = -offset)) + 
   scale_fill_gradient(low = "white",
                          high = "#397367",
@@ -2916,7 +2910,7 @@ scale_fill_gradient(low = "white",
                       labels = c("25%", "50%", "75%"),
                       na.value = NA)+
   new_scale_fill() +
-    geom_point(data = lcc, aes(x = x, y = y, fill = Topo),  
+    geom_point(data = lcc, aes(x = x, y = y, fill = uaa),  
                pch = 22, size = size, position = position_nudge(x = -offset, y = offset)) + 
   scale_fill_gradient(low = "white",
                          high = "#7E6B8F",
@@ -2939,40 +2933,53 @@ named_plot
 
 }
 
+#prepare sults_so_far
+formatted_input <- sults_so_far %>% filter(shed == "W3", timescale == "30mins") %>% 
+  mutate(up = as.numeric(substr(up, 3, 4))) %>% 
+  rename("ID" = up) %>% 
+  select(ID, prop, hierarchy) %>% 
+  pivot_wider(names_from = hierarchy, values_from = prop) %>% 
+  rename("pos" = 'Relative Position',
+         "pk" = 'Flow Permanence',
+         "dof" = 'Duration of Flow',
+         "uaa" = 'Drainage Area')
 #formatting that looks decent on big screen, in plot viewer pane
-pigs_in_space(position_formatted,
-                          pk_formatted, 
-                          dof_formatted,
-                          topo_formatted,
-                          "W3", 8, size = 5)
+pigs_in_space(formatted_input,
+                          "W3", 8, size = 4)
 
 
 ```
 ```{r pigs-in-space-FB}
 
-position_formatted <- format_outputs(fb_pairs) %>% rename("Pos" = prop)
-pk_formatted <- format_outputs(fb_pairs_pk) %>% rename("Pk" = prop)
-dof_formatted <- format_outputs(fb_pairs_dof) %>% rename("Dof" = prop)
-topo_formatted <- format_outputs(fb_pairs_topo) %>% rename("Topo" = prop)
-
-pigs_in_space(position_formatted,
-                          pk_formatted, 
-                          dof_formatted,
-                          topo_formatted,
-                          "FB", 8, size = 5)
+#prepare sults_so_far
+formatted_input <- sults_so_far %>% filter(shed == "FB", timescale == "30mins") %>% 
+  mutate(up = as.numeric(substr(up, 3, 4))) %>% 
+  rename("ID" = up) %>% 
+  select(ID, prop, hierarchy) %>% 
+  pivot_wider(names_from = hierarchy, values_from = prop) %>% 
+  rename("pos" = 'Relative Position',
+         "pk" = 'Flow Permanence',
+         "dof" = 'Duration of Flow',
+         "uaa" = 'Drainage Area')
+#formatting that looks decent on big screen, in plot viewer pane
+pigs_in_space(formatted_input,
+                          "FB", 7, size = 4)
 ```
 ```{r pigs-in-space-ZZ}
 
-position_formatted <- format_outputs(zz_pairs) %>% rename("Pos" = prop)
-pk_formatted <- format_outputs(zz_pairs_pk) %>% rename("Pk" = prop)
-dof_formatted <- format_outputs(zz_pairs_dof) %>% rename("Dof" = prop)
-topo_formatted <- format_outputs(zz_pairs_topo) %>% rename("Topo" = prop)
-
-pigs_in_space(position_formatted,
-                          pk_formatted, 
-                          dof_formatted,
-                          topo_formatted,
-                          "ZZ", 9, size = 5)
+#prepare sults_so_far
+formatted_input <- sults_so_far %>% filter(shed == "ZZ", timescale == "30mins") %>% 
+  mutate(up = as.numeric(substr(up, 3, 4))) %>% 
+  rename("ID" = up) %>% 
+  select(ID, prop, hierarchy) %>% 
+  pivot_wider(names_from = hierarchy, values_from = prop) %>% 
+  rename("pos" = 'Relative Position',
+         "pk" = 'Flow Permanence',
+         "dof" = 'Duration of Flow',
+         "uaa" = 'Drainage Area')
+#formatting that looks decent on big screen, in plot viewer pane
+pigs_in_space(formatted_input,
+                          "ZZ", 9, size = 4)
 ```
 #test with Botter & Durighetto data
 Conclusion- the max number of observations of the whole network in the dataset they used for their analysis was 7-35 observations. I have 10,000 observations of my network. Doing this kind of analysis on their data will not work I think.
@@ -3308,6 +3315,8 @@ sults_so_far %>%
                      
                      name = "Organizing Scheme")+
   facet_wrap(shed~type)
+
+
 ```
 
 ```{r}
@@ -3461,17 +3470,26 @@ binom$conf.int[1:2]
 ```{r run-test-on-everything}
 #calculate the test statistics on results so far- without temporal degradation
 sults_so_far %>% 
-  group_by(type, shed) %>% 
+  group_by(shed, hierarchy, timescale) %>% 
   summarise(wcx_pvalue = wilcox.test(prop, mu = 0.5, alternative = "greater", exact = FALSE, conf.int = TRUE)$p.value,
             wcx_upperb = wilcox.test(prop, mu = 0.5, alternative = "greater", exact = FALSE, conf.int = TRUE)$conf.int[1],
-            wcx_lowerb = wilcox.test(prop, mu = 0.5, alternative = "greater", exact = FALSE, conf.int = TRUE)$conf.int[2])
+            wcx_lowerb = wilcox.test(prop, mu = 0.5, alternative = "greater", exact = FALSE, conf.int = TRUE)$conf.int[2]) %>% 
+  filter(wcx_pvalue <= 0.1) %>% 
+  knitr::kable()
+
 
 sults_so_far %>% 
-  group_by(type, shed) %>% 
+  group_by(shed, hierarchy, timescale) %>% 
   summarise(sign_p = binom.test(sum(prop > 0.5), length(prop), p = 0.5, alternative = "greater")$p.value,
             sign_upperb = binom.test(sum(prop > 0.5), length(prop), p = 0.5, alternative = "greater")$conf.int[1],
-            sign_lowerb = binom.test(sum(prop > 0.5), length(prop), p = 0.5, alternative = "greater")$conf.int[2]
-)
+            sign_lowerb = binom.test(sum(prop > 0.5), length(prop), p = 0.5, alternative = "greater")$conf.int[2]) %>% 
+  filter(sign_p <= 0.1) %>% 
+  knitr::kable()
+
+sults_so_far %>% 
+    group_by(shed, hierarchy, timescale) %>% 
+  summarise(median = median(prop)) %>% 
+View()
 ```
 
 Test with and without replacement
