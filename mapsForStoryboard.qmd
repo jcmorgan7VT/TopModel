@@ -1476,6 +1476,7 @@ calculate_hierarchy(routes, input, minutes(30))
 
 
 #make a function to loop through the four possible timesteps, and combine the output just for ease of applying this many different variations
+#fantastic 4 determines the input on its own
 fantastic_four <- function(routes, shed){
   theFour <- c("30mins", "hourly", "4hr", "daily")
   
@@ -1652,6 +1653,7 @@ locs <- data_24 %>%
 locs_shape <- vect(locs, 
                    geom=c("long", "lat"), 
                    crs = "+proj=longlat +datum=WGS84")
+
 plot(locs_shape)
 #reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
 lcc <- terra::project(locs_shape, crs(rast(flowacc_output)))
@@ -1804,15 +1806,249 @@ all_uaa <- rbind(fantastic_four(routes_w3, "W3"),
 write_csv(all_pk, "./hierarchy_analysis_results/drainageArea.csv")
 ```
 
+#add randomly generate hierarchies
+```{r define-function-and-w3}
 
+#function where you specify number of iterations, shed, and the hierarchy. Returns the p-value for each times step for each iteration compared to the actual hiearchy run. Relies on sults_so_far being in its current form.
+random_iteration <- function(iterations, shed, hierarchy){
+  if(shed == "W3") {
+    combos <- W3_uaa_ex %>%
+      rename("up" = ID, "uaa" = 'dem3m_flowacc') %>%
+      arrange(desc(uaa)) %>%
+      mutate(down = lag(up)) %>%
+      drop_na() %>%
+      select(up, down) %>%
+      select(up)
+    
+    combos <- unique(combos$up)
+    sample_perms <- replicate(iterations, sample(combos))  # Generate 10 random permutations
+    sample <- as_tibble(sample_perms, .name_repair = "minimal")
+    #colnames(sample) <- paste0("I_",seq(1, iterations, 1))
+    colnames(sample) <- seq(1, iterations, 1)
+  } else if(shed == "FB"){
+    combos <- FB_uaa_ex %>%
+      rename("up" = ID, "uaa" = 'dem3m_flowacc') %>%
+      arrange(desc(uaa)) %>%
+      mutate(down = lag(up)) %>%
+      drop_na() %>%
+      select(up)
+    
+    combos <- unique(combos$up)
+    sample_perms <- replicate(iterations, sample(combos))  # Generate 10 random permutations
+    sample <- as_tibble(sample_perms, .name_repair = "minimal")
+    #colnames(sample) <- paste0("I_",seq(1, iterations, 1))
+    colnames(sample) <- seq(1, iterations, 1)
+    
+  } else if(shed == "ZZ"){
+    combos <- ZZ_uaa_ex %>%
+      rename("up" = ID, "uaa" = '10mdem_flowacc') %>%
+      arrange(desc(uaa)) %>%
+      mutate(down = lag(up)) %>%
+      drop_na() %>%
+      select(up)
+    
+    combos <- unique(combos$up)
+    sample_perms <- replicate(iterations, sample(combos))  # Generate 10 random permutations
+    sample <- as_tibble(sample_perms, .name_repair = "minimal")
+    #colnames(sample) <- paste0("I_",seq(1, iterations, 1))
+    colnames(sample) <- seq(1, iterations, 1)
+  }
+  
+  test_against <- sults_so_far %>% 
+    filter(shed == shed, hierarchy == hierarchy) %>% 
+    group_by(timescale)
+  
+  for(f in 1:iterations){
+    routes <- sample %>% select(paste0(f))
+    colnames(routes) <- "up"
+    routes <- routes %>% mutate(down = lag(up))%>% 
+      drop_na()
+  
+    out <- fantastic_four(routes, shed)
+    #speculative, added later to compare p-values
+    out <- out %>% group_by(timescale) %>% 
+      summarise(pval = wilcox.test(test_against$prop, prop, 
+                                   alternative = "greater", 
+                                   exact = FALSE, conf.int = TRUE)$p.value) %>% 
+      ungroup() %>% 
+    mutate(comparison = hierarchy,
+           shed = shed,
+           timescale = timescale)
+
+    out$iteration <- f
+  
+    if(f == 1) alldat <- out
+    if(f > 1) alldat <- rbind(alldat, out)
+}
+return(alldat)
+}
+
+random_iteration(2, "W3", "Drainage Area")
+random_iteration(2, "FB", "Drainage Area")
+random_iteration(2, "FB", "Relative Position")
+
+
+
+
+#function that generated 100 random iterations
+#w3_10_random <- random_iteration(sample, 100)
+
+intermediate <- sults_so_far %>% 
+  filter(shed == "W3", timescale == "30mins", hierarchy == "Duration of Flow") 
+test <- intermediate$prop
+
+w3_10_random %>% ungroup() %>% 
+  filter(timescale == "30mins") %>% 
+  select(prop, iteration) %>% 
+  group_by(iteration) %>% 
+  summarise(pval = wilcox.test(test, prop, alternative = "greater", exact = FALSE, conf.int = TRUE)$p.value) %>% 
+  mutate("comparison" = "Drainage Area",
+         shed = "W3") %>% summary(pval)
+
+#testing binom test
+
+wilcox.test(test, rand_test$prop, alternative = "greater", exact = FALSE, conf.int = TRUE)$p.value
+
+#determine if the randomly generated scenarios are significantly different
+#this function does not work
+random_comparison <- function(randomdf, propdf, time){
+  randomdf <- filter(randomdf, timescale == time)
+    propdf <- filter(propdf, timescale == time)
+
+  list_of_its <- unique(randomdf)
+  number_of_its <- length(list_of_its)
+  for(r in 1:number_of_its){
+      randomdf <- filter(randomdf, iteration == r)
+
+    pval <- wilcox.test(propdf$prop, randomdf$prop, 
+                        alternative = "greater", 
+                        exact = FALSE, conf.int = TRUE)$p.value
+    
+    out <- data.frame("iteration" = r,
+                      "pval" = pval)
+    
+    if(r == 1) alldat <- out
+    if(r > 1) alldat <- rbind(alldat, out)
+  }
+  return(alldat)
+}
+random_comparison(w3_10_random, intermediate, "30mins")
+```
+
+```{r}
+set.seed(123)  # For reproducibility
+iterations <- 1000
+
+combos <- FB_uaa_ex %>% 
+  rename("up" = ID, "uaa" = 'dem3m_flowacc') %>%
+  arrange(desc(uaa)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up)
+
+combos <- unique(combos$up)
+sample_perms <- replicate(iterations, sample(combos))  # Generate 10 random permutations
+sample <- as_tibble(sample_perms, .name_repair = "minimal")
+#colnames(sample) <- paste0("I_",seq(1, iterations, 1))
+colnames(sample) <- seq(1, iterations, 1)
+  
+random_iteration(sample, 2, 123, "FB", "Drainage Area")
+random_iteration(sample, 2, 123, "FB", "Relative Position")
+
+
+```
+
+```{r random-W3}
+set.seed(124)  # For reproducibility
+iterations <- 100
+
+combos <- W3_uaa_ex %>% 
+  rename("up" = ID, "uaa" = 'dem3m_flowacc') %>%
+  arrange(desc(uaa)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) %>% 
+  mutate(up = paste0("r_",up),
+         down = paste0("r_",down)) %>% 
+  select(up)
+
+combos <- unique(combos$up)
+sample_perms <- replicate(iterations, sample(combos))  # Generate 10 random permutations
+sample <- as_tibble(sample_perms, .name_repair = "minimal")
+#colnames(sample) <- paste0("I_",seq(1, iterations, 1))
+colnames(sample) <- seq(1, iterations, 1)
+
+
+find_score <- function(routes, input, t){
+  for(x in 1:length(routes$up)){
+  
+    out <- calc_support(routes$up[x], routes$down[x], input)
+    if(x == 1) alldat <- out
+    if(x > 1) alldat <- rbind(alldat, out)
+
+  }
+  alldat$prop <- alldat$points/alldat$total
+  alldat$iteration <- t
+
+  return(alldat)
+}
+
+for(t in 1:iterations){
+  routes <- sample %>% select(paste0(t))
+  colnames(routes) <- "up"
+  routes <- routes %>% mutate(down = lag(up))%>% 
+    drop_na()
+    
+  output <- find_score(routes, input, t)
+  if(t == 1) alldat3 <- output
+    if(t > 1) alldat3 <- rbind(alldat3, output)
+}
+
+reference <- sults_so_far %>% group_by(type, shed) %>% 
+  summarise(mean = mean(prop),
+            sd = sd(prop))
+random_w3 <- alldat3
+#alldat is seed 123
+random_w3 %>% group_by(iteration) %>% 
+  summarise(mean = mean(prop),
+            sd = sd(prop)) %>% 
+  ggplot(aes(x = mean, y = sd))+
+  geom_point(alpha = 0.1)+
+  geom_point(data = reference, aes(x = mean, y = sd, color = type, shape = shed), size = 3)+
+  theme_classic()+
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+                     labels = c("Duration of Flow",
+                                "Flow Permanence",
+                                "Relative Position",
+                                "Drainage Area"),
+                     name = "Organizing Scheme")
+random_w3_2 <- alldat3
+
+#alldat3 is seed 124
+alldat3 %>% group_by(iteration) %>% 
+  summarise(mean = mean(prop),
+            sd = sd(prop)) %>% 
+  ggplot(aes(x = mean, y = sd))+
+  geom_point(alpha = 0.1)+
+  geom_point(data = reference, aes(x = mean, y = sd, color = type, shape = shed))+
+  theme_classic()
+
+```
 ##Compile all of my results so far 2
 Consolidate the gains!!
 ```{r consolidating-progress}
 #prop stands for proportion or percentage of transitions that support the hypothesis
+random_w3 <- w3_10_random %>% filter(iteration == 2) %>% 
+  mutate(hierarchy = "Random") %>% 
+  select(-iteration)
+  
+
 sults_so_far <- rbind(all_position,
                       all_pk,
                       all_dof,
-                      all_uaa) %>% 
+                      all_uaa#,
+                      #random_w3
+                      ) %>% 
   mutate(timescale = fct_relevel(timescale,
                               c("30mins", "hourly", "4hr", "daily")),
          hierarchy = as.factor(str_trim(as.character(hierarchy))),
@@ -1821,7 +2057,8 @@ sults_so_far <- rbind(all_position,
                                  c("Duration of Flow",
                                 "Flow Permanence",
                                 "Relative Position",
-                                "Drainage Area")))
+                                "Drainage Area")))#,
+                                #"Random")))
 sults_so_far %>% 
   ggplot(aes(x = shed, y = prop, color = hierarchy)) +
   geom_boxplot()+
@@ -1842,7 +2079,7 @@ sults_so_far %>%
 
 #instead of boxplots, show the ecdf and one-sided violin plot
 sults_so_far %>% 
-  #filter(timescale == "30mins") %>% 
+  filter(timescale == "30mins", shed == "W3") %>% 
   ggplot(aes(x = shed, y = prop, color = hierarchy)) +
   geom_violin()+
   theme_classic()+
@@ -1851,7 +2088,7 @@ sults_so_far %>%
   labs(x = "Watershed",
        y = "Proportion",
        title = "How often do adjacent sensors follow a hierarchy?")+
-  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F", "grey"),
                      name = "Organizing Scheme")+
   facet_wrap(~timescale)
 
@@ -2007,12 +2244,7 @@ return(output)
 calc_support("r_22", "r_23")
 ```
 
-#final plot
-```{r}
-#boxplots or distributions of the percentage of state changes that follow some system, different colors/boxes for each scheme or system, and x axis is the number of sensors.
 
-#facet for each watershed
-```
 
 #Figure 6: relationship between flow permanence and topography, dof and topography
 Conclusion- No clear relationship, this might not make the final cut.
@@ -3505,7 +3737,7 @@ sults_so_far %>%
   knitr::kable()
 
 intermediate <- sults_so_far %>% 
-  filter(shed == "FB", timescale == "30mins", hierarchy == "Drainage Area") 
+  filter(shed == "W3", timescale == "30mins", hierarchy == "Drainage Area") 
 
 #testing binom test
 test <- intermediate$prop
@@ -3529,6 +3761,20 @@ sults_so_far %>%
   summarise(median = median(prop),
             mode1 = Mode(prop)[1],
             mode2 = Mode(prop)[2]) %>% 
+  knitr::kable()
+```
+
+```{r}
+rand_test <- random_w3 %>% filter(timescale == "30mins")
+
+wilcox.test(test, rand_test$prop, alternative = "greater", exact = FALSE, conf.int = TRUE)$p.value
+#wilcox test against randomly generated
+sults_so_far %>% 
+  group_by(shed, hierarchy, timescale) %>% 
+  summarise(wcx_pvalue = wilcox.test(prop, mu = 0.5, alternative = "greater", exact = FALSE, conf.int = TRUE)$p.value,
+            wcx_upperb = wilcox.test(prop, mu = 0.5, alternative = "greater", exact = FALSE, conf.int = TRUE)$conf.int[1],
+            wcx_lowerb = wilcox.test(prop, mu = 0.5, alternative = "greater", exact = FALSE, conf.int = TRUE)$conf.int[2]) %>% 
+  #filter(wcx_pvalue <= 0.1) %>% 
   knitr::kable()
 ```
 
