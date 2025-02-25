@@ -1807,7 +1807,12 @@ write_csv(all_pk, "./hierarchy_analysis_results/drainageArea.csv")
 ```
 
 #add randomly generate hierarchies
-```{r define-function-and-w3}
+Structure of functions:
+| big_iteration(iterations, shed)
+  -| for loop- loops through the 4 hierarchies
+    -|random_iteration(iterations, shed, hierarchy)
+      -| for loop- loops through number of iterations, finding the right combos, routes, and inputs for each watershed and hierarchy. Relies on the the already calculated results from the hierarchy analysis, the form of sults_so_far
+```{r define-functions}
 
 #function where you specify number of iterations, shed, and the hierarchy. Returns the p-value for each times step for each iteration compared to the actual hiearchy run. Relies on sults_so_far being in its current form.
 random_iteration <- function(iterations, shed, hierarchy){
@@ -1883,56 +1888,33 @@ random_iteration <- function(iterations, shed, hierarchy){
 return(alldat)
 }
 
-random_iteration(2, "W3", "Drainage Area")
-random_iteration(2, "FB", "Drainage Area")
-random_iteration(2, "FB", "Relative Position")
+#testing random_iteration function, seems to work as intended
+#random_iteration(2, "W3", "Drainage Area")
+#random_iteration(2, "FB", "Drainage Area")
+#random_iteration(2, "FB", "Relative Position")
 
-
-
-
-#function that generated 100 random iterations
-#w3_10_random <- random_iteration(sample, 100)
-
-intermediate <- sults_so_far %>% 
-  filter(shed == "W3", timescale == "30mins", hierarchy == "Duration of Flow") 
-test <- intermediate$prop
-
-w3_10_random %>% ungroup() %>% 
-  filter(timescale == "30mins") %>% 
-  select(prop, iteration) %>% 
-  group_by(iteration) %>% 
-  summarise(pval = wilcox.test(test, prop, alternative = "greater", exact = FALSE, conf.int = TRUE)$p.value) %>% 
-  mutate("comparison" = "Drainage Area",
-         shed = "W3") %>% summary(pval)
-
-#testing binom test
-
-wilcox.test(test, rand_test$prop, alternative = "greater", exact = FALSE, conf.int = TRUE)$p.value
-
-#determine if the randomly generated scenarios are significantly different
-#this function does not work
-random_comparison <- function(randomdf, propdf, time){
-  randomdf <- filter(randomdf, timescale == time)
-    propdf <- filter(propdf, timescale == time)
-
-  list_of_its <- unique(randomdf)
-  number_of_its <- length(list_of_its)
-  for(r in 1:number_of_its){
-      randomdf <- filter(randomdf, iteration == r)
-
-    pval <- wilcox.test(propdf$prop, randomdf$prop, 
-                        alternative = "greater", 
-                        exact = FALSE, conf.int = TRUE)$p.value
+#make a function to iterate through each hierarchy, make formatted output for plotting
+big_iteration <- function(iterations, shed){
+  hierarchies <- c("Relative Position", "Drainage Area", "Flow Permanence", "Duration of Flow")
+  
+  for(v in 1:4){
+    hierarchy <- hierarchies[v]
+    out <- random_iteration(iterations, shed, hierarchy)
+    out$hierarchy <- hierarchies[v]
     
-    out <- data.frame("iteration" = r,
-                      "pval" = pval)
-    
-    if(r == 1) alldat <- out
-    if(r > 1) alldat <- rbind(alldat, out)
+    if(v == 1) fanfar <- out
+    if(v > 1) fanfar <- rbind(fanfar, out)
   }
-  return(alldat)
+
+  fanfar$shed <- shed
+  return(fanfar)
 }
-random_comparison(w3_10_random, intermediate, "30mins")
+
+big_iteration(2, "W3")
+
+
+
+
 ```
 
 ```{r}
