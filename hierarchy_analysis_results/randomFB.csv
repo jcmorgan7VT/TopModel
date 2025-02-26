@@ -1,0 +1,1601 @@
+timescale,pval,comparison,shed,iteration,hierarchy
+30mins,0.12118997763675818,Relative Position,FB,1,Relative Position
+4hr,0.06607433130580999,Relative Position,FB,1,Relative Position
+daily,0.010203001296609218,Relative Position,FB,1,Relative Position
+hourly,0.10496206194869122,Relative Position,FB,1,Relative Position
+30mins,0.7104507487216143,Relative Position,FB,2,Relative Position
+4hr,0.2952273137531687,Relative Position,FB,2,Relative Position
+daily,0.3142971620090132,Relative Position,FB,2,Relative Position
+hourly,0.7411556775743545,Relative Position,FB,2,Relative Position
+30mins,0.7878327984781497,Relative Position,FB,3,Relative Position
+4hr,0.836535344106171,Relative Position,FB,3,Relative Position
+daily,0.11390434869220728,Relative Position,FB,3,Relative Position
+hourly,0.7883225456646732,Relative Position,FB,3,Relative Position
+30mins,0.10658819520284485,Relative Position,FB,4,Relative Position
+4hr,0.13133809576599711,Relative Position,FB,4,Relative Position
+daily,0.27283131121003645,Relative Position,FB,4,Relative Position
+hourly,0.12525463225568134,Relative Position,FB,4,Relative Position
+30mins,0.24596313851964952,Relative Position,FB,5,Relative Position
+4hr,0.09000163640701471,Relative Position,FB,5,Relative Position
+daily,0.07881561894068984,Relative Position,FB,5,Relative Position
+hourly,0.16980311038769963,Relative Position,FB,5,Relative Position
+30mins,0.3748702096710398,Relative Position,FB,6,Relative Position
+4hr,0.2793813688774861,Relative Position,FB,6,Relative Position
+daily,0.293414695879027,Relative Position,FB,6,Relative Position
+hourly,0.3304888292477669,Relative Position,FB,6,Relative Position
+30mins,0.8135495504071814,Relative Position,FB,7,Relative Position
+4hr,0.7265220238312533,Relative Position,FB,7,Relative Position
+daily,0.03663293410279338,Relative Position,FB,7,Relative Position
+hourly,0.8143795868624184,Relative Position,FB,7,Relative Position
+30mins,0.9465755182535187,Relative Position,FB,8,Relative Position
+4hr,0.7122311636350904,Relative Position,FB,8,Relative Position
+daily,0.3245606626125248,Relative Position,FB,8,Relative Position
+hourly,0.9502697575023343,Relative Position,FB,8,Relative Position
+30mins,0.25530970609571446,Relative Position,FB,9,Relative Position
+4hr,0.09211920359025301,Relative Position,FB,9,Relative Position
+daily,0.15167299786499105,Relative Position,FB,9,Relative Position
+hourly,0.1958039210117558,Relative Position,FB,9,Relative Position
+30mins,0.29186469598366843,Relative Position,FB,10,Relative Position
+4hr,0.3607591015154627,Relative Position,FB,10,Relative Position
+daily,0.1601446175496723,Relative Position,FB,10,Relative Position
+hourly,0.3296456558938951,Relative Position,FB,10,Relative Position
+30mins,0.7913340927440753,Relative Position,FB,11,Relative Position
+4hr,0.5611750002483781,Relative Position,FB,11,Relative Position
+daily,0.19409393387083404,Relative Position,FB,11,Relative Position
+hourly,0.7258807756030217,Relative Position,FB,11,Relative Position
+30mins,0.7933356553742492,Relative Position,FB,12,Relative Position
+4hr,0.6433676747086869,Relative Position,FB,12,Relative Position
+daily,0.3709528550638599,Relative Position,FB,12,Relative Position
+hourly,0.756295197969058,Relative Position,FB,12,Relative Position
+30mins,0.7544747140720655,Relative Position,FB,13,Relative Position
+4hr,0.5139917030612047,Relative Position,FB,13,Relative Position
+daily,0.210856860390731,Relative Position,FB,13,Relative Position
+hourly,0.7384196717647812,Relative Position,FB,13,Relative Position
+30mins,0.3771471641708048,Relative Position,FB,14,Relative Position
+4hr,0.43914852529607734,Relative Position,FB,14,Relative Position
+daily,0.33969956564476983,Relative Position,FB,14,Relative Position
+hourly,0.40975054679531586,Relative Position,FB,14,Relative Position
+30mins,0.5008991246441105,Relative Position,FB,15,Relative Position
+4hr,0.4790864652772812,Relative Position,FB,15,Relative Position
+daily,0.29974773036645086,Relative Position,FB,15,Relative Position
+hourly,0.4886500705376918,Relative Position,FB,15,Relative Position
+30mins,0.600608760740236,Relative Position,FB,16,Relative Position
+4hr,0.7231820006766326,Relative Position,FB,16,Relative Position
+daily,0.3534250503142087,Relative Position,FB,16,Relative Position
+hourly,0.5656186369985804,Relative Position,FB,16,Relative Position
+30mins,0.3498736209624129,Relative Position,FB,17,Relative Position
+4hr,0.07604191212518256,Relative Position,FB,17,Relative Position
+daily,0.05004729420419486,Relative Position,FB,17,Relative Position
+hourly,0.35625862932568264,Relative Position,FB,17,Relative Position
+30mins,0.3144600310675058,Relative Position,FB,18,Relative Position
+4hr,0.19218980642502553,Relative Position,FB,18,Relative Position
+daily,0.146989080004376,Relative Position,FB,18,Relative Position
+hourly,0.30390003295464096,Relative Position,FB,18,Relative Position
+30mins,0.6518619248558899,Relative Position,FB,19,Relative Position
+4hr,0.7642963875421167,Relative Position,FB,19,Relative Position
+daily,0.105812210807151,Relative Position,FB,19,Relative Position
+hourly,0.6365829912059413,Relative Position,FB,19,Relative Position
+30mins,0.44648714059903255,Relative Position,FB,20,Relative Position
+4hr,0.3291364828131776,Relative Position,FB,20,Relative Position
+daily,0.06833291185984641,Relative Position,FB,20,Relative Position
+hourly,0.40578634100078254,Relative Position,FB,20,Relative Position
+30mins,0.43510786253061734,Relative Position,FB,21,Relative Position
+4hr,0.30996756652294766,Relative Position,FB,21,Relative Position
+daily,0.19262231144542283,Relative Position,FB,21,Relative Position
+hourly,0.434426636036248,Relative Position,FB,21,Relative Position
+30mins,0.12144219468845945,Relative Position,FB,22,Relative Position
+4hr,0.059605169273718193,Relative Position,FB,22,Relative Position
+daily,0.2653891221495862,Relative Position,FB,22,Relative Position
+hourly,0.14003152210432138,Relative Position,FB,22,Relative Position
+30mins,0.6672112920859496,Relative Position,FB,23,Relative Position
+4hr,0.5833640811367357,Relative Position,FB,23,Relative Position
+daily,0.09557296374963005,Relative Position,FB,23,Relative Position
+hourly,0.6680480751633824,Relative Position,FB,23,Relative Position
+30mins,0.7758894466463603,Relative Position,FB,24,Relative Position
+4hr,0.6408908542534155,Relative Position,FB,24,Relative Position
+daily,0.29157511831728156,Relative Position,FB,24,Relative Position
+hourly,0.738016857786567,Relative Position,FB,24,Relative Position
+30mins,0.5778980846200014,Relative Position,FB,25,Relative Position
+4hr,0.29110367081141425,Relative Position,FB,25,Relative Position
+daily,0.10845961139422565,Relative Position,FB,25,Relative Position
+hourly,0.4883911119800716,Relative Position,FB,25,Relative Position
+30mins,0.7086852377241647,Relative Position,FB,26,Relative Position
+4hr,0.6649114813480308,Relative Position,FB,26,Relative Position
+daily,0.22639200502113757,Relative Position,FB,26,Relative Position
+hourly,0.6816877884635029,Relative Position,FB,26,Relative Position
+30mins,0.4028653591997457,Relative Position,FB,27,Relative Position
+4hr,0.5405926449180327,Relative Position,FB,27,Relative Position
+daily,0.3543695300546858,Relative Position,FB,27,Relative Position
+hourly,0.389621123377214,Relative Position,FB,27,Relative Position
+30mins,0.6680009641288795,Relative Position,FB,28,Relative Position
+4hr,0.8282804911744606,Relative Position,FB,28,Relative Position
+daily,0.1584967047801907,Relative Position,FB,28,Relative Position
+hourly,0.6645166737166405,Relative Position,FB,28,Relative Position
+30mins,0.6895124292905096,Relative Position,FB,29,Relative Position
+4hr,0.5337579173728273,Relative Position,FB,29,Relative Position
+daily,0.6212482127274727,Relative Position,FB,29,Relative Position
+hourly,0.6976037218118708,Relative Position,FB,29,Relative Position
+30mins,0.7449327740087496,Relative Position,FB,30,Relative Position
+4hr,0.4584603397683348,Relative Position,FB,30,Relative Position
+daily,0.216763514469427,Relative Position,FB,30,Relative Position
+hourly,0.7163879969790371,Relative Position,FB,30,Relative Position
+30mins,0.6120616766898147,Relative Position,FB,31,Relative Position
+4hr,0.5606928957456953,Relative Position,FB,31,Relative Position
+daily,0.20113794989373515,Relative Position,FB,31,Relative Position
+hourly,0.6250225186120212,Relative Position,FB,31,Relative Position
+30mins,0.8282195958024353,Relative Position,FB,32,Relative Position
+4hr,0.3881529345754758,Relative Position,FB,32,Relative Position
+daily,0.362593909862642,Relative Position,FB,32,Relative Position
+hourly,0.7856888288556846,Relative Position,FB,32,Relative Position
+30mins,0.6555582298945705,Relative Position,FB,33,Relative Position
+4hr,0.5669290569887845,Relative Position,FB,33,Relative Position
+daily,0.10247251943370286,Relative Position,FB,33,Relative Position
+hourly,0.7007810608929831,Relative Position,FB,33,Relative Position
+30mins,0.7317351704668374,Relative Position,FB,34,Relative Position
+4hr,0.35322077207503794,Relative Position,FB,34,Relative Position
+daily,0.0870741887164433,Relative Position,FB,34,Relative Position
+hourly,0.6931606567513842,Relative Position,FB,34,Relative Position
+30mins,0.4774220521157269,Relative Position,FB,35,Relative Position
+4hr,0.5873469663553805,Relative Position,FB,35,Relative Position
+daily,0.2770627932723525,Relative Position,FB,35,Relative Position
+hourly,0.4924704437599858,Relative Position,FB,35,Relative Position
+30mins,0.8860898028571632,Relative Position,FB,36,Relative Position
+4hr,0.7433865980831639,Relative Position,FB,36,Relative Position
+daily,0.24769206566096344,Relative Position,FB,36,Relative Position
+hourly,0.8708067547128155,Relative Position,FB,36,Relative Position
+30mins,0.3175910348724545,Relative Position,FB,37,Relative Position
+4hr,0.15166839722356723,Relative Position,FB,37,Relative Position
+daily,0.1829843926960837,Relative Position,FB,37,Relative Position
+hourly,0.30652357526530705,Relative Position,FB,37,Relative Position
+30mins,0.8421555055860546,Relative Position,FB,38,Relative Position
+4hr,0.6494487222568766,Relative Position,FB,38,Relative Position
+daily,0.1330873859141432,Relative Position,FB,38,Relative Position
+hourly,0.7920234150474454,Relative Position,FB,38,Relative Position
+30mins,0.26702305848474095,Relative Position,FB,39,Relative Position
+4hr,0.3198416051640589,Relative Position,FB,39,Relative Position
+daily,0.4810133120989647,Relative Position,FB,39,Relative Position
+hourly,0.262961448564239,Relative Position,FB,39,Relative Position
+30mins,0.34363188610486,Relative Position,FB,40,Relative Position
+4hr,0.3353276287284308,Relative Position,FB,40,Relative Position
+daily,0.18411368990802643,Relative Position,FB,40,Relative Position
+hourly,0.24449921012572776,Relative Position,FB,40,Relative Position
+30mins,0.7585500986037977,Relative Position,FB,41,Relative Position
+4hr,0.47058536142455387,Relative Position,FB,41,Relative Position
+daily,0.0967774414398193,Relative Position,FB,41,Relative Position
+hourly,0.7475436803817608,Relative Position,FB,41,Relative Position
+30mins,0.32558169788396,Relative Position,FB,42,Relative Position
+4hr,0.09756084118817707,Relative Position,FB,42,Relative Position
+daily,0.2703999896096486,Relative Position,FB,42,Relative Position
+hourly,0.30496299522077064,Relative Position,FB,42,Relative Position
+30mins,0.35601737704802505,Relative Position,FB,43,Relative Position
+4hr,0.21861354297997676,Relative Position,FB,43,Relative Position
+daily,0.2056057799180827,Relative Position,FB,43,Relative Position
+hourly,0.32892231438554986,Relative Position,FB,43,Relative Position
+30mins,0.5351324445490269,Relative Position,FB,44,Relative Position
+4hr,0.5018393570852931,Relative Position,FB,44,Relative Position
+daily,0.3634197422343155,Relative Position,FB,44,Relative Position
+hourly,0.5202214808727605,Relative Position,FB,44,Relative Position
+30mins,0.14035655357344198,Relative Position,FB,45,Relative Position
+4hr,0.35294576148795653,Relative Position,FB,45,Relative Position
+daily,0.22453483570165358,Relative Position,FB,45,Relative Position
+hourly,0.14979678498017618,Relative Position,FB,45,Relative Position
+30mins,0.5892634604137629,Relative Position,FB,46,Relative Position
+4hr,0.536506364864959,Relative Position,FB,46,Relative Position
+daily,0.1137348568302797,Relative Position,FB,46,Relative Position
+hourly,0.5634532564860861,Relative Position,FB,46,Relative Position
+30mins,0.6858998853265529,Relative Position,FB,47,Relative Position
+4hr,0.4228896708555764,Relative Position,FB,47,Relative Position
+daily,0.4747291603697987,Relative Position,FB,47,Relative Position
+hourly,0.6615331800863156,Relative Position,FB,47,Relative Position
+30mins,0.16682978531986348,Relative Position,FB,48,Relative Position
+4hr,0.24283228909694982,Relative Position,FB,48,Relative Position
+daily,0.0806445299972297,Relative Position,FB,48,Relative Position
+hourly,0.15562900186112485,Relative Position,FB,48,Relative Position
+30mins,0.9064088103630703,Relative Position,FB,49,Relative Position
+4hr,0.9111008174488243,Relative Position,FB,49,Relative Position
+daily,0.20058786722263058,Relative Position,FB,49,Relative Position
+hourly,0.8963259313337287,Relative Position,FB,49,Relative Position
+30mins,0.4524063100106371,Relative Position,FB,50,Relative Position
+4hr,0.07447186090046588,Relative Position,FB,50,Relative Position
+daily,0.08761037267839089,Relative Position,FB,50,Relative Position
+hourly,0.42921715345947054,Relative Position,FB,50,Relative Position
+30mins,0.1806545711280165,Relative Position,FB,51,Relative Position
+4hr,0.19828856989599128,Relative Position,FB,51,Relative Position
+daily,0.03423475350067834,Relative Position,FB,51,Relative Position
+hourly,0.20715240476358465,Relative Position,FB,51,Relative Position
+30mins,0.8179793410019072,Relative Position,FB,52,Relative Position
+4hr,0.2714167643053983,Relative Position,FB,52,Relative Position
+daily,0.17583199291027096,Relative Position,FB,52,Relative Position
+hourly,0.7686809121471714,Relative Position,FB,52,Relative Position
+30mins,0.4745923625373447,Relative Position,FB,53,Relative Position
+4hr,0.2581430625712614,Relative Position,FB,53,Relative Position
+daily,0.12735007550443186,Relative Position,FB,53,Relative Position
+hourly,0.5425292758831726,Relative Position,FB,53,Relative Position
+30mins,0.9639814674443089,Relative Position,FB,54,Relative Position
+4hr,0.8883222650312048,Relative Position,FB,54,Relative Position
+daily,0.05107082811090515,Relative Position,FB,54,Relative Position
+hourly,0.9277533166025689,Relative Position,FB,54,Relative Position
+30mins,0.40898194428931284,Relative Position,FB,55,Relative Position
+4hr,0.42962475123460075,Relative Position,FB,55,Relative Position
+daily,0.21909346138656713,Relative Position,FB,55,Relative Position
+hourly,0.5782382448151822,Relative Position,FB,55,Relative Position
+30mins,0.5624555826431041,Relative Position,FB,56,Relative Position
+4hr,0.35408195312657187,Relative Position,FB,56,Relative Position
+daily,0.3684064506593215,Relative Position,FB,56,Relative Position
+hourly,0.5464236637238349,Relative Position,FB,56,Relative Position
+30mins,0.4555989661842962,Relative Position,FB,57,Relative Position
+4hr,0.1770578060351346,Relative Position,FB,57,Relative Position
+daily,0.04523867150336002,Relative Position,FB,57,Relative Position
+hourly,0.24124985867578516,Relative Position,FB,57,Relative Position
+30mins,0.5454181057298838,Relative Position,FB,58,Relative Position
+4hr,0.5345626801835046,Relative Position,FB,58,Relative Position
+daily,0.5169650156324154,Relative Position,FB,58,Relative Position
+hourly,0.6594283593180617,Relative Position,FB,58,Relative Position
+30mins,0.5761778277562625,Relative Position,FB,59,Relative Position
+4hr,0.22937049409041113,Relative Position,FB,59,Relative Position
+daily,0.03827089155823116,Relative Position,FB,59,Relative Position
+hourly,0.5105629837862479,Relative Position,FB,59,Relative Position
+30mins,0.5888252052394837,Relative Position,FB,60,Relative Position
+4hr,0.332258706278988,Relative Position,FB,60,Relative Position
+daily,0.23931315139430798,Relative Position,FB,60,Relative Position
+hourly,0.45112238303506363,Relative Position,FB,60,Relative Position
+30mins,0.08682081002824203,Relative Position,FB,61,Relative Position
+4hr,0.059698066686405996,Relative Position,FB,61,Relative Position
+daily,0.20552830782380982,Relative Position,FB,61,Relative Position
+hourly,0.058844774708904715,Relative Position,FB,61,Relative Position
+30mins,0.1868188382710897,Relative Position,FB,62,Relative Position
+4hr,0.17905376527328223,Relative Position,FB,62,Relative Position
+daily,0.4968531558150252,Relative Position,FB,62,Relative Position
+hourly,0.18433250220775335,Relative Position,FB,62,Relative Position
+30mins,0.8028611534874812,Relative Position,FB,63,Relative Position
+4hr,0.6682616654534902,Relative Position,FB,63,Relative Position
+daily,0.3101104813522745,Relative Position,FB,63,Relative Position
+hourly,0.7868545839524987,Relative Position,FB,63,Relative Position
+30mins,0.6221769694634883,Relative Position,FB,64,Relative Position
+4hr,0.47365261472296205,Relative Position,FB,64,Relative Position
+daily,0.24203148514177167,Relative Position,FB,64,Relative Position
+hourly,0.6293853727273648,Relative Position,FB,64,Relative Position
+30mins,0.8773916069620974,Relative Position,FB,65,Relative Position
+4hr,0.752056413628061,Relative Position,FB,65,Relative Position
+daily,0.1130276515825596,Relative Position,FB,65,Relative Position
+hourly,0.8225500478987819,Relative Position,FB,65,Relative Position
+30mins,0.09756352269037315,Relative Position,FB,66,Relative Position
+4hr,0.10915801947981561,Relative Position,FB,66,Relative Position
+daily,0.12676695082470024,Relative Position,FB,66,Relative Position
+hourly,0.06731192989219646,Relative Position,FB,66,Relative Position
+30mins,0.886002716628812,Relative Position,FB,67,Relative Position
+4hr,0.6514651672167785,Relative Position,FB,67,Relative Position
+daily,0.5090806891520213,Relative Position,FB,67,Relative Position
+hourly,0.8726810499940122,Relative Position,FB,67,Relative Position
+30mins,0.3057478084504067,Relative Position,FB,68,Relative Position
+4hr,0.17178507852005875,Relative Position,FB,68,Relative Position
+daily,0.27686990168456715,Relative Position,FB,68,Relative Position
+hourly,0.39513107831651656,Relative Position,FB,68,Relative Position
+30mins,0.6927642733350101,Relative Position,FB,69,Relative Position
+4hr,0.6852488179722558,Relative Position,FB,69,Relative Position
+daily,0.0697145395834068,Relative Position,FB,69,Relative Position
+hourly,0.6040991068547293,Relative Position,FB,69,Relative Position
+30mins,0.6395710751568566,Relative Position,FB,70,Relative Position
+4hr,0.5383318149883304,Relative Position,FB,70,Relative Position
+daily,0.177953113597548,Relative Position,FB,70,Relative Position
+hourly,0.6595382561078311,Relative Position,FB,70,Relative Position
+30mins,0.4955167098989872,Relative Position,FB,71,Relative Position
+4hr,0.5245856464389019,Relative Position,FB,71,Relative Position
+daily,0.10591593143877091,Relative Position,FB,71,Relative Position
+hourly,0.48551840111881767,Relative Position,FB,71,Relative Position
+30mins,0.6174831863164347,Relative Position,FB,72,Relative Position
+4hr,0.5412893273406127,Relative Position,FB,72,Relative Position
+daily,0.11652919415490759,Relative Position,FB,72,Relative Position
+hourly,0.622066953256719,Relative Position,FB,72,Relative Position
+30mins,0.23861415643797057,Relative Position,FB,73,Relative Position
+4hr,0.0849510166402018,Relative Position,FB,73,Relative Position
+daily,0.03957832954209289,Relative Position,FB,73,Relative Position
+hourly,0.1361977563194573,Relative Position,FB,73,Relative Position
+30mins,0.2308211683276052,Relative Position,FB,74,Relative Position
+4hr,0.2993079881632622,Relative Position,FB,74,Relative Position
+daily,0.06788902137121595,Relative Position,FB,74,Relative Position
+hourly,0.27385362636675126,Relative Position,FB,74,Relative Position
+30mins,0.6099614345078194,Relative Position,FB,75,Relative Position
+4hr,0.4448196567183328,Relative Position,FB,75,Relative Position
+daily,0.32822598876659215,Relative Position,FB,75,Relative Position
+hourly,0.5808275648158898,Relative Position,FB,75,Relative Position
+30mins,0.3234121001120498,Relative Position,FB,76,Relative Position
+4hr,0.2905567006459469,Relative Position,FB,76,Relative Position
+daily,0.5116866901335001,Relative Position,FB,76,Relative Position
+hourly,0.3105828797665575,Relative Position,FB,76,Relative Position
+30mins,0.5583441582391327,Relative Position,FB,77,Relative Position
+4hr,0.47506987363576797,Relative Position,FB,77,Relative Position
+daily,0.1208932109377159,Relative Position,FB,77,Relative Position
+hourly,0.6594707397084755,Relative Position,FB,77,Relative Position
+30mins,0.3329896971325579,Relative Position,FB,78,Relative Position
+4hr,0.32020717849735286,Relative Position,FB,78,Relative Position
+daily,0.21028425712606455,Relative Position,FB,78,Relative Position
+hourly,0.32237579349349943,Relative Position,FB,78,Relative Position
+30mins,0.1533123603114117,Relative Position,FB,79,Relative Position
+4hr,0.17261593283248405,Relative Position,FB,79,Relative Position
+daily,0.15217534228581517,Relative Position,FB,79,Relative Position
+hourly,0.07531479561649491,Relative Position,FB,79,Relative Position
+30mins,0.6060666351882366,Relative Position,FB,80,Relative Position
+4hr,0.492198328053889,Relative Position,FB,80,Relative Position
+daily,0.3730874744717054,Relative Position,FB,80,Relative Position
+hourly,0.4707170814704093,Relative Position,FB,80,Relative Position
+30mins,0.696979590802036,Relative Position,FB,81,Relative Position
+4hr,0.6134275884556156,Relative Position,FB,81,Relative Position
+daily,0.3464360641242485,Relative Position,FB,81,Relative Position
+hourly,0.7433837231522398,Relative Position,FB,81,Relative Position
+30mins,0.6794785832441705,Relative Position,FB,82,Relative Position
+4hr,0.4628063944226186,Relative Position,FB,82,Relative Position
+daily,0.4520133655181644,Relative Position,FB,82,Relative Position
+hourly,0.5499945076133568,Relative Position,FB,82,Relative Position
+30mins,0.6480495829831385,Relative Position,FB,83,Relative Position
+4hr,0.34046218806913364,Relative Position,FB,83,Relative Position
+daily,0.13241496802643316,Relative Position,FB,83,Relative Position
+hourly,0.6256729354436403,Relative Position,FB,83,Relative Position
+30mins,0.44054440530641104,Relative Position,FB,84,Relative Position
+4hr,0.4975280728016274,Relative Position,FB,84,Relative Position
+daily,0.3576242899279011,Relative Position,FB,84,Relative Position
+hourly,0.33465777771384964,Relative Position,FB,84,Relative Position
+30mins,0.44198860373480064,Relative Position,FB,85,Relative Position
+4hr,0.22732452109335516,Relative Position,FB,85,Relative Position
+daily,0.2737632436234524,Relative Position,FB,85,Relative Position
+hourly,0.46665944343472693,Relative Position,FB,85,Relative Position
+30mins,0.42432307427409655,Relative Position,FB,86,Relative Position
+4hr,0.15179100994693698,Relative Position,FB,86,Relative Position
+daily,0.25860136584708804,Relative Position,FB,86,Relative Position
+hourly,0.3724253670269838,Relative Position,FB,86,Relative Position
+30mins,0.35821399912466434,Relative Position,FB,87,Relative Position
+4hr,0.24002196360149144,Relative Position,FB,87,Relative Position
+daily,0.055348104552917596,Relative Position,FB,87,Relative Position
+hourly,0.2574671884561138,Relative Position,FB,87,Relative Position
+30mins,0.9193838290337969,Relative Position,FB,88,Relative Position
+4hr,0.8244539127614847,Relative Position,FB,88,Relative Position
+daily,0.4592745590596544,Relative Position,FB,88,Relative Position
+hourly,0.9214693303809206,Relative Position,FB,88,Relative Position
+30mins,0.37768428581352304,Relative Position,FB,89,Relative Position
+4hr,0.20536133263760015,Relative Position,FB,89,Relative Position
+daily,0.5932830457810849,Relative Position,FB,89,Relative Position
+hourly,0.3293590709525229,Relative Position,FB,89,Relative Position
+30mins,0.29878214233357536,Relative Position,FB,90,Relative Position
+4hr,0.11512035636668742,Relative Position,FB,90,Relative Position
+daily,0.1600623690831093,Relative Position,FB,90,Relative Position
+hourly,0.2677800856050937,Relative Position,FB,90,Relative Position
+30mins,0.8221984807547751,Relative Position,FB,91,Relative Position
+4hr,0.5441668183480988,Relative Position,FB,91,Relative Position
+daily,0.03451552278801321,Relative Position,FB,91,Relative Position
+hourly,0.8161427124665892,Relative Position,FB,91,Relative Position
+30mins,0.5682207987566852,Relative Position,FB,92,Relative Position
+4hr,0.6443115556877074,Relative Position,FB,92,Relative Position
+daily,0.04835507438256498,Relative Position,FB,92,Relative Position
+hourly,0.5139334883818444,Relative Position,FB,92,Relative Position
+30mins,0.7476423942324988,Relative Position,FB,93,Relative Position
+4hr,0.4433585870628573,Relative Position,FB,93,Relative Position
+daily,0.263638172196616,Relative Position,FB,93,Relative Position
+hourly,0.6796849961484002,Relative Position,FB,93,Relative Position
+30mins,0.25732730118039066,Relative Position,FB,94,Relative Position
+4hr,0.2243481570329305,Relative Position,FB,94,Relative Position
+daily,0.27338824201689005,Relative Position,FB,94,Relative Position
+hourly,0.2528937595089259,Relative Position,FB,94,Relative Position
+30mins,0.7165835719506709,Relative Position,FB,95,Relative Position
+4hr,0.6403222006970393,Relative Position,FB,95,Relative Position
+daily,0.4185313414290813,Relative Position,FB,95,Relative Position
+hourly,0.7348853841311593,Relative Position,FB,95,Relative Position
+30mins,0.7765526192018354,Relative Position,FB,96,Relative Position
+4hr,0.49638021278786626,Relative Position,FB,96,Relative Position
+daily,0.44054272497742863,Relative Position,FB,96,Relative Position
+hourly,0.6035340001669477,Relative Position,FB,96,Relative Position
+30mins,0.8165238925410143,Relative Position,FB,97,Relative Position
+4hr,0.5145927289195414,Relative Position,FB,97,Relative Position
+daily,0.21850159821968926,Relative Position,FB,97,Relative Position
+hourly,0.7233237651146853,Relative Position,FB,97,Relative Position
+30mins,0.43344072344570517,Relative Position,FB,98,Relative Position
+4hr,0.2795145740327627,Relative Position,FB,98,Relative Position
+daily,0.10427247801480978,Relative Position,FB,98,Relative Position
+hourly,0.40341039993963257,Relative Position,FB,98,Relative Position
+30mins,0.20950178462530586,Relative Position,FB,99,Relative Position
+4hr,0.34991067525962827,Relative Position,FB,99,Relative Position
+daily,0.16268447898849178,Relative Position,FB,99,Relative Position
+hourly,0.19879922604083564,Relative Position,FB,99,Relative Position
+30mins,0.4427682140678272,Relative Position,FB,100,Relative Position
+4hr,0.42962635983573894,Relative Position,FB,100,Relative Position
+daily,0.14538879763416312,Relative Position,FB,100,Relative Position
+hourly,0.41710254231419824,Relative Position,FB,100,Relative Position
+30mins,0.718761224524626,Drainage Area,FB,1,Drainage Area
+4hr,0.46598334101910055,Drainage Area,FB,1,Drainage Area
+daily,0.17707713371929035,Drainage Area,FB,1,Drainage Area
+hourly,0.6981116308640061,Drainage Area,FB,1,Drainage Area
+30mins,0.1450673843014977,Drainage Area,FB,2,Drainage Area
+4hr,0.12180291422632457,Drainage Area,FB,2,Drainage Area
+daily,0.46229444149275617,Drainage Area,FB,2,Drainage Area
+hourly,0.05899829007865665,Drainage Area,FB,2,Drainage Area
+30mins,0.07071205225228369,Drainage Area,FB,3,Drainage Area
+4hr,0.06951373632926723,Drainage Area,FB,3,Drainage Area
+daily,0.2190005876216837,Drainage Area,FB,3,Drainage Area
+hourly,0.12695319030314,Drainage Area,FB,3,Drainage Area
+30mins,0.7449963780620235,Drainage Area,FB,4,Drainage Area
+4hr,0.5827741464951821,Drainage Area,FB,4,Drainage Area
+daily,0.3993800004507998,Drainage Area,FB,4,Drainage Area
+hourly,0.616020287315392,Drainage Area,FB,4,Drainage Area
+30mins,0.6753332522240559,Drainage Area,FB,5,Drainage Area
+4hr,0.41162823834798284,Drainage Area,FB,5,Drainage Area
+daily,0.1761434306102315,Drainage Area,FB,5,Drainage Area
+hourly,0.6151250603391858,Drainage Area,FB,5,Drainage Area
+30mins,0.4287648221494723,Drainage Area,FB,6,Drainage Area
+4hr,0.34459143156360195,Drainage Area,FB,6,Drainage Area
+daily,0.18652598684926658,Drainage Area,FB,6,Drainage Area
+hourly,0.32684019874796033,Drainage Area,FB,6,Drainage Area
+30mins,0.655018560306029,Drainage Area,FB,7,Drainage Area
+4hr,0.6615825131432902,Drainage Area,FB,7,Drainage Area
+daily,0.12265963565521319,Drainage Area,FB,7,Drainage Area
+hourly,0.5993543612983262,Drainage Area,FB,7,Drainage Area
+30mins,0.22817385680876667,Drainage Area,FB,8,Drainage Area
+4hr,0.19058256549113248,Drainage Area,FB,8,Drainage Area
+daily,0.528410537924488,Drainage Area,FB,8,Drainage Area
+hourly,0.22672864523113098,Drainage Area,FB,8,Drainage Area
+30mins,0.3869448765238789,Drainage Area,FB,9,Drainage Area
+4hr,0.23759666394154078,Drainage Area,FB,9,Drainage Area
+daily,0.3028956579888408,Drainage Area,FB,9,Drainage Area
+hourly,0.37913637162301417,Drainage Area,FB,9,Drainage Area
+30mins,0.6517970388450943,Drainage Area,FB,10,Drainage Area
+4hr,0.4083227209123289,Drainage Area,FB,10,Drainage Area
+daily,0.14257088984318786,Drainage Area,FB,10,Drainage Area
+hourly,0.6339317749854839,Drainage Area,FB,10,Drainage Area
+30mins,0.7568398280335609,Drainage Area,FB,11,Drainage Area
+4hr,0.4155346826408211,Drainage Area,FB,11,Drainage Area
+daily,0.23922574644544042,Drainage Area,FB,11,Drainage Area
+hourly,0.7400311928428205,Drainage Area,FB,11,Drainage Area
+30mins,0.49662840557140947,Drainage Area,FB,12,Drainage Area
+4hr,0.47618713023398584,Drainage Area,FB,12,Drainage Area
+daily,0.14855336809483807,Drainage Area,FB,12,Drainage Area
+hourly,0.4853928508371731,Drainage Area,FB,12,Drainage Area
+30mins,0.40818967852073623,Drainage Area,FB,13,Drainage Area
+4hr,0.25910452403820894,Drainage Area,FB,13,Drainage Area
+daily,0.27621237712340735,Drainage Area,FB,13,Drainage Area
+hourly,0.21212186915563197,Drainage Area,FB,13,Drainage Area
+30mins,0.8819114306063829,Drainage Area,FB,14,Drainage Area
+4hr,0.9558338125247415,Drainage Area,FB,14,Drainage Area
+daily,0.40854261638735284,Drainage Area,FB,14,Drainage Area
+hourly,0.8569889813195425,Drainage Area,FB,14,Drainage Area
+30mins,0.5467941099103553,Drainage Area,FB,15,Drainage Area
+4hr,0.5129882104554047,Drainage Area,FB,15,Drainage Area
+daily,0.5174149199199832,Drainage Area,FB,15,Drainage Area
+hourly,0.5769957989603982,Drainage Area,FB,15,Drainage Area
+30mins,0.3406717301783172,Drainage Area,FB,16,Drainage Area
+4hr,0.18193264845826984,Drainage Area,FB,16,Drainage Area
+daily,0.3698909379496528,Drainage Area,FB,16,Drainage Area
+hourly,0.3628012616001701,Drainage Area,FB,16,Drainage Area
+30mins,0.19302774559518243,Drainage Area,FB,17,Drainage Area
+4hr,0.34485900301641437,Drainage Area,FB,17,Drainage Area
+daily,0.4370375119568086,Drainage Area,FB,17,Drainage Area
+hourly,0.21095587006625172,Drainage Area,FB,17,Drainage Area
+30mins,0.6970101050605831,Drainage Area,FB,18,Drainage Area
+4hr,0.5308937227275159,Drainage Area,FB,18,Drainage Area
+daily,0.3479990744620114,Drainage Area,FB,18,Drainage Area
+hourly,0.5718732885530026,Drainage Area,FB,18,Drainage Area
+30mins,0.13090826342437512,Drainage Area,FB,19,Drainage Area
+4hr,0.28593350968272946,Drainage Area,FB,19,Drainage Area
+daily,0.10254932231029124,Drainage Area,FB,19,Drainage Area
+hourly,0.14342625574549714,Drainage Area,FB,19,Drainage Area
+30mins,0.19838797084025062,Drainage Area,FB,20,Drainage Area
+4hr,0.16468119135283246,Drainage Area,FB,20,Drainage Area
+daily,0.1347874579904135,Drainage Area,FB,20,Drainage Area
+hourly,0.31572375812868236,Drainage Area,FB,20,Drainage Area
+30mins,0.7970532406695445,Drainage Area,FB,21,Drainage Area
+4hr,0.5611755289837036,Drainage Area,FB,21,Drainage Area
+daily,0.07989187547662839,Drainage Area,FB,21,Drainage Area
+hourly,0.7877640069835814,Drainage Area,FB,21,Drainage Area
+30mins,0.9388671688606898,Drainage Area,FB,22,Drainage Area
+4hr,0.6932519171786871,Drainage Area,FB,22,Drainage Area
+daily,0.03934501147165805,Drainage Area,FB,22,Drainage Area
+hourly,0.8680718765508297,Drainage Area,FB,22,Drainage Area
+30mins,0.6215212647969095,Drainage Area,FB,23,Drainage Area
+4hr,0.37093737502686,Drainage Area,FB,23,Drainage Area
+daily,0.45692685958801343,Drainage Area,FB,23,Drainage Area
+hourly,0.6264424390042466,Drainage Area,FB,23,Drainage Area
+30mins,0.5130632083552086,Drainage Area,FB,24,Drainage Area
+4hr,0.5580897118003313,Drainage Area,FB,24,Drainage Area
+daily,0.09981066436637873,Drainage Area,FB,24,Drainage Area
+hourly,0.5188262243538295,Drainage Area,FB,24,Drainage Area
+30mins,0.1482504548360895,Drainage Area,FB,25,Drainage Area
+4hr,0.047428413136580506,Drainage Area,FB,25,Drainage Area
+daily,0.0655653483473025,Drainage Area,FB,25,Drainage Area
+hourly,0.1265006737306311,Drainage Area,FB,25,Drainage Area
+30mins,0.7473667241730557,Drainage Area,FB,26,Drainage Area
+4hr,0.8128440920229336,Drainage Area,FB,26,Drainage Area
+daily,0.43255433427283174,Drainage Area,FB,26,Drainage Area
+hourly,0.7629393897758635,Drainage Area,FB,26,Drainage Area
+30mins,0.5342103941986505,Drainage Area,FB,27,Drainage Area
+4hr,0.6271790394772141,Drainage Area,FB,27,Drainage Area
+daily,0.13423491140001556,Drainage Area,FB,27,Drainage Area
+hourly,0.5266992896910768,Drainage Area,FB,27,Drainage Area
+30mins,0.0349071006122552,Drainage Area,FB,28,Drainage Area
+4hr,0.05696659083649295,Drainage Area,FB,28,Drainage Area
+daily,0.13174997807476158,Drainage Area,FB,28,Drainage Area
+hourly,0.02607325521516978,Drainage Area,FB,28,Drainage Area
+30mins,0.9485983752586754,Drainage Area,FB,29,Drainage Area
+4hr,0.8925406926457485,Drainage Area,FB,29,Drainage Area
+daily,0.5444124293685232,Drainage Area,FB,29,Drainage Area
+hourly,0.9393267508184638,Drainage Area,FB,29,Drainage Area
+30mins,0.3632116408397708,Drainage Area,FB,30,Drainage Area
+4hr,0.3275653616302,Drainage Area,FB,30,Drainage Area
+daily,0.10406874511862466,Drainage Area,FB,30,Drainage Area
+hourly,0.253614228396837,Drainage Area,FB,30,Drainage Area
+30mins,0.5922767946847751,Drainage Area,FB,31,Drainage Area
+4hr,0.5090365885487403,Drainage Area,FB,31,Drainage Area
+daily,0.1565265544264203,Drainage Area,FB,31,Drainage Area
+hourly,0.7494329288999441,Drainage Area,FB,31,Drainage Area
+30mins,0.3987974376464233,Drainage Area,FB,32,Drainage Area
+4hr,0.22387620369197767,Drainage Area,FB,32,Drainage Area
+daily,0.10064613375598358,Drainage Area,FB,32,Drainage Area
+hourly,0.3061119114045288,Drainage Area,FB,32,Drainage Area
+30mins,0.7642645064470747,Drainage Area,FB,33,Drainage Area
+4hr,0.5766252156874577,Drainage Area,FB,33,Drainage Area
+daily,0.02560876642416598,Drainage Area,FB,33,Drainage Area
+hourly,0.6724322205923788,Drainage Area,FB,33,Drainage Area
+30mins,0.579816196585391,Drainage Area,FB,34,Drainage Area
+4hr,0.4998850363895597,Drainage Area,FB,34,Drainage Area
+daily,0.05103876603262864,Drainage Area,FB,34,Drainage Area
+hourly,0.5551187066327504,Drainage Area,FB,34,Drainage Area
+30mins,0.9408686200364491,Drainage Area,FB,35,Drainage Area
+4hr,0.7518941491219593,Drainage Area,FB,35,Drainage Area
+daily,0.1937875914244567,Drainage Area,FB,35,Drainage Area
+hourly,0.9064952348234683,Drainage Area,FB,35,Drainage Area
+30mins,0.4507857025363803,Drainage Area,FB,36,Drainage Area
+4hr,0.35471093860153796,Drainage Area,FB,36,Drainage Area
+daily,0.29916307639503603,Drainage Area,FB,36,Drainage Area
+hourly,0.5386807893528404,Drainage Area,FB,36,Drainage Area
+30mins,0.7283126700212843,Drainage Area,FB,37,Drainage Area
+4hr,0.8833658268204597,Drainage Area,FB,37,Drainage Area
+daily,0.08502976600378685,Drainage Area,FB,37,Drainage Area
+hourly,0.7673609576610441,Drainage Area,FB,37,Drainage Area
+30mins,0.4415829458528242,Drainage Area,FB,38,Drainage Area
+4hr,0.5060679675408251,Drainage Area,FB,38,Drainage Area
+daily,0.6457372705400721,Drainage Area,FB,38,Drainage Area
+hourly,0.43136867111336563,Drainage Area,FB,38,Drainage Area
+30mins,0.4058217468209146,Drainage Area,FB,39,Drainage Area
+4hr,0.1393666353514985,Drainage Area,FB,39,Drainage Area
+daily,0.2281697463781989,Drainage Area,FB,39,Drainage Area
+hourly,0.3223781495010346,Drainage Area,FB,39,Drainage Area
+30mins,0.5699891666663519,Drainage Area,FB,40,Drainage Area
+4hr,0.19845007843193904,Drainage Area,FB,40,Drainage Area
+daily,0.10529480075637244,Drainage Area,FB,40,Drainage Area
+hourly,0.6406456352179901,Drainage Area,FB,40,Drainage Area
+30mins,0.44135517939791535,Drainage Area,FB,41,Drainage Area
+4hr,0.38055677882739286,Drainage Area,FB,41,Drainage Area
+daily,0.30407549999999306,Drainage Area,FB,41,Drainage Area
+hourly,0.4438572128162209,Drainage Area,FB,41,Drainage Area
+30mins,0.14076775908468478,Drainage Area,FB,42,Drainage Area
+4hr,0.22537444329027376,Drainage Area,FB,42,Drainage Area
+daily,0.01260933635362525,Drainage Area,FB,42,Drainage Area
+hourly,0.15472870320850288,Drainage Area,FB,42,Drainage Area
+30mins,0.12553360140527664,Drainage Area,FB,43,Drainage Area
+4hr,0.09924981147651629,Drainage Area,FB,43,Drainage Area
+daily,0.02974342305937238,Drainage Area,FB,43,Drainage Area
+hourly,0.13742120563850746,Drainage Area,FB,43,Drainage Area
+30mins,0.369527311313906,Drainage Area,FB,44,Drainage Area
+4hr,0.3928474805157675,Drainage Area,FB,44,Drainage Area
+daily,0.1940136455023001,Drainage Area,FB,44,Drainage Area
+hourly,0.2948967089933462,Drainage Area,FB,44,Drainage Area
+30mins,0.5408321467613806,Drainage Area,FB,45,Drainage Area
+4hr,0.4817861766110772,Drainage Area,FB,45,Drainage Area
+daily,0.22268201093800566,Drainage Area,FB,45,Drainage Area
+hourly,0.5426321303864953,Drainage Area,FB,45,Drainage Area
+30mins,0.7050755017705241,Drainage Area,FB,46,Drainage Area
+4hr,0.5363896005374676,Drainage Area,FB,46,Drainage Area
+daily,0.15558180767480978,Drainage Area,FB,46,Drainage Area
+hourly,0.6524063578879495,Drainage Area,FB,46,Drainage Area
+30mins,0.376068610345977,Drainage Area,FB,47,Drainage Area
+4hr,0.40651269430092285,Drainage Area,FB,47,Drainage Area
+daily,0.07384278392101909,Drainage Area,FB,47,Drainage Area
+hourly,0.3705040435957351,Drainage Area,FB,47,Drainage Area
+30mins,0.5175825735075326,Drainage Area,FB,48,Drainage Area
+4hr,0.6539320927403937,Drainage Area,FB,48,Drainage Area
+daily,0.07009805478895052,Drainage Area,FB,48,Drainage Area
+hourly,0.5451955586910998,Drainage Area,FB,48,Drainage Area
+30mins,0.6374649089560107,Drainage Area,FB,49,Drainage Area
+4hr,0.4369810258100517,Drainage Area,FB,49,Drainage Area
+daily,0.2286909973283908,Drainage Area,FB,49,Drainage Area
+hourly,0.62868838193201,Drainage Area,FB,49,Drainage Area
+30mins,0.8402704903824721,Drainage Area,FB,50,Drainage Area
+4hr,0.5774500056703815,Drainage Area,FB,50,Drainage Area
+daily,0.37404594905207045,Drainage Area,FB,50,Drainage Area
+hourly,0.8210884430563604,Drainage Area,FB,50,Drainage Area
+30mins,0.11537464199158608,Drainage Area,FB,51,Drainage Area
+4hr,0.04860689522330994,Drainage Area,FB,51,Drainage Area
+daily,0.49471797206699253,Drainage Area,FB,51,Drainage Area
+hourly,0.0774663360425754,Drainage Area,FB,51,Drainage Area
+30mins,0.5313950206803782,Drainage Area,FB,52,Drainage Area
+4hr,0.33339360176792193,Drainage Area,FB,52,Drainage Area
+daily,0.19799347212794868,Drainage Area,FB,52,Drainage Area
+hourly,0.3698612590085579,Drainage Area,FB,52,Drainage Area
+30mins,0.8874573996701205,Drainage Area,FB,53,Drainage Area
+4hr,0.6873311731509224,Drainage Area,FB,53,Drainage Area
+daily,0.10606017317373154,Drainage Area,FB,53,Drainage Area
+hourly,0.8583812920569365,Drainage Area,FB,53,Drainage Area
+30mins,0.3335166882801292,Drainage Area,FB,54,Drainage Area
+4hr,0.3557262277980242,Drainage Area,FB,54,Drainage Area
+daily,0.2439712268857954,Drainage Area,FB,54,Drainage Area
+hourly,0.3267330756138336,Drainage Area,FB,54,Drainage Area
+30mins,0.6577384606070876,Drainage Area,FB,55,Drainage Area
+4hr,0.3656149911966741,Drainage Area,FB,55,Drainage Area
+daily,0.4030818289518334,Drainage Area,FB,55,Drainage Area
+hourly,0.5665937686092322,Drainage Area,FB,55,Drainage Area
+30mins,0.28703082693703896,Drainage Area,FB,56,Drainage Area
+4hr,0.41144886308582507,Drainage Area,FB,56,Drainage Area
+daily,0.10580511016459987,Drainage Area,FB,56,Drainage Area
+hourly,0.32435143407267236,Drainage Area,FB,56,Drainage Area
+30mins,0.6229883127723355,Drainage Area,FB,57,Drainage Area
+4hr,0.34519330958188377,Drainage Area,FB,57,Drainage Area
+daily,0.42304916053778535,Drainage Area,FB,57,Drainage Area
+hourly,0.5574757810133356,Drainage Area,FB,57,Drainage Area
+30mins,0.4535769788119614,Drainage Area,FB,58,Drainage Area
+4hr,0.4768249174204466,Drainage Area,FB,58,Drainage Area
+daily,0.08464565019963595,Drainage Area,FB,58,Drainage Area
+hourly,0.4708054444644822,Drainage Area,FB,58,Drainage Area
+30mins,0.7892008513037152,Drainage Area,FB,59,Drainage Area
+4hr,0.7384217270188727,Drainage Area,FB,59,Drainage Area
+daily,0.5037087550597775,Drainage Area,FB,59,Drainage Area
+hourly,0.7911960750285046,Drainage Area,FB,59,Drainage Area
+30mins,0.8717024116453935,Drainage Area,FB,60,Drainage Area
+4hr,0.7018088918991447,Drainage Area,FB,60,Drainage Area
+daily,0.1509181134032212,Drainage Area,FB,60,Drainage Area
+hourly,0.8732177188902801,Drainage Area,FB,60,Drainage Area
+30mins,0.4455495450246963,Drainage Area,FB,61,Drainage Area
+4hr,0.5809435126980388,Drainage Area,FB,61,Drainage Area
+daily,0.2383460231189934,Drainage Area,FB,61,Drainage Area
+hourly,0.45145636734211525,Drainage Area,FB,61,Drainage Area
+30mins,0.6797390941147845,Drainage Area,FB,62,Drainage Area
+4hr,0.5647296087067478,Drainage Area,FB,62,Drainage Area
+daily,0.27630147748680556,Drainage Area,FB,62,Drainage Area
+hourly,0.6606891127631314,Drainage Area,FB,62,Drainage Area
+30mins,0.5061203837839886,Drainage Area,FB,63,Drainage Area
+4hr,0.32415752148036336,Drainage Area,FB,63,Drainage Area
+daily,0.04932215985456169,Drainage Area,FB,63,Drainage Area
+hourly,0.3760940395730736,Drainage Area,FB,63,Drainage Area
+30mins,0.39536116008917144,Drainage Area,FB,64,Drainage Area
+4hr,0.32577481542441755,Drainage Area,FB,64,Drainage Area
+daily,0.23922621949841677,Drainage Area,FB,64,Drainage Area
+hourly,0.369254382614311,Drainage Area,FB,64,Drainage Area
+30mins,0.2217629398807809,Drainage Area,FB,65,Drainage Area
+4hr,0.22974021220863647,Drainage Area,FB,65,Drainage Area
+daily,0.14250738943055855,Drainage Area,FB,65,Drainage Area
+hourly,0.2587563746823368,Drainage Area,FB,65,Drainage Area
+30mins,0.28522596622100266,Drainage Area,FB,66,Drainage Area
+4hr,0.18943396446243915,Drainage Area,FB,66,Drainage Area
+daily,0.18894415287256633,Drainage Area,FB,66,Drainage Area
+hourly,0.33941996924205664,Drainage Area,FB,66,Drainage Area
+30mins,0.5718802684513964,Drainage Area,FB,67,Drainage Area
+4hr,0.33955545569301426,Drainage Area,FB,67,Drainage Area
+daily,0.2000378622832573,Drainage Area,FB,67,Drainage Area
+hourly,0.5678237632670071,Drainage Area,FB,67,Drainage Area
+30mins,0.4646445526144728,Drainage Area,FB,68,Drainage Area
+4hr,0.5577372363792629,Drainage Area,FB,68,Drainage Area
+daily,0.11520635425154697,Drainage Area,FB,68,Drainage Area
+hourly,0.42359940340367636,Drainage Area,FB,68,Drainage Area
+30mins,0.6174923903759667,Drainage Area,FB,69,Drainage Area
+4hr,0.4858780039373355,Drainage Area,FB,69,Drainage Area
+daily,0.05781291948255109,Drainage Area,FB,69,Drainage Area
+hourly,0.6005117618944884,Drainage Area,FB,69,Drainage Area
+30mins,0.43798371857689394,Drainage Area,FB,70,Drainage Area
+4hr,0.43844637258777436,Drainage Area,FB,70,Drainage Area
+daily,0.6601946512426997,Drainage Area,FB,70,Drainage Area
+hourly,0.4156511673908784,Drainage Area,FB,70,Drainage Area
+30mins,0.7828208729648903,Drainage Area,FB,71,Drainage Area
+4hr,0.53216450228757,Drainage Area,FB,71,Drainage Area
+daily,0.2972073207254772,Drainage Area,FB,71,Drainage Area
+hourly,0.7365446439121964,Drainage Area,FB,71,Drainage Area
+30mins,0.6115033073983067,Drainage Area,FB,72,Drainage Area
+4hr,0.3569703288545187,Drainage Area,FB,72,Drainage Area
+daily,0.3400422053745056,Drainage Area,FB,72,Drainage Area
+hourly,0.5256418679637228,Drainage Area,FB,72,Drainage Area
+30mins,0.7660746479092013,Drainage Area,FB,73,Drainage Area
+4hr,0.6207465447887461,Drainage Area,FB,73,Drainage Area
+daily,0.4783202548102799,Drainage Area,FB,73,Drainage Area
+hourly,0.6391403162035262,Drainage Area,FB,73,Drainage Area
+30mins,0.4815264656757864,Drainage Area,FB,74,Drainage Area
+4hr,0.1996212949106936,Drainage Area,FB,74,Drainage Area
+daily,0.1911717643171266,Drainage Area,FB,74,Drainage Area
+hourly,0.46168630994205395,Drainage Area,FB,74,Drainage Area
+30mins,0.5285218395378053,Drainage Area,FB,75,Drainage Area
+4hr,0.3249708482367394,Drainage Area,FB,75,Drainage Area
+daily,0.22630661832537846,Drainage Area,FB,75,Drainage Area
+hourly,0.4572628063954344,Drainage Area,FB,75,Drainage Area
+30mins,0.7620401355667561,Drainage Area,FB,76,Drainage Area
+4hr,0.5330235540566621,Drainage Area,FB,76,Drainage Area
+daily,0.0445772035062,Drainage Area,FB,76,Drainage Area
+hourly,0.6822541220905403,Drainage Area,FB,76,Drainage Area
+30mins,0.36363888246561976,Drainage Area,FB,77,Drainage Area
+4hr,0.2963480688164129,Drainage Area,FB,77,Drainage Area
+daily,0.12683553207616327,Drainage Area,FB,77,Drainage Area
+hourly,0.38533091559157995,Drainage Area,FB,77,Drainage Area
+30mins,0.49858754343001,Drainage Area,FB,78,Drainage Area
+4hr,0.32568051427926203,Drainage Area,FB,78,Drainage Area
+daily,0.08064519562237984,Drainage Area,FB,78,Drainage Area
+hourly,0.43043951918789575,Drainage Area,FB,78,Drainage Area
+30mins,0.14395599087641217,Drainage Area,FB,79,Drainage Area
+4hr,0.21428818388603513,Drainage Area,FB,79,Drainage Area
+daily,0.202568288709104,Drainage Area,FB,79,Drainage Area
+hourly,0.15979878218554014,Drainage Area,FB,79,Drainage Area
+30mins,0.273860482687585,Drainage Area,FB,80,Drainage Area
+4hr,0.49670406556315655,Drainage Area,FB,80,Drainage Area
+daily,0.2928358361619754,Drainage Area,FB,80,Drainage Area
+hourly,0.2561446398065325,Drainage Area,FB,80,Drainage Area
+30mins,0.5758669903987494,Drainage Area,FB,81,Drainage Area
+4hr,0.46292211369433406,Drainage Area,FB,81,Drainage Area
+daily,0.192240481828555,Drainage Area,FB,81,Drainage Area
+hourly,0.5665924786349876,Drainage Area,FB,81,Drainage Area
+30mins,0.3199056004377551,Drainage Area,FB,82,Drainage Area
+4hr,0.23880574719115763,Drainage Area,FB,82,Drainage Area
+daily,0.04665148463795148,Drainage Area,FB,82,Drainage Area
+hourly,0.31507843869068364,Drainage Area,FB,82,Drainage Area
+30mins,0.8626113418410215,Drainage Area,FB,83,Drainage Area
+4hr,0.721624560345413,Drainage Area,FB,83,Drainage Area
+daily,0.09847775429792452,Drainage Area,FB,83,Drainage Area
+hourly,0.8901943000471527,Drainage Area,FB,83,Drainage Area
+30mins,0.963382106871077,Drainage Area,FB,84,Drainage Area
+4hr,0.8933436610370564,Drainage Area,FB,84,Drainage Area
+daily,0.07451391245869089,Drainage Area,FB,84,Drainage Area
+hourly,0.9476944858294178,Drainage Area,FB,84,Drainage Area
+30mins,0.31896193011839485,Drainage Area,FB,85,Drainage Area
+4hr,0.17813943480423639,Drainage Area,FB,85,Drainage Area
+daily,0.40101386919229765,Drainage Area,FB,85,Drainage Area
+hourly,0.31540597421204947,Drainage Area,FB,85,Drainage Area
+30mins,0.14971108019747775,Drainage Area,FB,86,Drainage Area
+4hr,0.14226639955956852,Drainage Area,FB,86,Drainage Area
+daily,0.3316882067372811,Drainage Area,FB,86,Drainage Area
+hourly,0.15700582443062136,Drainage Area,FB,86,Drainage Area
+30mins,0.39134964711787823,Drainage Area,FB,87,Drainage Area
+4hr,0.26853090328857215,Drainage Area,FB,87,Drainage Area
+daily,0.022947908665313304,Drainage Area,FB,87,Drainage Area
+hourly,0.28983459934535993,Drainage Area,FB,87,Drainage Area
+30mins,0.7105494373381317,Drainage Area,FB,88,Drainage Area
+4hr,0.8072048863057931,Drainage Area,FB,88,Drainage Area
+daily,0.20177514995197843,Drainage Area,FB,88,Drainage Area
+hourly,0.6763886141444231,Drainage Area,FB,88,Drainage Area
+30mins,0.7566430913959091,Drainage Area,FB,89,Drainage Area
+4hr,0.6852438976261679,Drainage Area,FB,89,Drainage Area
+daily,0.25804890434448163,Drainage Area,FB,89,Drainage Area
+hourly,0.7371865342747856,Drainage Area,FB,89,Drainage Area
+30mins,0.4881611044487243,Drainage Area,FB,90,Drainage Area
+4hr,0.26416774647125985,Drainage Area,FB,90,Drainage Area
+daily,0.017731395086767524,Drainage Area,FB,90,Drainage Area
+hourly,0.3596584752991876,Drainage Area,FB,90,Drainage Area
+30mins,0.1220244936360982,Drainage Area,FB,91,Drainage Area
+4hr,0.14997612051052045,Drainage Area,FB,91,Drainage Area
+daily,0.18704744264670337,Drainage Area,FB,91,Drainage Area
+hourly,0.11785587303862423,Drainage Area,FB,91,Drainage Area
+30mins,0.36735365044498147,Drainage Area,FB,92,Drainage Area
+4hr,0.31153893073907535,Drainage Area,FB,92,Drainage Area
+daily,0.0816237581855171,Drainage Area,FB,92,Drainage Area
+hourly,0.3348828091480006,Drainage Area,FB,92,Drainage Area
+30mins,0.8267475329188061,Drainage Area,FB,93,Drainage Area
+4hr,0.48329013324109277,Drainage Area,FB,93,Drainage Area
+daily,0.2076900687607444,Drainage Area,FB,93,Drainage Area
+hourly,0.7418038457656371,Drainage Area,FB,93,Drainage Area
+30mins,0.0765495389131425,Drainage Area,FB,94,Drainage Area
+4hr,0.015620729280826015,Drainage Area,FB,94,Drainage Area
+daily,0.036293208866515075,Drainage Area,FB,94,Drainage Area
+hourly,0.08034483423630658,Drainage Area,FB,94,Drainage Area
+30mins,0.5390231450362268,Drainage Area,FB,95,Drainage Area
+4hr,0.3296769061408772,Drainage Area,FB,95,Drainage Area
+daily,0.20257226598873485,Drainage Area,FB,95,Drainage Area
+hourly,0.5548903485759342,Drainage Area,FB,95,Drainage Area
+30mins,0.8851092190806894,Drainage Area,FB,96,Drainage Area
+4hr,0.7889614871157604,Drainage Area,FB,96,Drainage Area
+daily,0.10519597845660775,Drainage Area,FB,96,Drainage Area
+hourly,0.8383458845086382,Drainage Area,FB,96,Drainage Area
+30mins,0.6979048267458131,Drainage Area,FB,97,Drainage Area
+4hr,0.7514055788461435,Drainage Area,FB,97,Drainage Area
+daily,0.7093887315180754,Drainage Area,FB,97,Drainage Area
+hourly,0.7536712277461036,Drainage Area,FB,97,Drainage Area
+30mins,0.822060641242654,Drainage Area,FB,98,Drainage Area
+4hr,0.7729307603241257,Drainage Area,FB,98,Drainage Area
+daily,0.14493560763132773,Drainage Area,FB,98,Drainage Area
+hourly,0.7948190985684794,Drainage Area,FB,98,Drainage Area
+30mins,0.5470222864911736,Drainage Area,FB,99,Drainage Area
+4hr,0.6251600992884391,Drainage Area,FB,99,Drainage Area
+daily,0.5970229358447687,Drainage Area,FB,99,Drainage Area
+hourly,0.6653906093826427,Drainage Area,FB,99,Drainage Area
+30mins,0.8858894473956775,Drainage Area,FB,100,Drainage Area
+4hr,0.7046321619321911,Drainage Area,FB,100,Drainage Area
+daily,0.2039227407663929,Drainage Area,FB,100,Drainage Area
+hourly,0.8846921914471106,Drainage Area,FB,100,Drainage Area
+30mins,0.504237405559,Flow Permanence,FB,1,Flow Permanence
+4hr,0.47708632446985827,Flow Permanence,FB,1,Flow Permanence
+daily,0.04428007247719329,Flow Permanence,FB,1,Flow Permanence
+hourly,0.523645770665261,Flow Permanence,FB,1,Flow Permanence
+30mins,0.718110539673693,Flow Permanence,FB,2,Flow Permanence
+4hr,0.5463902252762659,Flow Permanence,FB,2,Flow Permanence
+daily,0.21437278106073757,Flow Permanence,FB,2,Flow Permanence
+hourly,0.6584389326767494,Flow Permanence,FB,2,Flow Permanence
+30mins,0.06880619053219454,Flow Permanence,FB,3,Flow Permanence
+4hr,0.07206343780105516,Flow Permanence,FB,3,Flow Permanence
+daily,0.33066655519498855,Flow Permanence,FB,3,Flow Permanence
+hourly,0.07455246127285063,Flow Permanence,FB,3,Flow Permanence
+30mins,0.9293663843337285,Flow Permanence,FB,4,Flow Permanence
+4hr,0.7683543369330387,Flow Permanence,FB,4,Flow Permanence
+daily,0.6350971418461229,Flow Permanence,FB,4,Flow Permanence
+hourly,0.8947033121644293,Flow Permanence,FB,4,Flow Permanence
+30mins,0.21146409602027985,Flow Permanence,FB,5,Flow Permanence
+4hr,0.15750206015529875,Flow Permanence,FB,5,Flow Permanence
+daily,0.14307169325868863,Flow Permanence,FB,5,Flow Permanence
+hourly,0.20595710857145422,Flow Permanence,FB,5,Flow Permanence
+30mins,0.4824171816491575,Flow Permanence,FB,6,Flow Permanence
+4hr,0.40089264914091777,Flow Permanence,FB,6,Flow Permanence
+daily,0.41622291728806327,Flow Permanence,FB,6,Flow Permanence
+hourly,0.42865111294074365,Flow Permanence,FB,6,Flow Permanence
+30mins,0.6625960798159503,Flow Permanence,FB,7,Flow Permanence
+4hr,0.47214911495123163,Flow Permanence,FB,7,Flow Permanence
+daily,0.30991169437148247,Flow Permanence,FB,7,Flow Permanence
+hourly,0.7072896490319657,Flow Permanence,FB,7,Flow Permanence
+30mins,0.8256343294986273,Flow Permanence,FB,8,Flow Permanence
+4hr,0.5801738202258689,Flow Permanence,FB,8,Flow Permanence
+daily,0.4024315671471126,Flow Permanence,FB,8,Flow Permanence
+hourly,0.6874337391626264,Flow Permanence,FB,8,Flow Permanence
+30mins,0.7792399519403397,Flow Permanence,FB,9,Flow Permanence
+4hr,0.5831927328730571,Flow Permanence,FB,9,Flow Permanence
+daily,0.4179834687703714,Flow Permanence,FB,9,Flow Permanence
+hourly,0.7464706809323997,Flow Permanence,FB,9,Flow Permanence
+30mins,0.25055939291426443,Flow Permanence,FB,10,Flow Permanence
+4hr,0.1496266346678029,Flow Permanence,FB,10,Flow Permanence
+daily,0.21560810934761596,Flow Permanence,FB,10,Flow Permanence
+hourly,0.19409995357847606,Flow Permanence,FB,10,Flow Permanence
+30mins,0.6927627177565716,Flow Permanence,FB,11,Flow Permanence
+4hr,0.39665762867537674,Flow Permanence,FB,11,Flow Permanence
+daily,0.10139906098735199,Flow Permanence,FB,11,Flow Permanence
+hourly,0.645486055996253,Flow Permanence,FB,11,Flow Permanence
+30mins,0.6454731806578285,Flow Permanence,FB,12,Flow Permanence
+4hr,0.4530470027068176,Flow Permanence,FB,12,Flow Permanence
+daily,0.1587700990887604,Flow Permanence,FB,12,Flow Permanence
+hourly,0.6121654816592172,Flow Permanence,FB,12,Flow Permanence
+30mins,0.5013794807434898,Flow Permanence,FB,13,Flow Permanence
+4hr,0.41805034491860227,Flow Permanence,FB,13,Flow Permanence
+daily,0.4053750125792561,Flow Permanence,FB,13,Flow Permanence
+hourly,0.42322898996129943,Flow Permanence,FB,13,Flow Permanence
+30mins,0.8707864746105163,Flow Permanence,FB,14,Flow Permanence
+4hr,0.4987354537070793,Flow Permanence,FB,14,Flow Permanence
+daily,0.07819627596153175,Flow Permanence,FB,14,Flow Permanence
+hourly,0.8649305242202909,Flow Permanence,FB,14,Flow Permanence
+30mins,0.3935928485768543,Flow Permanence,FB,15,Flow Permanence
+4hr,0.12262603261359414,Flow Permanence,FB,15,Flow Permanence
+daily,0.047843178527421044,Flow Permanence,FB,15,Flow Permanence
+hourly,0.2970676912676163,Flow Permanence,FB,15,Flow Permanence
+30mins,0.417264958730721,Flow Permanence,FB,16,Flow Permanence
+4hr,0.25804727037596636,Flow Permanence,FB,16,Flow Permanence
+daily,0.1899463344120383,Flow Permanence,FB,16,Flow Permanence
+hourly,0.34563351216758564,Flow Permanence,FB,16,Flow Permanence
+30mins,0.9399077531020833,Flow Permanence,FB,17,Flow Permanence
+4hr,0.7155006608880564,Flow Permanence,FB,17,Flow Permanence
+daily,0.040221742465466594,Flow Permanence,FB,17,Flow Permanence
+hourly,0.9521810124979345,Flow Permanence,FB,17,Flow Permanence
+30mins,0.5093106708557026,Flow Permanence,FB,18,Flow Permanence
+4hr,0.662310915920175,Flow Permanence,FB,18,Flow Permanence
+daily,0.20272730830953495,Flow Permanence,FB,18,Flow Permanence
+hourly,0.548848964150155,Flow Permanence,FB,18,Flow Permanence
+30mins,0.575982420350364,Flow Permanence,FB,19,Flow Permanence
+4hr,0.41174404518874735,Flow Permanence,FB,19,Flow Permanence
+daily,0.20480493257738058,Flow Permanence,FB,19,Flow Permanence
+hourly,0.5375360224408924,Flow Permanence,FB,19,Flow Permanence
+30mins,0.7311705660213362,Flow Permanence,FB,20,Flow Permanence
+4hr,0.728484044474917,Flow Permanence,FB,20,Flow Permanence
+daily,0.11019073216294328,Flow Permanence,FB,20,Flow Permanence
+hourly,0.670427776880576,Flow Permanence,FB,20,Flow Permanence
+30mins,0.6765490043032366,Flow Permanence,FB,21,Flow Permanence
+4hr,0.38577745278471287,Flow Permanence,FB,21,Flow Permanence
+daily,0.11109778022746146,Flow Permanence,FB,21,Flow Permanence
+hourly,0.591565514857205,Flow Permanence,FB,21,Flow Permanence
+30mins,0.4845998080846277,Flow Permanence,FB,22,Flow Permanence
+4hr,0.32001121227634655,Flow Permanence,FB,22,Flow Permanence
+daily,0.1900194495399285,Flow Permanence,FB,22,Flow Permanence
+hourly,0.4451107090270447,Flow Permanence,FB,22,Flow Permanence
+30mins,0.7358137631503114,Flow Permanence,FB,23,Flow Permanence
+4hr,0.22078858267540505,Flow Permanence,FB,23,Flow Permanence
+daily,0.08090384436914348,Flow Permanence,FB,23,Flow Permanence
+hourly,0.7537680628115849,Flow Permanence,FB,23,Flow Permanence
+30mins,0.5544351818626451,Flow Permanence,FB,24,Flow Permanence
+4hr,0.5710797066032087,Flow Permanence,FB,24,Flow Permanence
+daily,0.12151207786915623,Flow Permanence,FB,24,Flow Permanence
+hourly,0.6391407562107941,Flow Permanence,FB,24,Flow Permanence
+30mins,0.7011256523903855,Flow Permanence,FB,25,Flow Permanence
+4hr,0.48494313704113967,Flow Permanence,FB,25,Flow Permanence
+daily,0.08494523396936478,Flow Permanence,FB,25,Flow Permanence
+hourly,0.6470971745632352,Flow Permanence,FB,25,Flow Permanence
+30mins,0.189037278420921,Flow Permanence,FB,26,Flow Permanence
+4hr,0.12608343309153597,Flow Permanence,FB,26,Flow Permanence
+daily,0.30584560262203475,Flow Permanence,FB,26,Flow Permanence
+hourly,0.23413929476689266,Flow Permanence,FB,26,Flow Permanence
+30mins,0.8157316696296188,Flow Permanence,FB,27,Flow Permanence
+4hr,0.4002522249285917,Flow Permanence,FB,27,Flow Permanence
+daily,0.17394857679544892,Flow Permanence,FB,27,Flow Permanence
+hourly,0.7150582012867814,Flow Permanence,FB,27,Flow Permanence
+30mins,0.7193608063872203,Flow Permanence,FB,28,Flow Permanence
+4hr,0.6517540772330368,Flow Permanence,FB,28,Flow Permanence
+daily,0.18531235083166855,Flow Permanence,FB,28,Flow Permanence
+hourly,0.7498071098285143,Flow Permanence,FB,28,Flow Permanence
+30mins,0.5316602315544129,Flow Permanence,FB,29,Flow Permanence
+4hr,0.3266868682208081,Flow Permanence,FB,29,Flow Permanence
+daily,0.1886395164491759,Flow Permanence,FB,29,Flow Permanence
+hourly,0.46811524262138376,Flow Permanence,FB,29,Flow Permanence
+30mins,0.45971822199521184,Flow Permanence,FB,30,Flow Permanence
+4hr,0.3973865317133869,Flow Permanence,FB,30,Flow Permanence
+daily,0.0892358265250203,Flow Permanence,FB,30,Flow Permanence
+hourly,0.45343305543538076,Flow Permanence,FB,30,Flow Permanence
+30mins,0.5930950771801374,Flow Permanence,FB,31,Flow Permanence
+4hr,0.2670774858828173,Flow Permanence,FB,31,Flow Permanence
+daily,0.3831545470086467,Flow Permanence,FB,31,Flow Permanence
+hourly,0.4914591768002223,Flow Permanence,FB,31,Flow Permanence
+30mins,0.8682616145852053,Flow Permanence,FB,32,Flow Permanence
+4hr,0.7801567966665504,Flow Permanence,FB,32,Flow Permanence
+daily,0.42547574246193176,Flow Permanence,FB,32,Flow Permanence
+hourly,0.842321195939955,Flow Permanence,FB,32,Flow Permanence
+30mins,0.2775259685952213,Flow Permanence,FB,33,Flow Permanence
+4hr,0.1287131424759352,Flow Permanence,FB,33,Flow Permanence
+daily,0.07235965050726954,Flow Permanence,FB,33,Flow Permanence
+hourly,0.2606968930550505,Flow Permanence,FB,33,Flow Permanence
+30mins,0.6715777413943516,Flow Permanence,FB,34,Flow Permanence
+4hr,0.32662256688337066,Flow Permanence,FB,34,Flow Permanence
+daily,0.2956539887661593,Flow Permanence,FB,34,Flow Permanence
+hourly,0.6097325400719512,Flow Permanence,FB,34,Flow Permanence
+30mins,0.9685265222875553,Flow Permanence,FB,35,Flow Permanence
+4hr,0.6917088456990359,Flow Permanence,FB,35,Flow Permanence
+daily,0.14654289640962856,Flow Permanence,FB,35,Flow Permanence
+hourly,0.9692395850556574,Flow Permanence,FB,35,Flow Permanence
+30mins,0.6008356785859952,Flow Permanence,FB,36,Flow Permanence
+4hr,0.32274469989590826,Flow Permanence,FB,36,Flow Permanence
+daily,0.15477280246441966,Flow Permanence,FB,36,Flow Permanence
+hourly,0.5699913843123854,Flow Permanence,FB,36,Flow Permanence
+30mins,0.5234749615388368,Flow Permanence,FB,37,Flow Permanence
+4hr,0.3309580884338239,Flow Permanence,FB,37,Flow Permanence
+daily,0.18328682262272658,Flow Permanence,FB,37,Flow Permanence
+hourly,0.44588434358805623,Flow Permanence,FB,37,Flow Permanence
+30mins,0.22938659596355987,Flow Permanence,FB,38,Flow Permanence
+4hr,0.16686282919948814,Flow Permanence,FB,38,Flow Permanence
+daily,0.11187791735160756,Flow Permanence,FB,38,Flow Permanence
+hourly,0.19035437178240663,Flow Permanence,FB,38,Flow Permanence
+30mins,0.8927970996679515,Flow Permanence,FB,39,Flow Permanence
+4hr,0.7121635105638033,Flow Permanence,FB,39,Flow Permanence
+daily,0.142316524032958,Flow Permanence,FB,39,Flow Permanence
+hourly,0.8874596358387092,Flow Permanence,FB,39,Flow Permanence
+30mins,0.45400438013932437,Flow Permanence,FB,40,Flow Permanence
+4hr,0.6561061302638059,Flow Permanence,FB,40,Flow Permanence
+daily,0.26919226649430383,Flow Permanence,FB,40,Flow Permanence
+hourly,0.4996551272453924,Flow Permanence,FB,40,Flow Permanence
+30mins,0.40013425872306724,Flow Permanence,FB,41,Flow Permanence
+4hr,0.27082498640338054,Flow Permanence,FB,41,Flow Permanence
+daily,0.20882722040576598,Flow Permanence,FB,41,Flow Permanence
+hourly,0.3726834093399305,Flow Permanence,FB,41,Flow Permanence
+30mins,0.34247368147182977,Flow Permanence,FB,42,Flow Permanence
+4hr,0.41876008214647864,Flow Permanence,FB,42,Flow Permanence
+daily,0.11433608830730481,Flow Permanence,FB,42,Flow Permanence
+hourly,0.24914833548926288,Flow Permanence,FB,42,Flow Permanence
+30mins,0.5871059635295107,Flow Permanence,FB,43,Flow Permanence
+4hr,0.5217089177279003,Flow Permanence,FB,43,Flow Permanence
+daily,0.750517284188021,Flow Permanence,FB,43,Flow Permanence
+hourly,0.613880476678049,Flow Permanence,FB,43,Flow Permanence
+30mins,0.9405604486669878,Flow Permanence,FB,44,Flow Permanence
+4hr,0.8579998111497522,Flow Permanence,FB,44,Flow Permanence
+daily,0.1853862908893827,Flow Permanence,FB,44,Flow Permanence
+hourly,0.9312476218914549,Flow Permanence,FB,44,Flow Permanence
+30mins,0.3386681161503736,Flow Permanence,FB,45,Flow Permanence
+4hr,0.3128208084340392,Flow Permanence,FB,45,Flow Permanence
+daily,0.05682383878810883,Flow Permanence,FB,45,Flow Permanence
+hourly,0.28045047496399095,Flow Permanence,FB,45,Flow Permanence
+30mins,0.7627539725055907,Flow Permanence,FB,46,Flow Permanence
+4hr,0.796640892871434,Flow Permanence,FB,46,Flow Permanence
+daily,0.2601552271425557,Flow Permanence,FB,46,Flow Permanence
+hourly,0.7706905076016393,Flow Permanence,FB,46,Flow Permanence
+30mins,0.440375580541234,Flow Permanence,FB,47,Flow Permanence
+4hr,0.4364910122493074,Flow Permanence,FB,47,Flow Permanence
+daily,0.38283066646434516,Flow Permanence,FB,47,Flow Permanence
+hourly,0.36853998228201235,Flow Permanence,FB,47,Flow Permanence
+30mins,0.2398050368039409,Flow Permanence,FB,48,Flow Permanence
+4hr,0.11556990834631246,Flow Permanence,FB,48,Flow Permanence
+daily,0.3771474582760069,Flow Permanence,FB,48,Flow Permanence
+hourly,0.154638080963343,Flow Permanence,FB,48,Flow Permanence
+30mins,0.8623128468955169,Flow Permanence,FB,49,Flow Permanence
+4hr,0.5544458326925121,Flow Permanence,FB,49,Flow Permanence
+daily,0.12054815255382882,Flow Permanence,FB,49,Flow Permanence
+hourly,0.8375059973529131,Flow Permanence,FB,49,Flow Permanence
+30mins,0.48470193879740325,Flow Permanence,FB,50,Flow Permanence
+4hr,0.38544051816090613,Flow Permanence,FB,50,Flow Permanence
+daily,0.10427245845434518,Flow Permanence,FB,50,Flow Permanence
+hourly,0.4560670411334268,Flow Permanence,FB,50,Flow Permanence
+30mins,0.672640337781779,Flow Permanence,FB,51,Flow Permanence
+4hr,0.5900003217870148,Flow Permanence,FB,51,Flow Permanence
+daily,0.1466075374834763,Flow Permanence,FB,51,Flow Permanence
+hourly,0.5974157305290563,Flow Permanence,FB,51,Flow Permanence
+30mins,0.5795075977332804,Flow Permanence,FB,52,Flow Permanence
+4hr,0.21502426662299695,Flow Permanence,FB,52,Flow Permanence
+daily,0.11177153720578836,Flow Permanence,FB,52,Flow Permanence
+hourly,0.4211258940804713,Flow Permanence,FB,52,Flow Permanence
+30mins,0.8338112339463537,Flow Permanence,FB,53,Flow Permanence
+4hr,0.5374945181771268,Flow Permanence,FB,53,Flow Permanence
+daily,0.08010424407096736,Flow Permanence,FB,53,Flow Permanence
+hourly,0.874929312886164,Flow Permanence,FB,53,Flow Permanence
+30mins,0.3667047283197765,Flow Permanence,FB,54,Flow Permanence
+4hr,0.0701014842154353,Flow Permanence,FB,54,Flow Permanence
+daily,0.23661090728901119,Flow Permanence,FB,54,Flow Permanence
+hourly,0.32590247010261963,Flow Permanence,FB,54,Flow Permanence
+30mins,0.32659474988740544,Flow Permanence,FB,55,Flow Permanence
+4hr,0.38892914774615994,Flow Permanence,FB,55,Flow Permanence
+daily,0.10560697244789735,Flow Permanence,FB,55,Flow Permanence
+hourly,0.27630434753771005,Flow Permanence,FB,55,Flow Permanence
+30mins,0.6074147783718682,Flow Permanence,FB,56,Flow Permanence
+4hr,0.17855447276555625,Flow Permanence,FB,56,Flow Permanence
+daily,0.07603460746328926,Flow Permanence,FB,56,Flow Permanence
+hourly,0.5760942150411714,Flow Permanence,FB,56,Flow Permanence
+30mins,0.5299763545582727,Flow Permanence,FB,57,Flow Permanence
+4hr,0.34162711731485473,Flow Permanence,FB,57,Flow Permanence
+daily,0.2452074836296318,Flow Permanence,FB,57,Flow Permanence
+hourly,0.5556885875792372,Flow Permanence,FB,57,Flow Permanence
+30mins,0.3929146973162596,Flow Permanence,FB,58,Flow Permanence
+4hr,0.2647500968423143,Flow Permanence,FB,58,Flow Permanence
+daily,0.09886880185831669,Flow Permanence,FB,58,Flow Permanence
+hourly,0.39901967486127243,Flow Permanence,FB,58,Flow Permanence
+30mins,0.3194913624151343,Flow Permanence,FB,59,Flow Permanence
+4hr,0.33334761693903237,Flow Permanence,FB,59,Flow Permanence
+daily,0.16801379154513935,Flow Permanence,FB,59,Flow Permanence
+hourly,0.25433797646484013,Flow Permanence,FB,59,Flow Permanence
+30mins,0.7483597249301719,Flow Permanence,FB,60,Flow Permanence
+4hr,0.6447364085192191,Flow Permanence,FB,60,Flow Permanence
+daily,0.19736744542701362,Flow Permanence,FB,60,Flow Permanence
+hourly,0.7639071953863834,Flow Permanence,FB,60,Flow Permanence
+30mins,0.42865033294317495,Flow Permanence,FB,61,Flow Permanence
+4hr,0.5776921031438648,Flow Permanence,FB,61,Flow Permanence
+daily,0.5074172094370955,Flow Permanence,FB,61,Flow Permanence
+hourly,0.34300068238153714,Flow Permanence,FB,61,Flow Permanence
+30mins,0.7011158093792216,Flow Permanence,FB,62,Flow Permanence
+4hr,0.4447359470942439,Flow Permanence,FB,62,Flow Permanence
+daily,0.41336776569478884,Flow Permanence,FB,62,Flow Permanence
+hourly,0.660275346945398,Flow Permanence,FB,62,Flow Permanence
+30mins,0.6674868645971008,Flow Permanence,FB,63,Flow Permanence
+4hr,0.4742809667671817,Flow Permanence,FB,63,Flow Permanence
+daily,0.3811146335921125,Flow Permanence,FB,63,Flow Permanence
+hourly,0.6727909565281525,Flow Permanence,FB,63,Flow Permanence
+30mins,0.539484185954647,Flow Permanence,FB,64,Flow Permanence
+4hr,0.27293320732098925,Flow Permanence,FB,64,Flow Permanence
+daily,0.33506826903693315,Flow Permanence,FB,64,Flow Permanence
+hourly,0.5316294317464829,Flow Permanence,FB,64,Flow Permanence
+30mins,0.1231154283181766,Flow Permanence,FB,65,Flow Permanence
+4hr,0.08899639635937906,Flow Permanence,FB,65,Flow Permanence
+daily,0.17656891917646647,Flow Permanence,FB,65,Flow Permanence
+hourly,0.13189418679495915,Flow Permanence,FB,65,Flow Permanence
+30mins,0.5398231402211771,Flow Permanence,FB,66,Flow Permanence
+4hr,0.33642628861460866,Flow Permanence,FB,66,Flow Permanence
+daily,0.18955771433583457,Flow Permanence,FB,66,Flow Permanence
+hourly,0.5297458220975699,Flow Permanence,FB,66,Flow Permanence
+30mins,0.8704570368915427,Flow Permanence,FB,67,Flow Permanence
+4hr,0.8359164341124932,Flow Permanence,FB,67,Flow Permanence
+daily,0.44143216850465744,Flow Permanence,FB,67,Flow Permanence
+hourly,0.8003562470650286,Flow Permanence,FB,67,Flow Permanence
+30mins,0.5847640651513973,Flow Permanence,FB,68,Flow Permanence
+4hr,0.39824645531296265,Flow Permanence,FB,68,Flow Permanence
+daily,0.2691866509380215,Flow Permanence,FB,68,Flow Permanence
+hourly,0.5877949891900612,Flow Permanence,FB,68,Flow Permanence
+30mins,0.2146416999034255,Flow Permanence,FB,69,Flow Permanence
+4hr,0.17544735091596161,Flow Permanence,FB,69,Flow Permanence
+daily,0.1370542931118957,Flow Permanence,FB,69,Flow Permanence
+hourly,0.21649687850465088,Flow Permanence,FB,69,Flow Permanence
+30mins,0.5485059823206473,Flow Permanence,FB,70,Flow Permanence
+4hr,0.4393786400689076,Flow Permanence,FB,70,Flow Permanence
+daily,0.2228467750601836,Flow Permanence,FB,70,Flow Permanence
+hourly,0.6400001134314728,Flow Permanence,FB,70,Flow Permanence
+30mins,0.22997512383748261,Flow Permanence,FB,71,Flow Permanence
+4hr,0.3601307782093329,Flow Permanence,FB,71,Flow Permanence
+daily,0.22083523872825256,Flow Permanence,FB,71,Flow Permanence
+hourly,0.29565393785108507,Flow Permanence,FB,71,Flow Permanence
+30mins,0.5516657914243198,Flow Permanence,FB,72,Flow Permanence
+4hr,0.4059200975905488,Flow Permanence,FB,72,Flow Permanence
+daily,0.12339783165410506,Flow Permanence,FB,72,Flow Permanence
+hourly,0.4864036332525308,Flow Permanence,FB,72,Flow Permanence
+30mins,0.33870008925958783,Flow Permanence,FB,73,Flow Permanence
+4hr,0.1063568019447579,Flow Permanence,FB,73,Flow Permanence
+daily,0.03907405681874072,Flow Permanence,FB,73,Flow Permanence
+hourly,0.28153475804977585,Flow Permanence,FB,73,Flow Permanence
+30mins,0.7751273439981171,Flow Permanence,FB,74,Flow Permanence
+4hr,0.6365503198070643,Flow Permanence,FB,74,Flow Permanence
+daily,0.13848763501742697,Flow Permanence,FB,74,Flow Permanence
+hourly,0.7628491604896678,Flow Permanence,FB,74,Flow Permanence
+30mins,0.09534463717580235,Flow Permanence,FB,75,Flow Permanence
+4hr,0.07002740066289448,Flow Permanence,FB,75,Flow Permanence
+daily,0.038505252577968774,Flow Permanence,FB,75,Flow Permanence
+hourly,0.08005086002903579,Flow Permanence,FB,75,Flow Permanence
+30mins,0.13885173989755376,Flow Permanence,FB,76,Flow Permanence
+4hr,0.11461390069689374,Flow Permanence,FB,76,Flow Permanence
+daily,0.07558936547069736,Flow Permanence,FB,76,Flow Permanence
+hourly,0.16439129184741658,Flow Permanence,FB,76,Flow Permanence
+30mins,0.7345820825469764,Flow Permanence,FB,77,Flow Permanence
+4hr,0.7288299433072969,Flow Permanence,FB,77,Flow Permanence
+daily,0.07442105224947172,Flow Permanence,FB,77,Flow Permanence
+hourly,0.6889042234843502,Flow Permanence,FB,77,Flow Permanence
+30mins,0.594213450386036,Flow Permanence,FB,78,Flow Permanence
+4hr,0.5828667343663669,Flow Permanence,FB,78,Flow Permanence
+daily,0.10689798391070962,Flow Permanence,FB,78,Flow Permanence
+hourly,0.5903189497879352,Flow Permanence,FB,78,Flow Permanence
+30mins,0.649774449816178,Flow Permanence,FB,79,Flow Permanence
+4hr,0.5775728488443446,Flow Permanence,FB,79,Flow Permanence
+daily,0.13138465794623827,Flow Permanence,FB,79,Flow Permanence
+hourly,0.6117933566621877,Flow Permanence,FB,79,Flow Permanence
+30mins,0.2966879958819267,Flow Permanence,FB,80,Flow Permanence
+4hr,0.3836723934821179,Flow Permanence,FB,80,Flow Permanence
+daily,0.2519069900911568,Flow Permanence,FB,80,Flow Permanence
+hourly,0.38476535747557616,Flow Permanence,FB,80,Flow Permanence
+30mins,0.3305666662069932,Flow Permanence,FB,81,Flow Permanence
+4hr,0.595472972938888,Flow Permanence,FB,81,Flow Permanence
+daily,0.3241597032440807,Flow Permanence,FB,81,Flow Permanence
+hourly,0.3342501366169368,Flow Permanence,FB,81,Flow Permanence
+30mins,0.1017473495981987,Flow Permanence,FB,82,Flow Permanence
+4hr,0.026835487758180298,Flow Permanence,FB,82,Flow Permanence
+daily,0.17927369119968245,Flow Permanence,FB,82,Flow Permanence
+hourly,0.10616529399670964,Flow Permanence,FB,82,Flow Permanence
+30mins,0.31490053172623467,Flow Permanence,FB,83,Flow Permanence
+4hr,0.0645304793744739,Flow Permanence,FB,83,Flow Permanence
+daily,0.09466595086789471,Flow Permanence,FB,83,Flow Permanence
+hourly,0.23739419636317338,Flow Permanence,FB,83,Flow Permanence
+30mins,0.16666607444996565,Flow Permanence,FB,84,Flow Permanence
+4hr,0.24414506799444405,Flow Permanence,FB,84,Flow Permanence
+daily,0.1173585649643475,Flow Permanence,FB,84,Flow Permanence
+hourly,0.2771593207824967,Flow Permanence,FB,84,Flow Permanence
+30mins,0.5286339339918987,Flow Permanence,FB,85,Flow Permanence
+4hr,0.6919164004765477,Flow Permanence,FB,85,Flow Permanence
+daily,0.4175408052046046,Flow Permanence,FB,85,Flow Permanence
+hourly,0.5284097352059653,Flow Permanence,FB,85,Flow Permanence
+30mins,0.9216343158996849,Flow Permanence,FB,86,Flow Permanence
+4hr,0.7853018255235322,Flow Permanence,FB,86,Flow Permanence
+daily,0.25307392964372877,Flow Permanence,FB,86,Flow Permanence
+hourly,0.9232298399734632,Flow Permanence,FB,86,Flow Permanence
+30mins,0.34802938895928026,Flow Permanence,FB,87,Flow Permanence
+4hr,0.5220330717716171,Flow Permanence,FB,87,Flow Permanence
+daily,0.12328699914573069,Flow Permanence,FB,87,Flow Permanence
+hourly,0.3064220530182523,Flow Permanence,FB,87,Flow Permanence
+30mins,0.63826922060933855,Flow Permanence,FB,88,Flow Permanence
+4hr,0.5889447082706035,Flow Permanence,FB,88,Flow Permanence
+daily,0.2890681109212154,Flow Permanence,FB,88,Flow Permanence
+hourly,0.5846572398890062,Flow Permanence,FB,88,Flow Permanence
+30mins,0.6513630383567219,Flow Permanence,FB,89,Flow Permanence
+4hr,0.6927236765371929,Flow Permanence,FB,89,Flow Permanence
+daily,0.18796210174873484,Flow Permanence,FB,89,Flow Permanence
+hourly,0.5643245354940194,Flow Permanence,FB,89,Flow Permanence
+30mins,0.2547882625927707,Flow Permanence,FB,90,Flow Permanence
+4hr,0.24751339985236048,Flow Permanence,FB,90,Flow Permanence
+daily,0.22631679133360968,Flow Permanence,FB,90,Flow Permanence
+hourly,0.2315965679464016,Flow Permanence,FB,90,Flow Permanence
+30mins,0.9143587166640629,Flow Permanence,FB,91,Flow Permanence
+4hr,0.8483480290513141,Flow Permanence,FB,91,Flow Permanence
+daily,0.36925476493683435,Flow Permanence,FB,91,Flow Permanence
+hourly,0.9011541744272474,Flow Permanence,FB,91,Flow Permanence
+30mins,0.5626211896029948,Flow Permanence,FB,92,Flow Permanence
+4hr,0.522705358678886,Flow Permanence,FB,92,Flow Permanence
+daily,0.08904907528584528,Flow Permanence,FB,92,Flow Permanence
+hourly,0.4520639146671944,Flow Permanence,FB,92,Flow Permanence
+30mins,0.5308080139201978,Flow Permanence,FB,93,Flow Permanence
+4hr,0.3045212687483555,Flow Permanence,FB,93,Flow Permanence
+daily,0.18833049259918702,Flow Permanence,FB,93,Flow Permanence
+hourly,0.371054985834489,Flow Permanence,FB,93,Flow Permanence
+30mins,0.7338246806920128,Flow Permanence,FB,94,Flow Permanence
+4hr,0.7505598780354403,Flow Permanence,FB,94,Flow Permanence
+daily,0.26723995118195976,Flow Permanence,FB,94,Flow Permanence
+hourly,0.6802976029296955,Flow Permanence,FB,94,Flow Permanence
+30mins,0.45770967015638475,Flow Permanence,FB,95,Flow Permanence
+4hr,0.20591995816351508,Flow Permanence,FB,95,Flow Permanence
+daily,0.5030344577706056,Flow Permanence,FB,95,Flow Permanence
+hourly,0.3369199655500034,Flow Permanence,FB,95,Flow Permanence
+30mins,0.8874022363191687,Flow Permanence,FB,96,Flow Permanence
+4hr,0.8440237615186725,Flow Permanence,FB,96,Flow Permanence
+daily,0.16893105304846912,Flow Permanence,FB,96,Flow Permanence
+hourly,0.8860743800713946,Flow Permanence,FB,96,Flow Permanence
+30mins,0.9418747828487091,Flow Permanence,FB,97,Flow Permanence
+4hr,0.7267754880549757,Flow Permanence,FB,97,Flow Permanence
+daily,0.15310560664283704,Flow Permanence,FB,97,Flow Permanence
+hourly,0.9147281681107028,Flow Permanence,FB,97,Flow Permanence
+30mins,0.5805897654514194,Flow Permanence,FB,98,Flow Permanence
+4hr,0.5833133535156867,Flow Permanence,FB,98,Flow Permanence
+daily,0.033495544572391726,Flow Permanence,FB,98,Flow Permanence
+hourly,0.5647865984604299,Flow Permanence,FB,98,Flow Permanence
+30mins,0.2392877094420077,Flow Permanence,FB,99,Flow Permanence
+4hr,0.12082831618955893,Flow Permanence,FB,99,Flow Permanence
+daily,0.1609588333518692,Flow Permanence,FB,99,Flow Permanence
+hourly,0.2313127506893466,Flow Permanence,FB,99,Flow Permanence
+30mins,0.08999056136629263,Flow Permanence,FB,100,Flow Permanence
+4hr,0.12340031624438019,Flow Permanence,FB,100,Flow Permanence
+daily,0.0957198543913296,Flow Permanence,FB,100,Flow Permanence
+hourly,0.053356057875895584,Flow Permanence,FB,100,Flow Permanence
+30mins,0.48505557897986307,Duration of Flow,FB,1,Duration of Flow
+4hr,0.6376916863564775,Duration of Flow,FB,1,Duration of Flow
+daily,0.018367765607617107,Duration of Flow,FB,1,Duration of Flow
+hourly,0.4429887548683623,Duration of Flow,FB,1,Duration of Flow
+30mins,0.3152980385655656,Duration of Flow,FB,2,Duration of Flow
+4hr,0.23360351363146833,Duration of Flow,FB,2,Duration of Flow
+daily,0.23712941709409058,Duration of Flow,FB,2,Duration of Flow
+hourly,0.2741352059569463,Duration of Flow,FB,2,Duration of Flow
+30mins,0.886957793801343,Duration of Flow,FB,3,Duration of Flow
+4hr,0.7080870644978179,Duration of Flow,FB,3,Duration of Flow
+daily,0.21626490063663756,Duration of Flow,FB,3,Duration of Flow
+hourly,0.8815747556066706,Duration of Flow,FB,3,Duration of Flow
+30mins,0.6616283953020865,Duration of Flow,FB,4,Duration of Flow
+4hr,0.3512921313941302,Duration of Flow,FB,4,Duration of Flow
+daily,0.09278493628004053,Duration of Flow,FB,4,Duration of Flow
+hourly,0.6551300983918258,Duration of Flow,FB,4,Duration of Flow
+30mins,0.6205314590971428,Duration of Flow,FB,5,Duration of Flow
+4hr,0.48745344243418315,Duration of Flow,FB,5,Duration of Flow
+daily,0.24335374176792632,Duration of Flow,FB,5,Duration of Flow
+hourly,0.5610313746968899,Duration of Flow,FB,5,Duration of Flow
+30mins,0.71447757327974,Duration of Flow,FB,6,Duration of Flow
+4hr,0.6989690021150243,Duration of Flow,FB,6,Duration of Flow
+daily,0.31800128667294036,Duration of Flow,FB,6,Duration of Flow
+hourly,0.7606161202113032,Duration of Flow,FB,6,Duration of Flow
+30mins,0.7352416727904708,Duration of Flow,FB,7,Duration of Flow
+4hr,0.7552194068807024,Duration of Flow,FB,7,Duration of Flow
+daily,0.27573923989190563,Duration of Flow,FB,7,Duration of Flow
+hourly,0.7342974510948854,Duration of Flow,FB,7,Duration of Flow
+30mins,0.4160190930860049,Duration of Flow,FB,8,Duration of Flow
+4hr,0.19143316888702455,Duration of Flow,FB,8,Duration of Flow
+daily,0.1915522605848456,Duration of Flow,FB,8,Duration of Flow
+hourly,0.4677313458522706,Duration of Flow,FB,8,Duration of Flow
+30mins,0.8017883791040087,Duration of Flow,FB,9,Duration of Flow
+4hr,0.865406004303226,Duration of Flow,FB,9,Duration of Flow
+daily,0.2552382151252045,Duration of Flow,FB,9,Duration of Flow
+hourly,0.7962055445391453,Duration of Flow,FB,9,Duration of Flow
+30mins,0.3248679662754069,Duration of Flow,FB,10,Duration of Flow
+4hr,0.5221563545149909,Duration of Flow,FB,10,Duration of Flow
+daily,0.1218005637632209,Duration of Flow,FB,10,Duration of Flow
+hourly,0.3044045747997141,Duration of Flow,FB,10,Duration of Flow
+30mins,0.6307975019289157,Duration of Flow,FB,11,Duration of Flow
+4hr,0.6310298005149113,Duration of Flow,FB,11,Duration of Flow
+daily,0.5182009194153673,Duration of Flow,FB,11,Duration of Flow
+hourly,0.5419958152356281,Duration of Flow,FB,11,Duration of Flow
+30mins,0.7824000141933392,Duration of Flow,FB,12,Duration of Flow
+4hr,0.5818412753270694,Duration of Flow,FB,12,Duration of Flow
+daily,0.7277302041153823,Duration of Flow,FB,12,Duration of Flow
+hourly,0.7751247503413689,Duration of Flow,FB,12,Duration of Flow
+30mins,0.39402327809408044,Duration of Flow,FB,13,Duration of Flow
+4hr,0.14222398662127694,Duration of Flow,FB,13,Duration of Flow
+daily,0.27470991680278145,Duration of Flow,FB,13,Duration of Flow
+hourly,0.3118097381404398,Duration of Flow,FB,13,Duration of Flow
+30mins,0.12134152291338929,Duration of Flow,FB,14,Duration of Flow
+4hr,0.07468827237303463,Duration of Flow,FB,14,Duration of Flow
+daily,0.21725733213438514,Duration of Flow,FB,14,Duration of Flow
+hourly,0.13422852446349628,Duration of Flow,FB,14,Duration of Flow
+30mins,0.6143779065737943,Duration of Flow,FB,15,Duration of Flow
+4hr,0.5242584477590916,Duration of Flow,FB,15,Duration of Flow
+daily,0.15951797008018972,Duration of Flow,FB,15,Duration of Flow
+hourly,0.5572808972720115,Duration of Flow,FB,15,Duration of Flow
+30mins,0.5303194074687242,Duration of Flow,FB,16,Duration of Flow
+4hr,0.7518953188882105,Duration of Flow,FB,16,Duration of Flow
+daily,0.042368381050853575,Duration of Flow,FB,16,Duration of Flow
+hourly,0.4971260594984409,Duration of Flow,FB,16,Duration of Flow
+30mins,0.3393454745028165,Duration of Flow,FB,17,Duration of Flow
+4hr,0.5322874928366045,Duration of Flow,FB,17,Duration of Flow
+daily,0.5130349205427012,Duration of Flow,FB,17,Duration of Flow
+hourly,0.37846778606518366,Duration of Flow,FB,17,Duration of Flow
+30mins,0.8494019714380836,Duration of Flow,FB,18,Duration of Flow
+4hr,0.41838014412257013,Duration of Flow,FB,18,Duration of Flow
+daily,0.2108500591232063,Duration of Flow,FB,18,Duration of Flow
+hourly,0.806747594935042,Duration of Flow,FB,18,Duration of Flow
+30mins,0.4055549347848322,Duration of Flow,FB,19,Duration of Flow
+4hr,0.4347798153114019,Duration of Flow,FB,19,Duration of Flow
+daily,0.3115035053816134,Duration of Flow,FB,19,Duration of Flow
+hourly,0.3858932129661089,Duration of Flow,FB,19,Duration of Flow
+30mins,0.8536978368247642,Duration of Flow,FB,20,Duration of Flow
+4hr,0.7909339954011432,Duration of Flow,FB,20,Duration of Flow
+daily,0.3434267573263061,Duration of Flow,FB,20,Duration of Flow
+hourly,0.8260160833071577,Duration of Flow,FB,20,Duration of Flow
+30mins,0.4329974532907903,Duration of Flow,FB,21,Duration of Flow
+4hr,0.2833685281052092,Duration of Flow,FB,21,Duration of Flow
+daily,0.15686804460574305,Duration of Flow,FB,21,Duration of Flow
+hourly,0.34653590259137634,Duration of Flow,FB,21,Duration of Flow
+30mins,0.6048680693132306,Duration of Flow,FB,22,Duration of Flow
+4hr,0.5931875370222472,Duration of Flow,FB,22,Duration of Flow
+daily,0.24211641976686307,Duration of Flow,FB,22,Duration of Flow
+hourly,0.6796830883965135,Duration of Flow,FB,22,Duration of Flow
+30mins,0.8997639204451934,Duration of Flow,FB,23,Duration of Flow
+4hr,0.7118452084920033,Duration of Flow,FB,23,Duration of Flow
+daily,0.11914403778359602,Duration of Flow,FB,23,Duration of Flow
+hourly,0.7461370855840456,Duration of Flow,FB,23,Duration of Flow
+30mins,0.214201827940114,Duration of Flow,FB,24,Duration of Flow
+4hr,0.3261578218328587,Duration of Flow,FB,24,Duration of Flow
+daily,0.2579639322536498,Duration of Flow,FB,24,Duration of Flow
+hourly,0.18681765014643556,Duration of Flow,FB,24,Duration of Flow
+30mins,0.5559145052886725,Duration of Flow,FB,25,Duration of Flow
+4hr,0.3540397219875493,Duration of Flow,FB,25,Duration of Flow
+daily,0.47742205305394286,Duration of Flow,FB,25,Duration of Flow
+hourly,0.5172381305103915,Duration of Flow,FB,25,Duration of Flow
+30mins,0.5416536493349371,Duration of Flow,FB,26,Duration of Flow
+4hr,0.3684066687314118,Duration of Flow,FB,26,Duration of Flow
+daily,0.45469302370881126,Duration of Flow,FB,26,Duration of Flow
+hourly,0.5401670656405844,Duration of Flow,FB,26,Duration of Flow
+30mins,0.7958795261222759,Duration of Flow,FB,27,Duration of Flow
+4hr,0.5790472115929363,Duration of Flow,FB,27,Duration of Flow
+daily,0.4365458958033957,Duration of Flow,FB,27,Duration of Flow
+hourly,0.7486756184909065,Duration of Flow,FB,27,Duration of Flow
+30mins,0.3823190412220381,Duration of Flow,FB,28,Duration of Flow
+4hr,0.5022925833627493,Duration of Flow,FB,28,Duration of Flow
+daily,0.2605184989990933,Duration of Flow,FB,28,Duration of Flow
+hourly,0.3288131424581494,Duration of Flow,FB,28,Duration of Flow
+30mins,0.2809393934296151,Duration of Flow,FB,29,Duration of Flow
+4hr,0.3111911215508918,Duration of Flow,FB,29,Duration of Flow
+daily,0.24627204781405998,Duration of Flow,FB,29,Duration of Flow
+hourly,0.3220355894216861,Duration of Flow,FB,29,Duration of Flow
+30mins,0.3180537266188981,Duration of Flow,FB,30,Duration of Flow
+4hr,0.1627447569373905,Duration of Flow,FB,30,Duration of Flow
+daily,0.019943377156973044,Duration of Flow,FB,30,Duration of Flow
+hourly,0.23254846816859012,Duration of Flow,FB,30,Duration of Flow
+30mins,0.45770921132079767,Duration of Flow,FB,31,Duration of Flow
+4hr,0.47116970622152227,Duration of Flow,FB,31,Duration of Flow
+daily,0.0742479966119995,Duration of Flow,FB,31,Duration of Flow
+hourly,0.4510101796551593,Duration of Flow,FB,31,Duration of Flow
+30mins,0.3651834694893905,Duration of Flow,FB,32,Duration of Flow
+4hr,0.324564198507856,Duration of Flow,FB,32,Duration of Flow
+daily,0.303479420641167,Duration of Flow,FB,32,Duration of Flow
+hourly,0.3419423580011939,Duration of Flow,FB,32,Duration of Flow
+30mins,0.7870215740495357,Duration of Flow,FB,33,Duration of Flow
+4hr,0.7191635370689575,Duration of Flow,FB,33,Duration of Flow
+daily,0.3992725548394634,Duration of Flow,FB,33,Duration of Flow
+hourly,0.8247459076573136,Duration of Flow,FB,33,Duration of Flow
+30mins,0.9341773603787042,Duration of Flow,FB,34,Duration of Flow
+4hr,0.7218495935876209,Duration of Flow,FB,34,Duration of Flow
+daily,0.7957455815829458,Duration of Flow,FB,34,Duration of Flow
+hourly,0.915627143321095,Duration of Flow,FB,34,Duration of Flow
+30mins,0.4785137399948908,Duration of Flow,FB,35,Duration of Flow
+4hr,0.31160152828222876,Duration of Flow,FB,35,Duration of Flow
+daily,0.24573579699538348,Duration of Flow,FB,35,Duration of Flow
+hourly,0.4498969297568042,Duration of Flow,FB,35,Duration of Flow
+30mins,0.5538929411441279,Duration of Flow,FB,36,Duration of Flow
+4hr,0.49425235129447526,Duration of Flow,FB,36,Duration of Flow
+daily,0.0945251262355326,Duration of Flow,FB,36,Duration of Flow
+hourly,0.5765096496299962,Duration of Flow,FB,36,Duration of Flow
+30mins,0.43363180671195534,Duration of Flow,FB,37,Duration of Flow
+4hr,0.4809374287663231,Duration of Flow,FB,37,Duration of Flow
+daily,0.33918843926683034,Duration of Flow,FB,37,Duration of Flow
+hourly,0.4315923000114378,Duration of Flow,FB,37,Duration of Flow
+30mins,0.7588407794180965,Duration of Flow,FB,38,Duration of Flow
+4hr,0.7416121972906575,Duration of Flow,FB,38,Duration of Flow
+daily,0.07040434604199204,Duration of Flow,FB,38,Duration of Flow
+hourly,0.6711464936371233,Duration of Flow,FB,38,Duration of Flow
+30mins,0.7456612037527013,Duration of Flow,FB,39,Duration of Flow
+4hr,0.5581902432099164,Duration of Flow,FB,39,Duration of Flow
+daily,0.42337855285562453,Duration of Flow,FB,39,Duration of Flow
+hourly,0.6137168157662118,Duration of Flow,FB,39,Duration of Flow
+30mins,0.6293625880195715,Duration of Flow,FB,40,Duration of Flow
+4hr,0.3096404703977108,Duration of Flow,FB,40,Duration of Flow
+daily,0.13490898307039748,Duration of Flow,FB,40,Duration of Flow
+hourly,0.5809172927305465,Duration of Flow,FB,40,Duration of Flow
+30mins,0.3584898519408404,Duration of Flow,FB,41,Duration of Flow
+4hr,0.24273998545981842,Duration of Flow,FB,41,Duration of Flow
+daily,0.3232467623111577,Duration of Flow,FB,41,Duration of Flow
+hourly,0.22383792617755482,Duration of Flow,FB,41,Duration of Flow
+30mins,0.08661967327351706,Duration of Flow,FB,42,Duration of Flow
+4hr,0.2236055459977679,Duration of Flow,FB,42,Duration of Flow
+daily,0.28417783912693206,Duration of Flow,FB,42,Duration of Flow
+hourly,0.09187352810828386,Duration of Flow,FB,42,Duration of Flow
+30mins,0.18996741858320848,Duration of Flow,FB,43,Duration of Flow
+4hr,0.21080242063636742,Duration of Flow,FB,43,Duration of Flow
+daily,0.03959652869132141,Duration of Flow,FB,43,Duration of Flow
+hourly,0.18592842033758175,Duration of Flow,FB,43,Duration of Flow
+30mins,0.33351580036919515,Duration of Flow,FB,44,Duration of Flow
+4hr,0.3009213732657325,Duration of Flow,FB,44,Duration of Flow
+daily,0.3694655985588672,Duration of Flow,FB,44,Duration of Flow
+hourly,0.32745959553254755,Duration of Flow,FB,44,Duration of Flow
+30mins,0.5373693772333745,Duration of Flow,FB,45,Duration of Flow
+4hr,0.5623949672853651,Duration of Flow,FB,45,Duration of Flow
+daily,0.12375103759933362,Duration of Flow,FB,45,Duration of Flow
+hourly,0.5689939596480684,Duration of Flow,FB,45,Duration of Flow
+30mins,0.6292855301069338,Duration of Flow,FB,46,Duration of Flow
+4hr,0.530188138090094,Duration of Flow,FB,46,Duration of Flow
+daily,0.12335503190595307,Duration of Flow,FB,46,Duration of Flow
+hourly,0.6790887482528158,Duration of Flow,FB,46,Duration of Flow
+30mins,0.7250120767344946,Duration of Flow,FB,47,Duration of Flow
+4hr,0.7208106782252084,Duration of Flow,FB,47,Duration of Flow
+daily,0.08924730649503994,Duration of Flow,FB,47,Duration of Flow
+hourly,0.7390255433335633,Duration of Flow,FB,47,Duration of Flow
+30mins,0.5668191611592093,Duration of Flow,FB,48,Duration of Flow
+4hr,0.529166361502256,Duration of Flow,FB,48,Duration of Flow
+daily,0.36999726647220643,Duration of Flow,FB,48,Duration of Flow
+hourly,0.6526427491541538,Duration of Flow,FB,48,Duration of Flow
+30mins,0.34064475730729327,Duration of Flow,FB,49,Duration of Flow
+4hr,0.19359144720974028,Duration of Flow,FB,49,Duration of Flow
+daily,0.11444505973171773,Duration of Flow,FB,49,Duration of Flow
+hourly,0.3079821256353879,Duration of Flow,FB,49,Duration of Flow
+30mins,0.7854641903503617,Duration of Flow,FB,50,Duration of Flow
+4hr,0.5210279748422215,Duration of Flow,FB,50,Duration of Flow
+daily,0.4313341079712712,Duration of Flow,FB,50,Duration of Flow
+hourly,0.7786614892739477,Duration of Flow,FB,50,Duration of Flow
+30mins,0.12529834567315434,Duration of Flow,FB,51,Duration of Flow
+4hr,0.19792945713699464,Duration of Flow,FB,51,Duration of Flow
+daily,0.472375413715474,Duration of Flow,FB,51,Duration of Flow
+hourly,0.09946158514401164,Duration of Flow,FB,51,Duration of Flow
+30mins,0.1872429842915687,Duration of Flow,FB,52,Duration of Flow
+4hr,0.22688310186390837,Duration of Flow,FB,52,Duration of Flow
+daily,0.0170636041310246,Duration of Flow,FB,52,Duration of Flow
+hourly,0.18786359354899795,Duration of Flow,FB,52,Duration of Flow
+30mins,0.6081085226304006,Duration of Flow,FB,53,Duration of Flow
+4hr,0.24487497303412983,Duration of Flow,FB,53,Duration of Flow
+daily,0.09236450971536367,Duration of Flow,FB,53,Duration of Flow
+hourly,0.5736144175098243,Duration of Flow,FB,53,Duration of Flow
+30mins,0.45526108788688174,Duration of Flow,FB,54,Duration of Flow
+4hr,0.49599800992954357,Duration of Flow,FB,54,Duration of Flow
+daily,0.04078261900224738,Duration of Flow,FB,54,Duration of Flow
+hourly,0.4438578353852821,Duration of Flow,FB,54,Duration of Flow
+30mins,0.5525751085622025,Duration of Flow,FB,55,Duration of Flow
+4hr,0.4116912407754151,Duration of Flow,FB,55,Duration of Flow
+daily,0.13381226105666635,Duration of Flow,FB,55,Duration of Flow
+hourly,0.5440719871129197,Duration of Flow,FB,55,Duration of Flow
+30mins,0.18825474628311636,Duration of Flow,FB,56,Duration of Flow
+4hr,0.12878456565980154,Duration of Flow,FB,56,Duration of Flow
+daily,0.24903334700551719,Duration of Flow,FB,56,Duration of Flow
+hourly,0.14625572388092722,Duration of Flow,FB,56,Duration of Flow
+30mins,0.6516867786578552,Duration of Flow,FB,57,Duration of Flow
+4hr,0.7374341941972374,Duration of Flow,FB,57,Duration of Flow
+daily,0.23635025018813874,Duration of Flow,FB,57,Duration of Flow
+hourly,0.6216319026221026,Duration of Flow,FB,57,Duration of Flow
+30mins,0.4637242446529122,Duration of Flow,FB,58,Duration of Flow
+4hr,0.3858409681340057,Duration of Flow,FB,58,Duration of Flow
+daily,0.3260841170364832,Duration of Flow,FB,58,Duration of Flow
+hourly,0.4605200227544208,Duration of Flow,FB,58,Duration of Flow
+30mins,0.41182856732901824,Duration of Flow,FB,59,Duration of Flow
+4hr,0.4207195654764328,Duration of Flow,FB,59,Duration of Flow
+daily,0.06949427223446555,Duration of Flow,FB,59,Duration of Flow
+hourly,0.33015343556147253,Duration of Flow,FB,59,Duration of Flow
+30mins,0.6446290881861376,Duration of Flow,FB,60,Duration of Flow
+4hr,0.6610288124236179,Duration of Flow,FB,60,Duration of Flow
+daily,0.3475676693135057,Duration of Flow,FB,60,Duration of Flow
+hourly,0.632539281767894,Duration of Flow,FB,60,Duration of Flow
+30mins,0.5478735763336495,Duration of Flow,FB,61,Duration of Flow
+4hr,0.39224461877201916,Duration of Flow,FB,61,Duration of Flow
+daily,0.2527105549953026,Duration of Flow,FB,61,Duration of Flow
+hourly,0.519547984511606,Duration of Flow,FB,61,Duration of Flow
+30mins,0.8230591206401584,Duration of Flow,FB,62,Duration of Flow
+4hr,0.7715653466530379,Duration of Flow,FB,62,Duration of Flow
+daily,0.07615556632911694,Duration of Flow,FB,62,Duration of Flow
+hourly,0.8347976290170945,Duration of Flow,FB,62,Duration of Flow
+30mins,0.4163428975703668,Duration of Flow,FB,63,Duration of Flow
+4hr,0.2586284735427991,Duration of Flow,FB,63,Duration of Flow
+daily,0.21479085620312077,Duration of Flow,FB,63,Duration of Flow
+hourly,0.3671857600499123,Duration of Flow,FB,63,Duration of Flow
+30mins,0.21171523266549253,Duration of Flow,FB,64,Duration of Flow
+4hr,0.130844975641962,Duration of Flow,FB,64,Duration of Flow
+daily,0.262592499794627,Duration of Flow,FB,64,Duration of Flow
+hourly,0.2802612817454335,Duration of Flow,FB,64,Duration of Flow
+30mins,0.9201227585672468,Duration of Flow,FB,65,Duration of Flow
+4hr,0.8300957946721308,Duration of Flow,FB,65,Duration of Flow
+daily,0.09036172736332831,Duration of Flow,FB,65,Duration of Flow
+hourly,0.9075486169517761,Duration of Flow,FB,65,Duration of Flow
+30mins,0.338156208466721,Duration of Flow,FB,66,Duration of Flow
+4hr,0.5710777019614545,Duration of Flow,FB,66,Duration of Flow
+daily,0.21338198989750834,Duration of Flow,FB,66,Duration of Flow
+hourly,0.33449586229879447,Duration of Flow,FB,66,Duration of Flow
+30mins,0.8622844452293029,Duration of Flow,FB,67,Duration of Flow
+4hr,0.6328066437833333,Duration of Flow,FB,67,Duration of Flow
+daily,0.27339052583116796,Duration of Flow,FB,67,Duration of Flow
+hourly,0.8408248900745924,Duration of Flow,FB,67,Duration of Flow
+30mins,0.4300100585902631,Duration of Flow,FB,68,Duration of Flow
+4hr,0.5124261006372731,Duration of Flow,FB,68,Duration of Flow
+daily,0.2686312169577295,Duration of Flow,FB,68,Duration of Flow
+hourly,0.36183189699660145,Duration of Flow,FB,68,Duration of Flow
+30mins,0.86649276332479,Duration of Flow,FB,69,Duration of Flow
+4hr,0.5152991573940806,Duration of Flow,FB,69,Duration of Flow
+daily,0.07193386637233555,Duration of Flow,FB,69,Duration of Flow
+hourly,0.8413676844901861,Duration of Flow,FB,69,Duration of Flow
+30mins,0.3441688243554425,Duration of Flow,FB,70,Duration of Flow
+4hr,0.4274050898960359,Duration of Flow,FB,70,Duration of Flow
+daily,0.2269036669847051,Duration of Flow,FB,70,Duration of Flow
+hourly,0.3650765968896743,Duration of Flow,FB,70,Duration of Flow
+30mins,0.4937066148130157,Duration of Flow,FB,71,Duration of Flow
+4hr,0.6063110376473088,Duration of Flow,FB,71,Duration of Flow
+daily,0.13539601651010338,Duration of Flow,FB,71,Duration of Flow
+hourly,0.44555029758152315,Duration of Flow,FB,71,Duration of Flow
+30mins,0.7048697785869293,Duration of Flow,FB,72,Duration of Flow
+4hr,0.4362021847601549,Duration of Flow,FB,72,Duration of Flow
+daily,0.08877893794771645,Duration of Flow,FB,72,Duration of Flow
+hourly,0.5009652754544062,Duration of Flow,FB,72,Duration of Flow
+30mins,0.4468859311403872,Duration of Flow,FB,73,Duration of Flow
+4hr,0.538266789524865,Duration of Flow,FB,73,Duration of Flow
+daily,0.34425597144796605,Duration of Flow,FB,73,Duration of Flow
+hourly,0.407342250441006,Duration of Flow,FB,73,Duration of Flow
+30mins,0.3547911376821927,Duration of Flow,FB,74,Duration of Flow
+4hr,0.42754205735758705,Duration of Flow,FB,74,Duration of Flow
+daily,0.23869833077106611,Duration of Flow,FB,74,Duration of Flow
+hourly,0.34851787728175676,Duration of Flow,FB,74,Duration of Flow
+30mins,0.6853466903916943,Duration of Flow,FB,75,Duration of Flow
+4hr,0.5428804733202166,Duration of Flow,FB,75,Duration of Flow
+daily,0.2545750059019799,Duration of Flow,FB,75,Duration of Flow
+hourly,0.6513163869185823,Duration of Flow,FB,75,Duration of Flow
+30mins,0.20882733436637177,Duration of Flow,FB,76,Duration of Flow
+4hr,0.11103537713882225,Duration of Flow,FB,76,Duration of Flow
+daily,0.13121566947590216,Duration of Flow,FB,76,Duration of Flow
+hourly,0.15484272560202023,Duration of Flow,FB,76,Duration of Flow
+30mins,0.5699914895295911,Duration of Flow,FB,77,Duration of Flow
+4hr,0.6114022931668163,Duration of Flow,FB,77,Duration of Flow
+daily,0.35720189593742535,Duration of Flow,FB,77,Duration of Flow
+hourly,0.5767718828392603,Duration of Flow,FB,77,Duration of Flow
+30mins,0.7048319068476028,Duration of Flow,FB,78,Duration of Flow
+4hr,0.42435625188205994,Duration of Flow,FB,78,Duration of Flow
+daily,0.06255148686722992,Duration of Flow,FB,78,Duration of Flow
+hourly,0.6477253292525259,Duration of Flow,FB,78,Duration of Flow
+30mins,0.5949512915315104,Duration of Flow,FB,79,Duration of Flow
+4hr,0.3186332512106328,Duration of Flow,FB,79,Duration of Flow
+daily,0.31150103686405034,Duration of Flow,FB,79,Duration of Flow
+hourly,0.5225195935926433,Duration of Flow,FB,79,Duration of Flow
+30mins,0.7437033078554274,Duration of Flow,FB,80,Duration of Flow
+4hr,0.6013278051141611,Duration of Flow,FB,80,Duration of Flow
+daily,0.06220052702923678,Duration of Flow,FB,80,Duration of Flow
+hourly,0.7324782661542864,Duration of Flow,FB,80,Duration of Flow
+30mins,0.5141580102646529,Duration of Flow,FB,81,Duration of Flow
+4hr,0.5027752803835585,Duration of Flow,FB,81,Duration of Flow
+daily,0.3474636502443603,Duration of Flow,FB,81,Duration of Flow
+hourly,0.5206702759521725,Duration of Flow,FB,81,Duration of Flow
+30mins,0.6592620218856501,Duration of Flow,FB,82,Duration of Flow
+4hr,0.6036793141086828,Duration of Flow,FB,82,Duration of Flow
+daily,0.29293265256995177,Duration of Flow,FB,82,Duration of Flow
+hourly,0.6649256103954498,Duration of Flow,FB,82,Duration of Flow
+30mins,0.6467891455014758,Duration of Flow,FB,83,Duration of Flow
+4hr,0.5116870262273189,Duration of Flow,FB,83,Duration of Flow
+daily,0.27914074009590856,Duration of Flow,FB,83,Duration of Flow
+hourly,0.5921137867126073,Duration of Flow,FB,83,Duration of Flow
+30mins,0.8785112053957032,Duration of Flow,FB,84,Duration of Flow
+4hr,0.6030014438633198,Duration of Flow,FB,84,Duration of Flow
+daily,0.5567877855623765,Duration of Flow,FB,84,Duration of Flow
+hourly,0.7648833404008283,Duration of Flow,FB,84,Duration of Flow
+30mins,0.2793896501117026,Duration of Flow,FB,85,Duration of Flow
+4hr,0.20879799157409704,Duration of Flow,FB,85,Duration of Flow
+daily,0.06933772221284051,Duration of Flow,FB,85,Duration of Flow
+hourly,0.2021639726076231,Duration of Flow,FB,85,Duration of Flow
+30mins,0.06775836573263623,Duration of Flow,FB,86,Duration of Flow
+4hr,0.031738835476559896,Duration of Flow,FB,86,Duration of Flow
+daily,0.3673427083814846,Duration of Flow,FB,86,Duration of Flow
+hourly,0.03273239520146938,Duration of Flow,FB,86,Duration of Flow
+30mins,0.7207172380732155,Duration of Flow,FB,87,Duration of Flow
+4hr,0.40088899772079967,Duration of Flow,FB,87,Duration of Flow
+daily,0.08256745044049446,Duration of Flow,FB,87,Duration of Flow
+hourly,0.7334560853593364,Duration of Flow,FB,87,Duration of Flow
+30mins,0.25244219387853994,Duration of Flow,FB,88,Duration of Flow
+4hr,0.3402029012151686,Duration of Flow,FB,88,Duration of Flow
+daily,0.13484449207001659,Duration of Flow,FB,88,Duration of Flow
+hourly,0.22062220837194638,Duration of Flow,FB,88,Duration of Flow
+30mins,0.15958117209709535,Duration of Flow,FB,89,Duration of Flow
+4hr,0.3513371343871384,Duration of Flow,FB,89,Duration of Flow
+daily,0.11428496056088704,Duration of Flow,FB,89,Duration of Flow
+hourly,0.18600088020903338,Duration of Flow,FB,89,Duration of Flow
+30mins,0.21001886873207729,Duration of Flow,FB,90,Duration of Flow
+4hr,0.2912110864421552,Duration of Flow,FB,90,Duration of Flow
+daily,0.18553484834209216,Duration of Flow,FB,90,Duration of Flow
+hourly,0.1986420142821466,Duration of Flow,FB,90,Duration of Flow
+30mins,0.7976709267593585,Duration of Flow,FB,91,Duration of Flow
+4hr,0.6534666238203322,Duration of Flow,FB,91,Duration of Flow
+daily,0.37458321415615514,Duration of Flow,FB,91,Duration of Flow
+hourly,0.7420825716445529,Duration of Flow,FB,91,Duration of Flow
+30mins,0.06384738773051249,Duration of Flow,FB,92,Duration of Flow
+4hr,0.05322539679953247,Duration of Flow,FB,92,Duration of Flow
+daily,0.16318166025036882,Duration of Flow,FB,92,Duration of Flow
+hourly,0.09140501764611979,Duration of Flow,FB,92,Duration of Flow
+30mins,0.32455150861647014,Duration of Flow,FB,93,Duration of Flow
+4hr,0.20516738497939813,Duration of Flow,FB,93,Duration of Flow
+daily,0.1565333647062619,Duration of Flow,FB,93,Duration of Flow
+hourly,0.2620178670923055,Duration of Flow,FB,93,Duration of Flow
+30mins,0.651476110223274,Duration of Flow,FB,94,Duration of Flow
+4hr,0.6358116243902275,Duration of Flow,FB,94,Duration of Flow
+daily,0.38864738566983137,Duration of Flow,FB,94,Duration of Flow
+hourly,0.6567895431157698,Duration of Flow,FB,94,Duration of Flow
+30mins,0.5488798187426989,Duration of Flow,FB,95,Duration of Flow
+4hr,0.25953379794372267,Duration of Flow,FB,95,Duration of Flow
+daily,0.23005427463364417,Duration of Flow,FB,95,Duration of Flow
+hourly,0.42536319616034374,Duration of Flow,FB,95,Duration of Flow
+30mins,0.5024140879616437,Duration of Flow,FB,96,Duration of Flow
+4hr,0.3422581133861073,Duration of Flow,FB,96,Duration of Flow
+daily,0.08841154645117558,Duration of Flow,FB,96,Duration of Flow
+hourly,0.4628079854637563,Duration of Flow,FB,96,Duration of Flow
+30mins,0.5117690844881001,Duration of Flow,FB,97,Duration of Flow
+4hr,0.34475908443289116,Duration of Flow,FB,97,Duration of Flow
+daily,0.01816435856528061,Duration of Flow,FB,97,Duration of Flow
+hourly,0.5112984490797603,Duration of Flow,FB,97,Duration of Flow
+30mins,0.5702164725438069,Duration of Flow,FB,98,Duration of Flow
+4hr,0.28132731321420823,Duration of Flow,FB,98,Duration of Flow
+daily,0.1020472806410321,Duration of Flow,FB,98,Duration of Flow
+hourly,0.41622967553046086,Duration of Flow,FB,98,Duration of Flow
+30mins,0.5711824494746577,Duration of Flow,FB,99,Duration of Flow
+4hr,0.4678194044487134,Duration of Flow,FB,99,Duration of Flow
+daily,0.40231992417605245,Duration of Flow,FB,99,Duration of Flow
+hourly,0.6301373160620628,Duration of Flow,FB,99,Duration of Flow
+30mins,0.49705741811717935,Duration of Flow,FB,100,Duration of Flow
+4hr,0.4483788525714617,Duration of Flow,FB,100,Duration of Flow
+daily,0.22600363105232923,Duration of Flow,FB,100,Duration of Flow
+hourly,0.5522283445889976,Duration of Flow,FB,100,Duration of Flow

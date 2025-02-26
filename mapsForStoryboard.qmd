@@ -1846,7 +1846,7 @@ random_iteration <- function(iterations, shed, hierarchy){
     
   } else if(shed == "ZZ"){
     combos <- ZZ_uaa_ex %>%
-      rename("up" = ID, "uaa" = '10mdem_flowacc') %>%
+      rename("up" = ID, "uaa" = 'dem3m_flowacc') %>%
       arrange(desc(uaa)) %>%
       mutate(down = lag(up)) %>%
       drop_na() %>%
@@ -1910,7 +1910,16 @@ big_iteration <- function(iterations, shed){
   return(fanfar)
 }
 
-big_iteration(2, "W3")
+#testing big_iteration
+#big_iteration(2, "W3")
+
+#running big iteration on the data
+#random_w3 <- big_iteration(100, "W3")
+#write_csv(random_w3, "./hierarchy_analysis_results/randomW3.csv")
+#random_fb <- big_iteration(100, "FB")
+#write_csv(random_fb, "./hierarchy_analysis_results/randomFB.csv")
+#random_zz <- big_iteration(100, "ZZ")
+#write_csv(random_zz, "./hierarchy_analysis_results/randomZZ.csv")
 
 
 
