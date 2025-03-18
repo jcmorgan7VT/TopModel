@@ -1992,12 +1992,16 @@ big_iteration <- function(iterations, shed){
 big_iteration(2, "ZZ")
 
 #running big iteration on the data
-random_w3 <- big_iteration(100, "W3")
-write_csv(random_w3, "./hierarchy_analysis_results/randomW3.csv")
-random_fb <- big_iteration(100, "FB")
-write_csv(random_fb, "./hierarchy_analysis_results/randomFB.csv")
-random_zz <- big_iteration(100, "ZZ")
-write_csv(random_zz, "./hierarchy_analysis_results/randomZZ.csv")
+#beware running again- takes forever
+# random_w3 <- big_iteration(100, "W3")
+# write_csv(random_w3, "./hierarchy_analysis_results/randomW3.csv")
+# random_fb <- big_iteration(100, "FB")
+# write_csv(random_fb, "./hierarchy_analysis_results/randomFB.csv")
+# random_zz <- big_iteration(100, "ZZ")
+# write_csv(random_zz, "./hierarchy_analysis_results/randomZZ.csv")
+random_w3 <- read_csv("./hierarchy_analysis_results/randomW3.csv")
+random_fb <- read_csv("./hierarchy_analysis_results/randomFB.csv")
+random_zz <- read_csv("./hierarchy_analysis_results/randomZZ.csv")
 
 ```
 
