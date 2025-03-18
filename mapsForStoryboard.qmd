@@ -6,11 +6,8 @@ editor_options:
 ---
 Not just maps for storyboard but also figures for storyboard
 
-11/13/24
-Making more finalized versions of maps for storyboard
-
-1/20/25
-Revisiting, and actually working on figures
+3/18/25
+Trying to format for posterity
 
 ```{r setup}
 #loading packages
@@ -655,12 +652,7 @@ rbind(pks_w3, pks_fb, pks_zz) %>%
        y = "Flow Permanence")
 ```
 
-```{r}
-#what is the fewest number of times you would need to observe a location to determine the actual local persistency?
-#what about if you visited over a range of wetness conditions? Like every 10th quartile
-```
-
-```{r}
+```{r prepare-inputs}
 #create input that only uses sensors that were deployed during both deployments
 #need to make a list of sensors deployed in both campaigns for each watershed
 #W3
@@ -1579,8 +1571,9 @@ fantastic_four <- function(routes, shed){
 
 
 
-Iterating through each pair of sensors, using the upstream sensor as the id, and the downstream sensor as the secondary or dependent. Seeing how often pairs of sensors wet up or dry down relative to each other.
+
 #Running analysis using refined functions
+Iterating through each pair of sensors, using the upstream sensor as the id, and the downstream sensor as the secondary or dependent. Seeing how often pairs of sensors wet up or dry down relative to each other.
 ```{r relative-position}
 #set routes for all 3 watersheds
 routes_w3 <- read_csv("w3_flowrouting.csv") %>% 
@@ -1905,10 +1898,10 @@ write_csv(all_uaa, "./hierarchy_analysis_results/drainageArea.csv")
 
 #add randomly generate hierarchies
 Structure of functions:
-| big_iteration(iterations, shed)
-  -| for loop- loops through the 4 hierarchies
-    -|random_iteration(iterations, shed, hierarchy)
-      -| for loop- loops through number of iterations, finding the right combos, routes, and inputs for each watershed and hierarchy. Relies on the the already calculated results from the hierarchy analysis, the form of sults_so_far
+- big_iteration(iterations, shed)
+  |- for loop- loops through the 4 hierarchies
+    |- random_iteration(iterations, shed, hierarchy)
+     |- for loop- loops through number of iterations, finding the right combos, routes, and inputs for each watershed and hierarchy. Relies on the the already calculated results from the hierarchy analysis, the form of sults_so_far
 ```{r define-functions}
 
 #function where you specify number of iterations, shed, and the hierarchy. Returns the p-value for each times step for each iteration compared to the actual hiearchy run. Relies on sults_so_far being in its current form.
@@ -2004,7 +1997,6 @@ random_fb <- read_csv("./hierarchy_analysis_results/randomFB.csv")
 random_zz <- read_csv("./hierarchy_analysis_results/randomZZ.csv")
 
 ```
-
 ```{r plot-random-results}
 rbind(random_w3,
       random_fb,
@@ -2036,8 +2028,7 @@ rbind(random_w3,
 
 
 ```
-
-```{r}
+```{r testing-random-iteration}
 set.seed(123)  # For reproducibility
 iterations <- 1000
 
@@ -2059,7 +2050,6 @@ random_iteration(sample, 2, 123, "FB", "Relative Position")
 
 
 ```
-
 ```{r random-W3}
 set.seed(124)  # For reproducibility
 iterations <- 100
@@ -2136,6 +2126,7 @@ alldat3 %>% group_by(iteration) %>%
   theme_classic()
 
 ```
+
 ##Compile all of my results so far 2
 Consolidate the gains!!
 ```{r consolidating-progress}
@@ -3565,23 +3556,6 @@ scale_color_continuous(type = "viridis")+
 #line connecting 
 ```
 
-#Nick's idea: PLOT CHANGE VERSUS NO CHANGE IN TIME
-```{r unfinished}
-w3_pairs
-
-input <- rbind(bind23, bind24) %>%
-  filter(wshed == "W3", mins %in% c(0, 30)) %>%
-  select(datetime, binary, ID) %>%
-  mutate(ID = paste0("r_",ID)) %>% 
-  pivot_wider(names_from = ID, values_from = binary)
-
-mod3 <- input %>% select(w3_pairs$up[1],w3_pairs$down[1], -datetime)
-no_dupes <- mod3 %>%
-  filter(row_number() == 1 | !apply(. == lag(.), 1, all))
-
-```
-
-
 Also test what happens if I only do hourly, daily, etc timestep for my earlier loops
 #Determine all alternate scenarios
 ##testing to see if there will be differences
@@ -3912,7 +3886,6 @@ ggplot(testtt, aes(x  = DATETIME, y = Q_mm_day))+
   theme_classic()+
   scale_color_viridis_c(name = "Number of Drying")
 ```
-
 ```{r additional-quality-control}
 #figure out what is going on for sensors 19 and 12 in watershed 3
 #figure out a way to quickly diagnose/quality control all sensor pairs
@@ -4000,7 +3973,6 @@ sults_so_far %>%
             mode2 = Mode(prop)[2]) %>% 
   knitr::kable()
 ```
-
 ```{r calculate-wilcox-0.5}
 rand_test <- random_w3 %>% filter(timescale == "30mins")
 
@@ -4015,9 +3987,6 @@ sults_so_far %>%
   knitr::kable()
 ```
 
-Test with and without replacement
-
-Determine if there is something systematic that defines the sequence iteratively or randomly determined
 #calculating discharge
 ```{r}
 #source function I wrote in separate script
@@ -4026,3 +3995,12 @@ source("calcQ.R")
 
 #plot hypsometric curves for each stream network
 Extract elevation along the streams (might need ARC), then plot versus distance
+
+#Last part of analysis: try to predict the flow permanence based on topographic metrics
+Use sensor locations snapped on ARC computer to extract different topographic metrics; metrics can be calculated here in R using whitebox tools.
+##multilinear regression
+```{r}
+
+```
+
+##random forest
