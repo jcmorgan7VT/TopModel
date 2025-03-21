@@ -3999,21 +3999,21 @@ wbt_wetness_index(sca = flowacc_output, #flow accumulation
 #drainage area from ARC
 
 #extract values
-bind_cols(extract(rast(flowacc_output), locs_shape),
-          extract(rast(slope_output), locs_shape),
-          extract(rast(twi_output), locs_shape),
-          extract(rast(tpi_output), locs_shape),
-          by = "ID")
-W3_uaa_ex <- extract(rast(flowacc_output), locs_shape)
+vals_df <- bind_cols(extract(rast(flowacc_output), locs_shape),
+          extract(rast(slope_output), locs_shape)[,2],
+          extract(rast(twi_output), locs_shape)[,2],
+          extract(rast(tpi_output), locs_shape)[,2]) %>% 
+  rename("uaa" = '10mdem_flowacc', "slope" = `...3`, "twi" = `...4`, "tpi" = `...5`) %>% 
+  left_join(pks_w3, by = "ID") %>% 
+  select(-wshed, -ID)
 
 
-rast(twi_output)#should be in units of 3 m2, so 200 is 600 m2 I 
 
 #make list that makes pairs of sites based on topography
 
 #final output, make sure to add pk
 W3_topo_pk <- W3_uaa_ex %>% 
-  rename("uaa" = '10mdem_flowacc') %>%
+  rename() %>%
   left_join(pks_w3, by = "ID")
 FB_topo_pk <- FB_uaa_ex %>% 
   rename("uaa" = '10mdem_flowacc') %>%
@@ -4027,6 +4027,6 @@ rbind(W3_topo_pk, FB_topo_pk, ZZ_topo_pk)
 
 ```{r}
 #use reformatted df with sensor flow permanence and topo metrics in a multilinear regression
+model <- lm(pk ~ uaa + slope + twi + tpi, data = vals_df)
+summary(model)
 ```
-
-##random forest
