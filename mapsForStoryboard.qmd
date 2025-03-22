@@ -694,6 +694,7 @@ rbind(input_w3, input_fb, input_zz)
 ```
 
 ## Average Duration of Flow
+Problem with calculating duration of Flow- the maximum value is dependent on how long the sensor was continuously deployed
 ```{r dof-w3}
 #successfully calculating the average duration of flow for an event
 bind23 <- data_23 %>% 
@@ -702,7 +703,8 @@ bind24 <- data_24 %>%
   select(datetime, number, wshed, binary, mins) %>% 
   rename("ID" = number)
 
-dof_w3 <- rbind(bind23, bind24) %>% 
+#dof_w3 <- 
+plot23 <- bind23 %>% 
   filter(wshed == "W3", mins %in% c(0, 30)) %>% 
   select(datetime, ID, binary) %>% 
   mutate(group = data.table::rleid(binary)) %>%
@@ -712,9 +714,68 @@ dof_w3 <- rbind(bind23, bind24) %>%
   mutate(timeperiod = as.numeric(timeperiod, units = "days")) %>% 
   group_by(ID) %>% 
   filter(state == 1) %>% 
-  summarise(avg_days_flowing = mean(timeperiod)) %>% 
-  mutate(wshed = "W3")
+  #summarise(avg_days_flowing = mean(timeperiod)) %>% 
+  mutate(wshed = "W3") %>% 
+    ggplot()+
+    geom_boxplot(aes(x = ID, y = timeperiod, group = ID))
 
+#plot24 <- 
+  bind24 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(group = data.table::rleid(binary)) %>%
+  group_by(group, ID) %>%
+  summarise(state = first(binary), 
+            timeperiod = dplyr::last(datetime) - dplyr::first(datetime)
+            ) %>% 
+  mutate(timeperiod = as.numeric(timeperiod, units = "days")) %>% 
+  group_by(ID) %>% 
+  filter(state == 1) %>% 
+    left_join(durations, by = "ID") %>% 
+    mutate(proportion = timeperiod/duration) %>% 
+  summarise(avg_days_flowing = mean(proportion)) %>% 
+  mutate(wshed = "W3") %>% 
+    print(n = 30)
+    ggplot()+
+    geom_boxplot(aes(x = ID, y = timeperiod, group = ID))
+
+plot23/plot24
+
+durations <- bind24 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(group = data.table::rleid(binary)) %>%
+    group_by(ID) %>% 
+    summarise(duration = max(datetime) - min(datetime)) %>% 
+  mutate(duration = as.numeric(duration, units = "days"))
+
+
+bind24 %>% 
+  filter(ID == 1) %>% 
+ggplot()+
+  geom_line(aes(x = datetime, y = binary))
+
+binary <- c("#DB995A",
+            "#586BA4"
+  )
+
+ggplot()+
+  geom_tile(data = filter(bind24, wshed == "W3", mins %in% c(0, 30)),
+            aes(x = datetime, y = ID, fill = as.character(binary)))+
+  #facet_grid(~deployment, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c("0", "1"),
+                    labels = c("No flow", "flowing"),
+                    name = ""
+                    )+
+  labs(title = "Streamflow permanence in W3, 2024",
+       x = "")+
+  theme_classic()
+
+#i can either have the number of times that it changes state, easier to make a proportion
+
+#or the average duration of flow divided by the total period length
 ```
 ```{r dof-fb}
 dof_fb <- rbind(bind23, bind24) %>% 
