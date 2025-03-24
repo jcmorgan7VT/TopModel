@@ -71,10 +71,10 @@ ggplot()+
     new_scale_fill() +
   geom_spatraster(data = crop1, alpha = 0.5)+
   geom_sf(data = w3_outline, fill = NA, color = "black", alpha = 0.3)+
-  geom_sf(data = w3_net, colour = "darkslategray3") +
+  #geom_sf(data = w3_net, colour = "darkslategray3") +
     #geom_sf(data = lcc, colour = "midnightblue", pch = 19, size = 6) +
   geom_sf(data = dd, aes(colour = as.numeric(depth)), pch = 19, size = 3) +
-  geom_sf(data = w3_pour, colour = "black") +
+  #geom_sf(data = w3_pour, colour = "black") +
    scale_fill_hypso_c(palette = "dem_screen" , limits = c(200, 1000))+
   theme(rect = element_rect(fill = "transparent", color = NA))+
   ggspatial::annotation_scale(location = 'tr')
