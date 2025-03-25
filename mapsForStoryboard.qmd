@@ -647,9 +647,23 @@ rbind(pks_w3, pks_fb, pks_zz) %>%
   geom_boxplot()+
   geom_jitter(width = 0.1, alpha = 0.5)+
   theme_classic()+
-  labs(title = "Distributions of Flow Permanence",
+  labs(title = "Distributions of Proportion of Time Flowing",
        x = "Watershed",
-       y = "Flow Permanence")
+       y = "Proportion of Time Flowing")
+
+rbind(pks_w3, pks_fb, pks_zz) %>% 
+  ggplot(aes(x = pk, fill = wshed)) +
+geom_histogram(binwidth = 0.1)+
+    theme_classic()+
+  labs(title = "Distributions of Proportion of Time Flowing",
+       x = "Proportion of Time Flowing",
+       y = "Density")+
+  scale_fill_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+                     
+                     name = "Watershed")#+
+  facet_wrap(~wshed)
+  
+  #https://coolbutuseless.github.io/2020/04/01/introducing-ggpattern-pattern-fills-for-ggplot/
 ```
 
 ```{r prepare-inputs}
@@ -703,24 +717,30 @@ bind24 <- data_24 %>%
   select(datetime, number, wshed, binary, mins) %>% 
   rename("ID" = number)
 
-#dof_w3 <- 
-plot23 <- bind23 %>% 
-  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
-  select(datetime, ID, binary) %>% 
+#old dof calculation
+# dof_w3 <- rbind(bind23, bind24) %>%
+#   filter(wshed == "W3", mins %in% c(0, 30)) %>%
+#   select(datetime, ID, binary) %>%
+#   mutate(group = data.table::rleid(binary)) %>%
+#   group_by(group, ID) %>%
+#   summarise(state = first(binary),
+#             timeperiod = dplyr::last(datetime) - dplyr::first(datetime)) %>%
+#   mutate(timeperiod = as.numeric(timeperiod, units = "days")) %>%
+#   group_by(ID) %>%
+#   filter(state == 1) %>%
+#   summarise(avg_days_flowing = mean(timeperiod))
+# 
+# #new dof calculation, where it is a proportion
+durations <- bind24 %>%
+  filter(wshed == "W3", mins %in% c(0, 30)) %>%
+  select(datetime, ID, binary) %>%
   mutate(group = data.table::rleid(binary)) %>%
-  group_by(group, ID) %>%
-  summarise(state = first(binary), 
-            timeperiod = dplyr::last(datetime) - dplyr::first(datetime)) %>% 
-  mutate(timeperiod = as.numeric(timeperiod, units = "days")) %>% 
-  group_by(ID) %>% 
-  filter(state == 1) %>% 
-  #summarise(avg_days_flowing = mean(timeperiod)) %>% 
-  mutate(wshed = "W3") %>% 
-    ggplot()+
-    geom_boxplot(aes(x = ID, y = timeperiod, group = ID))
+    group_by(ID) %>%
+    summarise(duration = max(datetime) - min(datetime)) %>%
+  mutate(duration = as.numeric(duration, units = "days"))
 
-#plot24 <- 
-  bind24 %>% 
+
+w3_dof_24 <- bind24 %>% 
   filter(wshed == "W3", mins %in% c(0, 30)) %>% 
   select(datetime, ID, binary) %>% 
   mutate(group = data.table::rleid(binary)) %>%
@@ -732,16 +752,9 @@ plot23 <- bind23 %>%
   group_by(ID) %>% 
   filter(state == 1) %>% 
     left_join(durations, by = "ID") %>% 
-    mutate(proportion = timeperiod/duration) %>% 
-  summarise(avg_days_flowing = mean(proportion)) %>% 
-  mutate(wshed = "W3") %>% 
-    print(n = 30)
-    ggplot()+
-    geom_boxplot(aes(x = ID, y = timeperiod, group = ID))
+    mutate(proportion = timeperiod/duration) 
 
-plot23/plot24
-
-durations <- bind24 %>% 
+durations <- bind23 %>% 
   filter(wshed == "W3", mins %in% c(0, 30)) %>% 
   select(datetime, ID, binary) %>% 
   mutate(group = data.table::rleid(binary)) %>%
@@ -749,62 +762,172 @@ durations <- bind24 %>%
     summarise(duration = max(datetime) - min(datetime)) %>% 
   mutate(duration = as.numeric(duration, units = "days"))
 
+w3_dof_23 <-  bind23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(group = data.table::rleid(binary)) %>%
+  group_by(group, ID) %>%
+  summarise(state = first(binary), 
+            timeperiod = dplyr::last(datetime) - dplyr::first(datetime)
+            ) %>% 
+  mutate(timeperiod = as.numeric(timeperiod, units = "days")) %>% 
+  group_by(ID) %>% 
+  filter(state == 1) %>% 
+    left_join(durations, by = "ID") %>% 
+    mutate(proportion = timeperiod/duration) 
+#calculate for 24 and 23 separately, then combine for summarization purposes
+dof_w3 <- rbind(w3_dof_23, w3_dof_24) %>% 
+  mutate(oneyear = proportion * 365) %>% 
+  summarise(avg_days_flowing = mean(oneyear),
+            sd_days_flowing = sd(oneyear))%>% 
+  mutate(wshed = "W3")
 
-bind24 %>% 
-  filter(ID == 1) %>% 
-ggplot()+
-  geom_line(aes(x = datetime, y = binary))
-
-binary <- c("#DB995A",
-            "#586BA4"
-  )
-
-ggplot()+
-  geom_tile(data = filter(bind24, wshed == "W3", mins %in% c(0, 30)),
-            aes(x = datetime, y = ID, fill = as.character(binary)))+
-  #facet_grid(~deployment, scales = "free") + 
-  scale_fill_manual(drop = FALSE,
-                     values = binary,
-                    breaks = c("0", "1"),
-                    labels = c("No flow", "flowing"),
-                    name = ""
-                    )+
-  labs(title = "Streamflow permanence in W3, 2024",
-       x = "")+
-  theme_classic()
-
-#i can either have the number of times that it changes state, easier to make a proportion
-
-#or the average duration of flow divided by the total period length
+#new sequence, different than old one
+# routes_w3 <- dof_w3 %>%
+#     filter(ID %in% W3_IDs) %>% 
+#   arrange(desc(avg_days_flowing)) %>% 
+#   mutate(down = lag(ID)) %>% 
+#   rename("up" = ID) %>% drop_na() %>% 
+#   select(up, down)
+#compare this sequence to the old one?
+# routes_w3 <- dof_w3 %>%
+#     filter(ID %in% W3_IDs) %>% 
+#   arrange(desc(avg_days_flowing)) %>% 
+#   mutate(down = lag(ID)) %>% 
+#   rename("up" = ID) %>% drop_na() %>% 
+#   select(up, down)
 ```
 ```{r dof-fb}
-dof_fb <- rbind(bind23, bind24) %>% 
+#old dof calculation
+# dof_fb <- rbind(bind23, bind24) %>% 
+#   filter(wshed == "FB", mins %in% c(0, 30)) %>% 
+#   select(datetime, ID, binary) %>% 
+#   mutate(group = data.table::rleid(binary)) %>%
+#   group_by(group, ID) %>%
+#   summarise(state = first(binary), 
+#             timeperiod = dplyr::last(datetime) - dplyr::first(datetime)) %>% 
+#   mutate(timeperiod = as.numeric(timeperiod, units = "days")) %>% 
+#   group_by(ID) %>% 
+#   filter(state == 1) %>% 
+#   summarise(avg_days_flowing = mean(timeperiod)) %>% 
+#   mutate(wshed = "FB") %>% 
+#   #remove outlier left out over winter
+#   filter(ID != 32)
+
+
+durations <- bind24 %>%
+  filter(wshed == "FB", mins %in% c(0, 30)) %>%
+  select(datetime, ID, binary) %>%
+  mutate(group = data.table::rleid(binary)) %>%
+    group_by(ID) %>%
+    summarise(duration = max(datetime) - min(datetime)) %>%
+  mutate(duration = as.numeric(duration, units = "days"))
+
+fb_dof_24 <- bind24 %>% 
   filter(wshed == "FB", mins %in% c(0, 30)) %>% 
   select(datetime, ID, binary) %>% 
   mutate(group = data.table::rleid(binary)) %>%
   group_by(group, ID) %>%
   summarise(state = first(binary), 
-            timeperiod = dplyr::last(datetime) - dplyr::first(datetime)) %>% 
+            timeperiod = dplyr::last(datetime) - dplyr::first(datetime)
+            ) %>% 
   mutate(timeperiod = as.numeric(timeperiod, units = "days")) %>% 
   group_by(ID) %>% 
   filter(state == 1) %>% 
-  summarise(avg_days_flowing = mean(timeperiod)) %>% 
-  mutate(wshed = "FB") %>% 
-  #remove outlier left out over winter
-  filter(ID != 32)
+    left_join(durations, by = "ID") %>% 
+    mutate(proportion = timeperiod/duration) 
+
+durations <- bind23 %>% 
+  filter(wshed == "FB", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(group = data.table::rleid(binary)) %>%
+    group_by(ID) %>% 
+    summarise(duration = max(datetime) - min(datetime)) %>% 
+  mutate(duration = as.numeric(duration, units = "days"))
+
+fb_dof_23 <-  bind23 %>% 
+  filter(wshed == "FB", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(group = data.table::rleid(binary)) %>%
+  group_by(group, ID) %>%
+  summarise(state = first(binary), 
+            timeperiod = dplyr::last(datetime) - dplyr::first(datetime)
+            ) %>% 
+  mutate(timeperiod = as.numeric(timeperiod, units = "days")) %>% 
+  group_by(ID) %>% 
+  filter(state == 1) %>% 
+    left_join(durations, by = "ID") %>% 
+    mutate(proportion = timeperiod/duration) 
+#calculate for 24 and 23 separately, then combine for summarization purposes
+dof_fb <- rbind(fb_dof_23, fb_dof_24) %>% 
+  mutate(oneyear = proportion * 365) %>% 
+  summarise(avg_days_flowing = mean(oneyear),
+            sd_days_flowing = sd(oneyear))%>%  
+  mutate(wshed = "FB")
 ```
 ```{r dof-zz}
-dof_zz <- rbind(bind23, bind24) %>% 
+#old dof calculation
+# dof_zz <- rbind(bind23, bind24) %>% 
+#   filter(wshed == "ZZ", mins %in% c(0, 30)) %>% 
+#   select(datetime, ID, binary) %>% 
+#   mutate(group = data.table::rleid(binary)) %>%
+#   group_by(group, ID) %>%
+#   summarise(state = first(binary), 
+#             timeperiod = dplyr::last(datetime) - dplyr::first(datetime)) %>% 
+#   mutate(timeperiod = as.numeric(timeperiod, units = "days")) %>% 
+#   group_by(ID) %>% 
+#   filter(state == 1) %>% 
+#   summarise(avg_days_flowing = mean(timeperiod)) %>% 
+#   mutate(wshed = "ZZ")
+
+durations <- bind24 %>%
+  filter(wshed == "ZZ", mins %in% c(0, 30)) %>%
+  select(datetime, ID, binary) %>%
+  mutate(group = data.table::rleid(binary)) %>%
+    group_by(ID) %>%
+    summarise(duration = max(datetime) - min(datetime)) %>%
+  mutate(duration = as.numeric(duration, units = "days"))
+
+zz_dof_24 <- bind24 %>% 
   filter(wshed == "ZZ", mins %in% c(0, 30)) %>% 
   select(datetime, ID, binary) %>% 
   mutate(group = data.table::rleid(binary)) %>%
   group_by(group, ID) %>%
   summarise(state = first(binary), 
-            timeperiod = dplyr::last(datetime) - dplyr::first(datetime)) %>% 
+            timeperiod = dplyr::last(datetime) - dplyr::first(datetime)
+            ) %>% 
   mutate(timeperiod = as.numeric(timeperiod, units = "days")) %>% 
   group_by(ID) %>% 
   filter(state == 1) %>% 
-  summarise(avg_days_flowing = mean(timeperiod)) %>% 
+    left_join(durations, by = "ID") %>% 
+    mutate(proportion = timeperiod/duration) 
+
+durations <- bind23 %>% 
+  filter(wshed == "ZZ", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(group = data.table::rleid(binary)) %>%
+    group_by(ID) %>% 
+    summarise(duration = max(datetime) - min(datetime)) %>% 
+  mutate(duration = as.numeric(duration, units = "days"))
+
+zz_dof_23 <-  bind23 %>% 
+  filter(wshed == "ZZ", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(group = data.table::rleid(binary)) %>%
+  group_by(group, ID) %>%
+  summarise(state = first(binary), 
+            timeperiod = dplyr::last(datetime) - dplyr::first(datetime)
+            ) %>% 
+  mutate(timeperiod = as.numeric(timeperiod, units = "days")) %>% 
+  group_by(ID) %>% 
+  filter(state == 1) %>% 
+    left_join(durations, by = "ID") %>% 
+    mutate(proportion = timeperiod/duration) 
+#calculate for 24 and 23 separately, then combine for summarization purposes
+dof_zz <- rbind(zz_dof_23, zz_dof_24) %>% 
+  mutate(oneyear = proportion * 365) %>% 
+  summarise(avg_days_flowing = mean(oneyear),
+            sd_days_flowing = sd(oneyear))%>% 
   mutate(wshed = "ZZ")
 ```
 ```{r combine-boxplot}
@@ -813,10 +936,17 @@ rbind(dof_w3, dof_fb, dof_zz) %>%
   geom_boxplot()+
   geom_jitter(width = 0.1, alpha = 0.5)+
   theme_classic()+
-  labs(title = "Distributions of Average Duration of Flow",
+  labs(title = "Distributions of Duration of Continuous Flow",
        x = "Watershed",
-       y = "Duration of Flow (days)")
+       y = "Duration of Continuous Flow (days)")
 
+rbind(dof_w3, dof_fb, dof_zz) %>% 
+  ggplot(aes(x = avg_days_flowing, y = sd_days_flowing, color = wshed))+
+  geom_point()+
+  theme_classic()+
+  labs(title = "Distributions of Duration of Continuous Flow",
+       x = "Mean days flowing",
+       y = "sd days flowing")
 ```
 
 #Figure 4: How often does the network wet up, dry down, etc?
@@ -1504,7 +1634,7 @@ return(output)}
 }
 
 #test function
-calc_support("r_23", "r_6", input)
+#calc_support("r_23", "r_6", input)
 
 #function to break up groups of continuous measurements, ensure that gaps are not considered
 #contains calc_support function
@@ -1537,7 +1667,7 @@ iterate_groups <- function(up, down, input, timestep){
   return(iterate_groups_alldat)
 }
 
-iterate_groups("r_23", "r_6", input, hours(1))
+#iterate_groups("r_23", "r_6", input, hours(1))
 #function to take a list of routes and input dataset
 #contains group iteration function
 #for loop to iterate through full list of combinations of up and downstream locations
@@ -1565,7 +1695,7 @@ calculate_hierarchy <- function(routes, input, timestep){
   return(final_output)
 }
 
-calculate_hierarchy(routes, input, minutes(30))
+#calculate_hierarchy(routes, input, minutes(30))
 #calculate_hierarchy(routes, input, days(1))
 
 
@@ -1696,7 +1826,6 @@ write_csv(all_pk, "./hierarchy_analysis_results/flowPermanence.csv")
 #make list that make pairs of sites based on local persistency
 routes_w3 <- dof_w3 %>%
     filter(ID %in% W3_IDs) %>% 
-
   arrange(desc(avg_days_flowing)) %>% 
   mutate(down = lag(ID)) %>% 
   rename("up" = ID) %>% drop_na() %>% 
@@ -1723,7 +1852,7 @@ all_dof <- rbind(fantastic_four(routes_w3, "W3"),
                  fantastic_four(routes_zz, "ZZ")) %>% 
   mutate("hierarchy" = "Duration of Flow")
 
-write_csv(all_pk, "./hierarchy_analysis_results/durationOfFlow.csv")
+write_csv(all_dof, "./hierarchy_analysis_results/durationOfFlow.csv")
 ```
 ```{r drainage-area}
 #I was not confident in my R determined values, so I extracted drainage area in Arc. Reading in results
@@ -2119,7 +2248,10 @@ alldat3 %>% group_by(iteration) %>%
 Consolidate the gains!!
 ```{r consolidating-progress}
 #prop stands for proportion or percentage of transitions that support the hypothesis
-  
+all_position <- read_csv("./hierarchy_analysis_results/relativePosition.csv")
+all_pk <- read_csv("./hierarchy_analysis_results/flowPermanence.csv")
+all_uaa <- read_csv("./hierarchy_analysis_results/drainageArea.csv")
+
 
 sults_so_far <- rbind(all_position,
                       all_pk,
@@ -2172,7 +2304,7 @@ sults_so_far %>%
 
 #violin plot of just 30 min timescale
 sults_so_far %>% 
-  filter(timescale %in% c("hourly", "daily")) %>% 
+  filter(timescale %in% c("30mins", "hourly")) %>% 
   ggplot(aes(x = timescale, y = prop, color = hierarchy)) +
   geom_violin()+
   theme_classic()+
