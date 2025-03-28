@@ -662,8 +662,7 @@ geom_histogram(binwidth = 0.1)+
                      
                      name = "Watershed")#+
   facet_wrap(~wshed)
-  
-  #https://coolbutuseless.github.io/2020/04/01/introducing-ggpattern-pattern-fills-for-ggplot/
+
 ```
 
 ```{r prepare-inputs}
@@ -947,6 +946,18 @@ rbind(dof_w3, dof_fb, dof_zz) %>%
   labs(title = "Distributions of Duration of Continuous Flow",
        x = "Mean days flowing",
        y = "sd days flowing")
+
+rbind(dof_w3, dof_fb, dof_zz) %>% 
+  ggplot(aes(x = avg_days_flowing, fill = wshed)) +
+geom_histogram(binwidth = 25)+
+    theme_classic()+
+  labs(title = "Distributions of Duration of Continuous Flow",
+       x = "Mean days of continuous flow",
+       y = "Density")+
+  scale_fill_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+                     
+                     name = "Watershed")#+
+  facet_wrap(~wshed)
 ```
 
 #Figure 4: How often does the network wet up, dry down, etc?
@@ -2397,6 +2408,50 @@ geom_histogram(binwidth = 0.1)+
                      name = "Organizing Scheme")+
   facet_grid(hierarchy~shed)
 
+sults_so_far %>% 
+  filter(timescale %in% c("30mins", "hourly")) %>% 
+  ggplot(aes(x = prop, fill = shed, y = after_stat(density))) +
+geom_density(alpha = 0.5)+
+      geom_vline(xintercept = 0.5, lty = 2)+
+    theme_classic()+
+  labs(title = "Distributions of Proportion of time Hiearchies Followed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  scale_fill_manual(values = c("#397367", "#FFA400", "#93C2F1"),
+                     
+                     name = "Watershed")+
+  facet_wrap(~hierarchy)
+
+sults_so_far %>% 
+  filter(timescale %in% c("30mins", "hourly")) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+  
+geom_density(aes(fill = shed, color = shed), alpha = 0.5)+
+    geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  labs(title = "Distributions of Proportion of time Hiearchies Followed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  scale_fill_manual(values = c("#397367", "#FFA400", "#93C2F1"),
+                     
+                     name = "Watershed")+
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1"),
+                     
+                     name = "Watershed")+
+  facet_grid(timescale~hierarchy)
+
+
+sults_so_far %>% 
+  filter(timescale %in% c("30mins", "hourly")) %>% 
+  ggplot() +
+geom_density(alpha = 0.5)+
+      geom_vline(xintercept = 0.5, lty = 2)+
+    theme_classic()+
+  labs(title = "Distributions of Proportion of time Hiearchies Followed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  facet_wrap(~hierarchy)
 #maybe it would look better to add the randomly generated hierarchies for a comparison
 
 ```
