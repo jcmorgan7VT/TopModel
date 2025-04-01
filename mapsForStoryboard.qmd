@@ -4279,6 +4279,7 @@ model <- lm(pk ~ uaa + slope + twi + tpi, data = vals_df)
 summary(model)
 ```
 
+#Running analysis again, but comparing wetting versus drying... how well do they follow hierarchy when distinguised
 3-31-25, attempting to differentiate between wetting and drying events
 ```{r differentiated-states-functions}
 #chunk to trouble shoot non-functioning instances to figure out why they are not working
@@ -4503,7 +4504,7 @@ fantastic_four_wd <- function(routes, shed){
 ```
 4-1-25, success! I can say what proportion of wetting and drying events follow a hierarchy
 
-```{r relative-position}
+```{r relative-position-wetANDdry}
 #set routes for all 3 watersheds
 routes_w3 <- read_csv("w3_flowrouting.csv") %>% 
   filter(sensor %in% W3_IDs, drains_from %in% W3_IDs) %>% 
@@ -4530,4 +4531,319 @@ summarized_position_wd <- all_position_wd %>%
   group_by(up, down, timescale, shed, hierarchy) %>%
     summarise(avg_wet_prop = mean(wetting),
               avg_dry_prop = mean(drying))
+```
+```{r flow-permanence}
+#make list that make pairs of sites based on local persistency
+routes_w3 <- pks_w3 %>% 
+    filter(ID %in% W3_IDs) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+routes_fb <- pks_fb %>%
+    filter(ID %in% FB_IDs) %>% 
+  filter(pk != 1) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+routes_zz <- pks_zz %>%
+    filter(ID %in% ZZ_IDs) %>% 
+  filter(pk != 1) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+all_pk_wd <- rbind(fantastic_four_wd(routes_w3, "W3"),
+                fantastic_four_wd(routes_fb, "FB"),
+                fantastic_four_wd(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Flow Permanence")
+
+summarized_pk_wd <- all_pk_wd %>% 
+  group_by(up, down, timescale, shed, hierarchy) %>%
+    summarise(avg_wet_prop = mean(wetting),
+              avg_dry_prop = mean(drying))
+```
+```{r duration-of-flow}
+#make list that make pairs of sites based on local persistency
+routes_w3 <- dof_w3 %>%
+    filter(ID %in% W3_IDs) %>% 
+  arrange(desc(avg_days_flowing)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+routes_fb <- dof_fb %>% 
+    filter(ID %in% FB_IDs) %>% 
+
+  arrange(desc(avg_days_flowing)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+routes_zz <- dof_zz %>% 
+    filter(ID %in% ZZ_IDs) %>% 
+
+  arrange(desc(avg_days_flowing)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+all_dof_wd <- rbind(fantastic_four_wd(routes_w3, "W3"),
+                 fantastic_four_wd(routes_fb, "FB"),
+                 fantastic_four_wd(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Duration of Flow")
+
+summarized_dof_wd <- all_dof_wd %>% 
+  group_by(up, down, timescale, shed, hierarchy) %>%
+    summarise(avg_wet_prop = mean(wetting),
+              avg_dry_prop = mean(drying))
+```
+```{r drainage-area}
+#I was not confident in my R determined values, so I extracted drainage area in Arc. Reading in results
+
+#.csv files with extracted 1m drainage area values, but also contain snapped coords in UTM
+fb_uaa_1m <- read_csv("./STIC_uaa/fb2.csv")
+zz_uaa_1m <- read_csv("./STIC_uaa/zz2.csv")
+w3_uaa_1m <- read_csv("./STIC_uaa/w32.csv")
+
+routes_w3 <- w3_uaa_1m %>% 
+    filter(ID %in% W3_IDs) %>% 
+  rename("up" = ID, "uaa" = RASTERVALU) %>%
+  arrange(desc(uaa)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+routes_fb <- fb_uaa_1m %>%
+    filter(ID %in% FB_IDs) %>% 
+  rename("up" = ID, "uaa" = RASTERVALU) %>%
+  arrange(desc(uaa)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+routes_zz <- zz_uaa_1m %>% 
+    filter(ID %in% ZZ_IDs) %>% 
+  rename("up" = ID, "uaa" = RASTERVALU) %>%
+  arrange(desc(uaa)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+all_uaa_wd <- rbind(fantastic_four_wd(routes_w3, "W3"),
+                 fantastic_four_wd(routes_fb, "FB"),
+                 fantastic_four_wd(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Drainage Area")
+
+summarized_uaa_wd <- all_uaa_wd %>% 
+  group_by(up, down, timescale, shed, hierarchy) %>%
+    summarise(avg_wet_prop = mean(wetting),
+              avg_dry_prop = mean(drying))
+```
+##Compile all of my results so far 2
+Consolidate the gains!!
+```{r consolidating-progress}
+
+
+sults_so_far <- rbind(summarized_position_wd,
+                      summarized_pk_wd,
+                      summarized_dof_wd,
+                      summarized_uaa_wd#,
+                      #random_w3
+                      ) %>% ungroup() %>% 
+  mutate(timescale = fct_relevel(timescale,
+                              c("30mins", "hourly", "4hr", "daily")),
+         hierarchy = as.factor(str_trim(as.character(hierarchy))),
+         
+         hierarchy = fct_relevel(hierarchy, 
+                                 c("Duration of Flow",
+                                "Flow Permanence",
+                                "Relative Position",
+                                "Drainage Area"))) %>% 
+  pivot_longer(cols = starts_with("avg"),
+               names_to = "direction",
+               values_to = "prop") 
+
+sults_so_far$direction[sults_so_far$direction == "avg_wet_prop"] <- "wetting"
+sults_so_far$direction[sults_so_far$direction == "avg_dry_prop"] <- "drying"
+
+
+sults_so_far <- sults_so_far%>% 
+  mutate(direction = fct_relevel(direction,
+                                 c("drying", "wetting")))
+sults_so_far %>% 
+  ggplot(aes(x = shed, y = prop, color = hierarchy)) +
+  geom_boxplot()+
+  theme_classic()+
+    geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
+  geom_hline(yintercept = 0.5, lty = 2)+
+  labs(x = "Watershed",
+       y = "Proportion",
+       title = "How often do adjacent sensors follow a hierarchy?")+
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+                     labels = c("Duration of Flow",
+                                "Flow Permanence",
+                                "Relative Position",
+                                "Drainage Area"),
+                     name = "Organizing Scheme")+
+  facet_wrap(direction~timescale)
+
+
+sults_so_far %>% 
+  filter(timescale %in% c("30mins")) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+  
+geom_density(aes(fill = direction, color = direction), alpha = 0.5)+
+    geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  labs(title = "30mins",
+       x = "Proportion of time followed",
+       y = "Density")+
+  scale_fill_manual(values = c("#FFA400", "#93C2F1"),name = "Direction")+
+  scale_color_manual(values = c("#FFA400", "#93C2F1"), name = "Direction")+
+  ylim(c(0, 6.25))+
+  facet_grid(shed~hierarchy)
+
+#instead of boxplots, show the ecdf and one-sided violin plot
+sults_so_far %>% 
+  filter(timescale == "30mins", shed == "W3") %>% 
+  ggplot(aes(x = shed, y = prop, color = hierarchy)) +
+  geom_violin()+
+  theme_classic()+
+  geom_point(position = position_jitterdodge(jitter.width = 0.1), alpha = 0.5)+
+  geom_hline(yintercept = 0.5, lty = 2)+
+  labs(x = "Watershed",
+       y = "Proportion",
+       title = "How often do adjacent sensors follow a hierarchy?")+
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F", "grey"),
+                     name = "Organizing Scheme")+
+  facet_wrap(~timescale)
+
+#violin plot of just 30 min timescale
+sults_so_far %>% 
+  filter(timescale %in% c("30mins", "hourly")) %>% 
+  ggplot(aes(x = timescale, y = prop, color = hierarchy)) +
+  geom_violin()+
+  theme_classic()+
+  geom_point(position = position_jitterdodge(jitter.width = 0.1), alpha = 0.5)+
+  geom_hline(yintercept = 0.5, lty = 2)+
+  labs(x = "Timescale",
+       y = "Proportion",
+       title = "How often do adjacent sensors follow a hierarchy (daily timescale?")+
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+                     name = "Organizing Scheme")+
+    facet_grid(rows = "shed")
+
+
+
+
+#plot ecdf instead of boxplots or violin plots
+plot(ecdf(w3_hourly$prop))
+plot(ecdf(alldat$prop))
+ggplot()+
+  stat_ecdf(data = w3_pairs, aes(prop))+
+  stat_ecdf(data = w3_new, aes(prop), color = "blue")
+
+sults_so_far %>% 
+  filter(timescale == "30mins") %>% 
+  ggplot(aes(prop, color = hierarchy)) +
+  stat_ecdf(geom = "line")+
+  theme_classic()+
+    #geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
+  geom_hline(yintercept = 0.5, lty = 2)+
+    geom_vline(xintercept = 0.5, lty = 2)+
+
+  labs(x = "Prop",
+       y = "Percentage of values less than or equal",
+       title = "How often do adjacent sensors follow a hierarchy?")+
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+                     name = "Organizing Scheme")+
+  facet_wrap(~shed)#+
+  lims(x = c(0.5,1),
+       y = c(0.5, 1))
+
+#just plain distributions might look better?
+sults_so_far %>% 
+  filter(timescale == "30mins") %>% 
+  ggplot(aes(prop, color = hierarchy)) +
+geom_density(alpha = 0.5)+
+    theme_classic()+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+
+    #geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
+  labs(x = "Prop",
+       y = "Density",
+       title = "How often do adjacent sensors follow a hierarchy?")+
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+                     name = "Organizing Scheme")+
+  facet_wrap(~shed)#+
+
+#try plain histogram
+sults_so_far %>% 
+  filter(timescale == "30mins") %>% 
+  ggplot(aes(prop, fill = hierarchy)) +
+geom_histogram(binwidth = 0.1)+
+    theme_classic()+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+
+    #geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
+  labs(x = "Prop",
+       y = "Density",
+       title = "How often do adjacent sensors follow a hierarchy?")+
+  scale_fill_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+                     
+                     name = "Organizing Scheme")+
+  facet_grid(hierarchy~shed)
+
+sults_so_far %>% 
+  filter(timescale %in% c("30mins", "hourly")) %>% 
+  ggplot(aes(x = prop, fill = shed, y = after_stat(density))) +
+geom_density(alpha = 0.5)+
+      geom_vline(xintercept = 0.5, lty = 2)+
+    theme_classic()+
+  labs(title = "Distributions of Proportion of time Hiearchies Followed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  scale_fill_manual(values = c("#397367", "#FFA400", "#93C2F1"),
+                     
+                     name = "Watershed")+
+  facet_wrap(~hierarchy)
+
+sults_so_far %>% 
+  filter(timescale %in% c("30mins", "hourly")) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+  
+geom_density(aes(fill = shed, color = shed), alpha = 0.5)+
+    geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  labs(title = "Distributions of Proportion of time Hiearchies Followed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  scale_fill_manual(values = c("#397367", "#FFA400", "#93C2F1"),
+                     
+                     name = "Watershed")+
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1"),
+                     
+                     name = "Watershed")+
+  facet_grid(timescale~hierarchy)
+
+
+sults_so_far %>% 
+  filter(timescale %in% c("30mins", "hourly")) %>% 
+  ggplot() +
+geom_density(alpha = 0.5)+
+      geom_vline(xintercept = 0.5, lty = 2)+
+    theme_classic()+
+  labs(title = "Distributions of Proportion of time Hiearchies Followed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  facet_wrap(~hierarchy)
+#maybe it would look better to add the randomly generated hierarchies for a comparison
+
 ```
