@@ -4278,3 +4278,256 @@ rbind(W3_topo_pk, FB_topo_pk, ZZ_topo_pk)
 model <- lm(pk ~ uaa + slope + twi + tpi, data = vals_df)
 summary(model)
 ```
+
+3-31-25, attempting to differentiate between wetting and drying events
+```{r differentiated-states-functions}
+#chunk to trouble shoot non-functioning instances to figure out why they are not working
+#instance not working:
+#run_scenario(routes_w3_pk, "pk", "W3", "daily")
+
+routes <- pks_w3 %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+input <- rbind(bind23, bind24) %>%
+      mutate(hour = hour(datetime)) %>% 
+        filter(wshed == "W3", mins %in% c(0, 30)) %>%
+      #filter(wshed == "W3", hour %in% c(12), mins %in% c(0)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary) #%>% 
+  #filter(datetime < stop24 & datetime > start24)
+
+
+all_transitions <- function(up, down, input){
+#inputs to function- comment out in final version
+# i <- 4
+# up <- paste0("r_",routes$up[i])
+# down <- paste0("r_",routes$down[i])
+#input <- filtered_input
+
+#create output with the total and the sub, also the two input locations
+output <- data.frame(up, down)
+
+  
+no_dupes <- input %>% 
+      select(up,down, datetime) %>% #remove date
+      # make it so that there cannot be a sequence without change
+      # keep date column for indexing purposes later
+      filter(row_number() == 1 | !apply(select(., up, down) == lag(select(., up, down)), 1, all)) %>% 
+      #remove rows where one of the sensors is missing data
+      drop_na()
+#View(no_dupes)
+#all flowing all the time?
+check <- nrow(no_dupes)
+
+if(check <= 2){
+  output$wetting <- NA
+  output$drying <- NA
+  return(output)
+}
+else {
+# Define window size
+window_size <- 2
+
+# Create sliding windows
+windows <- rollapply(
+  select(no_dupes, -datetime),
+  width = window_size,
+  by.column = FALSE,
+  FUN = function(x) paste(as.vector(t(x)), collapse = "")
+)
+
+# Count and sort sequences
+sequence_counts <- table(windows)
+sorted_counts <- sort(sequence_counts, decreasing = TRUE)
+
+# Display all sequences and their frequencies
+sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
+#if(check > 1) colnames(sequence_df) <- c("Sequence", "Frequency")
+sequence_df$t1_up <- as.numeric(substr(sequence_df$windows, 1, 1))
+sequence_df$t1_down <- as.numeric(substr(sequence_df$windows, 2, 2))
+sequence_df$t2_up <- as.numeric(substr(sequence_df$windows, 3, 3))
+sequence_df$t2_down <- as.numeric(substr(sequence_df$windows, 4, 4))
+
+sequence_df$sum_t1 <- sequence_df$t1_up + sequence_df$t1_down
+sequence_df$sum_t2 <- sequence_df$t2_up + sequence_df$t2_down
+sequence_df$direction <- "drying"
+sequence_df$direction[sequence_df$sum_t1 < sequence_df$sum_t2] <- "wetting"
+total_state_changes <- sequence_df %>% group_by(direction) %>% summarise(totals = sum(Freq))
+
+supports <- c("0001","0111","1101", "0100")
+sub <- filter(sequence_df, windows %in% supports) %>%
+  group_by(direction) %>% summarise(hierarchicals = sum(Freq)) %>% 
+  left_join(total_state_changes, by = "direction") %>% 
+  mutate(prop = hierarchicals/totals)
+#output$points <- sum(sub$Frequency)
+output$drying <- sub$prop[1]
+output$wetting <- sub$prop[2]
+#write some way to score the sequence_df
+#award one point for one of these configs:
+
+
+#sub <- filter(sequence_df, Sequence %in% supports)
+
+#create output with transitions
+#error handling- in situation where both points flowed 100% of the time
+
+return(output)}
+}
+
+#test function
+#all_transitions("r_23", "r_6", input)
+
+#function to break up groups of continuous measurements, ensure that gaps are not considered
+#contains calc_support function
+iterate_groups_wd <- function(up, down, input, timestep){
+  #create group column that identifies gaps in continuous data in time
+
+# i <- 4
+# up <- paste0("r_",routes$up[i])
+# down <- paste0("r_",routes$down[i])
+# timestep <- hours(1)
+  input$group <- cumsum(c(TRUE, diff(input$datetime) != timestep))
+  #View(input)
+
+  for(u in 1:length(unique(input$group))){
+  # u <- 1
+  #   print(u)
+    filtered_input <- input %>% filter(group == u)
+    #this line throws error if 
+    output <- all_transitions(up, down, filtered_input)
+    
+
+     if(u == 1) iterate_groups_alldat <- output
+     if(u > 1) iterate_groups_alldat <- rbind(iterate_groups_alldat, output)
+  }
+  # final_iterate_groups_alldat <- iterate_groups_alldat %>% 
+  #   drop_na() %>% 
+  #   group_by(up, down) %>% 
+  #   summarise(total = sum(total),
+  #             points = sum(points))
+  return(iterate_groups_alldat)
+}
+
+#iterate_groups_wd("r_23", "r_6", input, hours(1))
+#function to take a list of routes and input dataset
+#contains group iteration function
+#for loop to iterate through full list of combinations of up and downstream locations
+#IMPORTANT- calculate hierarchy and iterate groups only work if the input timestep is approriate
+calculate_hierarchy_wd <- function(routes, input, timestep){
+  for(x in 1:length(routes$up)){
+  up <- paste0("r_",routes$up[x])
+  down <- paste0("r_",routes$down[x])
+  #print(x)
+  
+  out <- iterate_groups_wd(up, down, input, timestep)
+    #out <- calc_support(up, down, input)
+
+
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
+
+  }
+  final_output <- alldat %>% 
+    drop_na() %>%
+    # group_by(up, down) %>%
+    # summarise(total = sum(total),
+    #           points = sum(points)) %>% 
+    # mutate(prop = points/total)
+  return(final_output)
+}
+
+#calculate_hierarchy_wd(routes, input, minutes(30))
+#calculate_hierarchy(routes, input, days(1))
+
+
+#make a function to loop through the four possible timesteps, and combine the output just for ease of applying this many different variations
+#fantastic 4 determines the input on its own
+fantastic_four_wd <- function(routes, shed){
+  theFour <- c("30mins", "hourly", "4hr", "daily")
+  
+  for(q in 1:length(theFour)){
+    #if statements to detect timescale, calculate appropriate inputs
+    timescale <- theFour[q]
+  if(timescale == "30mins"){
+    input <- rbind(input_w3, input_fb, input_zz) %>%
+      filter(wshed == shed, mins %in% c(0, 30)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- minutes(30)
+  } 
+  else if(timescale == "hourly"){
+    input <- rbind(input_w3, input_fb, input_zz) %>%
+      filter(wshed == shed, mins %in% c(0)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- hours(1)
+  } 
+  else if(timescale == "4hr"){
+    input <- rbind(input_w3, input_fb, input_zz) %>%
+      mutate(hour = hour(datetime)) %>% 
+      filter(wshed == shed, hour %in% c(0,4,8,12,16,20,24), mins %in% c(0)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- hours(4)
+  } 
+  else if(timescale == "daily"){
+    input <- rbind(input_w3, input_fb, input_zz) %>%
+      mutate(hour = hour(datetime)) %>% 
+      filter(wshed == shed, hour %in% c(12), mins %in% c(0)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- days(1)
+  } 
+  else {
+    stop("Not a timescale anticipated!")
+  }
+    out <- calculate_hierarchy_wd(routes, input, timestep)
+    out$timescale <- theFour[q]
+    
+    if(q == 1) fanfar <- out
+    if(q > 1) fanfar <- rbind(fanfar, out)
+  }
+  fanfar$shed <- shed
+  return(fanfar)
+}
+
+#for each scenario create the routes, inputs, and specify the timestep
+```
+4-1-25, success! I can say what proportion of wetting and drying events follow a hierarchy
+
+```{r relative-position}
+#set routes for all 3 watersheds
+routes_w3 <- read_csv("w3_flowrouting.csv") %>% 
+  filter(sensor %in% W3_IDs, drains_from %in% W3_IDs) %>% 
+  rename("up" = drains_from, "down" = sensor) %>% 
+  select(up, down) %>% 
+  filter(down != 100, up != 0)
+  
+routes_fb <- read_csv("fb_flowrouting.csv") %>% 
+  filter(up %in% FB_IDs) %>% 
+  filter(down %in% FB_IDs) %>% 
+  drop_na()
+routes_zz <- read_csv("zz_flowrouting.csv") %>% 
+  filter(up %in% ZZ_IDs) %>% 
+  filter(down %in% ZZ_IDs) %>% 
+  drop_na()
+
+#run calc_support for all sheds and timesteps for relative position
+all_position_wd <- rbind(fantastic_four_wd(routes_w3, "W3"),
+                      fantastic_four_wd(routes_fb, "FB"),
+                      fantastic_four_wd(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Relative Position")
+
+summarized_position_wd <- all_position_wd %>% 
+  group_by(up, down, timescale, shed, hierarchy) %>%
+    summarise(avg_wet_prop = mean(wetting),
+              avg_dry_prop = mean(drying))
+```
