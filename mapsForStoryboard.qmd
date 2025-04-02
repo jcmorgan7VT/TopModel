@@ -1771,7 +1771,179 @@ fantastic_four <- function(routes, shed){
 #for each scenario create the routes, inputs, and specify the timestep
 ```
 
+####test- remove later maybe
+```{r}
+calc_support_combos <- function(up, down, input){
+#inputs to function- comment out in final version
+# i <- 4
+# up <- paste0("r_",routes$up[i])
+# down <- paste0("r_",routes$down[i])
+#input <- filtered_input
 
+#create output with the total and the sub, also the two input locations
+output <- data.frame(up, down)
+
+  
+no_dupes <- input %>% 
+      select(up,down, datetime) %>% #remove date
+      # make it so that there cannot be a sequence without change
+      # keep date column for indexing purposes later
+      filter(row_number() == 1 | !apply(select(., up, down) == lag(select(., up, down)), 1, all)) %>% 
+      #remove rows where one of the sensors is missing data
+      drop_na()
+#View(no_dupes)
+#all flowing all the time?
+check <- nrow(no_dupes)
+
+if(check <= 2){
+  sequence_df <- data.frame("Sequence" = NA, 
+                            "Frequency" = NA,
+                            "up" = up,
+                            "down" = down)
+  return(sequence_df)
+} 
+else {
+# Define window size
+window_size <- 2
+
+# Create sliding windows
+windows <- rollapply(
+  select(no_dupes, -datetime),
+  width = window_size,
+  by.column = FALSE,
+  FUN = function(x) paste(as.vector(t(x)), collapse = "")
+)
+
+# Count and sort sequences
+sequence_counts <- table(windows)
+sorted_counts <- sort(sequence_counts, decreasing = TRUE)
+
+# Display all sequences and their frequencies
+sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
+if(check > 1) colnames(sequence_df) <- c("Sequence", "Frequency")
+
+
+sequence_df$up <- up
+sequence_df$down <- down
+output$total <- sum(sequence_df$Frequency)
+#write some way to score the sequence_df
+#award one point for one of these configs:
+supports <- c("0001","0111","1101", "0100")
+
+
+sub <- filter(sequence_df, Sequence %in% supports)
+output$points <- sum(sub$Frequency)
+
+
+#create output with transitions
+#error handling- in situation where both points flowed 100% of the time
+
+return(sequence_df)}
+}
+
+#test function
+calc_support_combos("r_23", "r_6", input)
+
+#function to break up groups of continuous measurements, ensure that gaps are not considered
+#contains calc_support function
+iterate_groups_combos <- function(up, down, input, timestep){
+  #create group column that identifies gaps in continuous data in time
+
+# i <- 4
+# up <- paste0("r_",routes$up[i])
+# down <- paste0("r_",routes$down[i])
+# timestep <- hours(1)
+  input$group <- cumsum(c(TRUE, diff(input$datetime) != timestep))
+  #View(input)
+
+  for(u in 1:length(unique(input$group))){
+  # u <- 1
+  #   print(u)
+    filtered_input <- input %>% filter(group == u)
+    #this line throws error if 
+    output <- calc_support_combos(up, down, filtered_input)
+    
+
+     if(u == 1) iterate_groups_alldat <- output
+     if(u > 1) iterate_groups_alldat <- rbind(iterate_groups_alldat, output)
+  }
+  # final_iterate_groups_alldat <- iterate_groups_alldat %>% 
+  #   drop_na() %>% 
+  #   group_by(up, down) %>% 
+  #   summarise(total = sum(total),
+  #             points = sum(points))
+  return(iterate_groups_alldat)
+}
+
+#iterate_groups("r_23", "r_6", input, hours(1))
+#function to take a list of routes and input dataset
+#contains group iteration function
+#for loop to iterate through full list of combinations of up and downstream locations
+#IMPORTANT- calculate hierarchy and iterate groups only work if the input timestep is approriate
+calculate_hierarchy_combos <- function(routes, input, timestep){
+  for(x in 1:length(routes$up)){
+  up <- paste0("r_",routes$up[x])
+  down <- paste0("r_",routes$down[x])
+  #print(x)
+  
+  out <- iterate_groups_combos(up, down, input, timestep)
+    #out <- calc_support(up, down, input)
+
+
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
+
+  }
+  final_output <- alldat %>% 
+    drop_na() 
+  # %>%
+  #   group_by(up, down) %>%
+  #   summarise(total = sum(total),
+  #             points = sum(points)) %>% 
+  #   mutate(prop = points/total)
+  return(final_output)
+}
+
+calculate_hierarchy_combos(routes, input, days(1))
+```
+#test this, figure out what is up w ith fb daily relative position
+```{r}
+routes_fb <- read_csv("fb_flowrouting.csv") %>% 
+  filter(up %in% FB_IDs) %>% 
+  filter(down %in% FB_IDs) %>% 
+  drop_na()
+
+input <- rbind(input_w3, input_fb, input_zz) %>%
+      mutate(hour = hour(datetime)) %>% 
+      filter(wshed == "FB", hour %in% c(12), mins %in% c(0)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+
+
+fb_test <- calculate_hierarchy_combos(routes_fb, input, days(1))
+fb_test_orig <- fb_test
+
+fb_test$t1_up <- as.numeric(substr(fb_test$Sequence, 1, 1))
+fb_test$t1_down <- as.numeric(substr(fb_test$Sequence, 2, 2))
+fb_test$t2_up <- as.numeric(substr(fb_test$Sequence, 3, 3))
+fb_test$t2_down <- as.numeric(substr(fb_test$Sequence, 4, 4))
+
+fb_test$sum_t1 <- fb_test$t1_up + fb_test$t1_down
+fb_test$sum_t2 <- fb_test$t2_up + fb_test$t2_down
+fb_test$direction <- "drying"
+fb_test$direction[fb_test$sum_t1 < fb_test$sum_t2] <- "wetting"
+
+total_state_changes <- fb_test %>% group_by(up, down, direction) %>% summarise(totals = sum(Frequency))
+supports <- c("0001","0111","1101", "0100")
+
+hierarchical_changes <- fb_test %>% 
+  filter(Sequence %in% supports) %>% group_by(up, down, direction) %>% summarise(hierarchical = sum(Frequency)) 
+
+total_state_changes %>% left_join(hierarchical_changes, by = c("direction", "up", "down")) %>% 
+  mutate(prop = hierarchical/totals) %>% 
+  mutate_all(~replace(., is.na(.), 0))
+```
 
 
 #Running analysis using refined functions
@@ -2295,7 +2467,7 @@ sults_so_far %>%
                                 "Relative Position",
                                 "Drainage Area"),
                      name = "Organizing Scheme")+
-  facet_wrap(~timescale)
+  facet_grid(~timescale)
 
 
 #instead of boxplots, show the ecdf and one-sided violin plot
@@ -2423,7 +2595,7 @@ geom_density(alpha = 0.5)+
   facet_wrap(~hierarchy)
 
 sults_so_far %>% 
-  filter(timescale %in% c("30mins", "hourly")) %>% 
+  filter(timescale %in% c("4hr", "daily")) %>% 
   ggplot(aes(x = prop, y = after_stat(density))) +
   
 geom_density(aes(fill = shed, color = shed), alpha = 0.5)+
@@ -4357,13 +4529,26 @@ sequence_df$sum_t1 <- sequence_df$t1_up + sequence_df$t1_down
 sequence_df$sum_t2 <- sequence_df$t2_up + sequence_df$t2_down
 sequence_df$direction <- "drying"
 sequence_df$direction[sequence_df$sum_t1 < sequence_df$sum_t2] <- "wetting"
+#new fixed code, should not drop non-hierarchical values
 total_state_changes <- sequence_df %>% group_by(direction) %>% summarise(totals = sum(Freq))
-
 supports <- c("0001","0111","1101", "0100")
-sub <- filter(sequence_df, windows %in% supports) %>%
-  group_by(direction) %>% summarise(hierarchicals = sum(Freq)) %>% 
-  left_join(total_state_changes, by = "direction") %>% 
-  mutate(prop = hierarchicals/totals)
+
+hierarchical_changes <- sequence_df %>% 
+  filter(windows %in% supports) %>% group_by(direction) %>% summarise(hierarchical = sum(Freq)) 
+
+sub <- total_state_changes %>% left_join(hierarchical_changes, by = c("direction")) %>% 
+  mutate(prop = hierarchical/totals) %>% 
+  mutate_all(~replace(., is.na(.), 0))
+
+#old code
+
+# total_state_changes <- sequence_df %>% group_by(direction) %>% summarise(totals = sum(Freq))
+# 
+# supports <- c("0001","0111","1101", "0100")
+# sub <- filter(sequence_df, windows %in% supports) %>%
+#   group_by(direction) %>% summarise(hierarchicals = sum(Freq)) %>% 
+#   left_join(total_state_changes, by = "direction") %>% 
+#   mutate(prop = hierarchicals/totals)
 #output$points <- sum(sub$Frequency)
 output$drying <- sub$prop[1]
 output$wetting <- sub$prop[2]
@@ -4380,7 +4565,7 @@ return(output)}
 }
 
 #test function
-#all_transitions("r_23", "r_6", input)
+all_transitions("r_23", "r_6", input)
 
 #function to break up groups of continuous measurements, ensure that gaps are not considered
 #contains calc_support function
@@ -4675,6 +4860,16 @@ sults_so_far$direction[sults_so_far$direction == "avg_dry_prop"] <- "drying"
 sults_so_far <- sults_so_far%>% 
   mutate(direction = fct_relevel(direction,
                                  c("drying", "wetting")))
+
+
+sults_so_far %>% 
+  group_by(shed, hierarchy, timescale, direction) %>% 
+  summarise(wcx_pvalue = wilcox.test(prop, mu = 0.5, alternative = "greater", exact = FALSE, conf.int = TRUE)$p.value,
+            wcx_upperb = wilcox.test(prop, mu = 0.5, alternative = "greater", exact = FALSE, conf.int = TRUE)$conf.int[1],
+            wcx_lowerb = wilcox.test(prop, mu = 0.5, alternative = "greater", exact = FALSE, conf.int = TRUE)$conf.int[2]) %>% 
+  filter(wcx_pvalue <= 0.1) %>% 
+  knitr::kable()
+
 sults_so_far %>% 
   ggplot(aes(x = shed, y = prop, color = hierarchy)) +
   geom_boxplot()+
@@ -4690,23 +4885,25 @@ sults_so_far %>%
                                 "Relative Position",
                                 "Drainage Area"),
                      name = "Organizing Scheme")+
-  facet_wrap(direction~timescale)
+  facet_grid(direction~timescale)
 
+possible_times <- c("30mins", "hourly", "4hr", "daily")
 
+t <- 1
 sults_so_far %>% 
-  filter(timescale %in% c("30mins")) %>% 
+  filter(timescale %in% c(possible_times[t])) %>% 
   ggplot(aes(x = prop, y = after_stat(density))) +
-  
 geom_density(aes(fill = direction, color = direction), alpha = 0.5)+
     geom_density(alpha = 0.5, lty = 3)+
       geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
     theme_bw()+
-  labs(title = "30mins",
+  labs(title = possible_times[t],
        x = "Proportion of time followed",
        y = "Density")+
   scale_fill_manual(values = c("#FFA400", "#93C2F1"),name = "Direction")+
   scale_color_manual(values = c("#FFA400", "#93C2F1"), name = "Direction")+
-  ylim(c(0, 6.25))+
+  ylim(c(0, 4))+
+  xlim(c(0,1))+
   facet_grid(shed~hierarchy)
 
 #instead of boxplots, show the ecdf and one-sided violin plot
