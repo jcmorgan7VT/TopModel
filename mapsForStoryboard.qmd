@@ -1771,180 +1771,6 @@ fantastic_four <- function(routes, shed){
 #for each scenario create the routes, inputs, and specify the timestep
 ```
 
-####test- remove later maybe
-```{r}
-calc_support_combos <- function(up, down, input){
-#inputs to function- comment out in final version
-# i <- 4
-# up <- paste0("r_",routes$up[i])
-# down <- paste0("r_",routes$down[i])
-#input <- filtered_input
-
-#create output with the total and the sub, also the two input locations
-output <- data.frame(up, down)
-
-  
-no_dupes <- input %>% 
-      select(up,down, datetime) %>% #remove date
-      # make it so that there cannot be a sequence without change
-      # keep date column for indexing purposes later
-      filter(row_number() == 1 | !apply(select(., up, down) == lag(select(., up, down)), 1, all)) %>% 
-      #remove rows where one of the sensors is missing data
-      drop_na()
-#View(no_dupes)
-#all flowing all the time?
-check <- nrow(no_dupes)
-
-if(check <= 2){
-  sequence_df <- data.frame("Sequence" = NA, 
-                            "Frequency" = NA,
-                            "up" = up,
-                            "down" = down)
-  return(sequence_df)
-} 
-else {
-# Define window size
-window_size <- 2
-
-# Create sliding windows
-windows <- rollapply(
-  select(no_dupes, -datetime),
-  width = window_size,
-  by.column = FALSE,
-  FUN = function(x) paste(as.vector(t(x)), collapse = "")
-)
-
-# Count and sort sequences
-sequence_counts <- table(windows)
-sorted_counts <- sort(sequence_counts, decreasing = TRUE)
-
-# Display all sequences and their frequencies
-sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
-if(check > 1) colnames(sequence_df) <- c("Sequence", "Frequency")
-
-
-sequence_df$up <- up
-sequence_df$down <- down
-output$total <- sum(sequence_df$Frequency)
-#write some way to score the sequence_df
-#award one point for one of these configs:
-supports <- c("0001","0111","1101", "0100")
-
-
-sub <- filter(sequence_df, Sequence %in% supports)
-output$points <- sum(sub$Frequency)
-
-
-#create output with transitions
-#error handling- in situation where both points flowed 100% of the time
-
-return(sequence_df)}
-}
-
-#test function
-calc_support_combos("r_23", "r_6", input)
-
-#function to break up groups of continuous measurements, ensure that gaps are not considered
-#contains calc_support function
-iterate_groups_combos <- function(up, down, input, timestep){
-  #create group column that identifies gaps in continuous data in time
-
-# i <- 4
-# up <- paste0("r_",routes$up[i])
-# down <- paste0("r_",routes$down[i])
-# timestep <- hours(1)
-  input$group <- cumsum(c(TRUE, diff(input$datetime) != timestep))
-  #View(input)
-
-  for(u in 1:length(unique(input$group))){
-  # u <- 1
-  #   print(u)
-    filtered_input <- input %>% filter(group == u)
-    #this line throws error if 
-    output <- calc_support_combos(up, down, filtered_input)
-    
-
-     if(u == 1) iterate_groups_alldat <- output
-     if(u > 1) iterate_groups_alldat <- rbind(iterate_groups_alldat, output)
-  }
-  # final_iterate_groups_alldat <- iterate_groups_alldat %>% 
-  #   drop_na() %>% 
-  #   group_by(up, down) %>% 
-  #   summarise(total = sum(total),
-  #             points = sum(points))
-  return(iterate_groups_alldat)
-}
-
-#iterate_groups("r_23", "r_6", input, hours(1))
-#function to take a list of routes and input dataset
-#contains group iteration function
-#for loop to iterate through full list of combinations of up and downstream locations
-#IMPORTANT- calculate hierarchy and iterate groups only work if the input timestep is approriate
-calculate_hierarchy_combos <- function(routes, input, timestep){
-  for(x in 1:length(routes$up)){
-  up <- paste0("r_",routes$up[x])
-  down <- paste0("r_",routes$down[x])
-  #print(x)
-  
-  out <- iterate_groups_combos(up, down, input, timestep)
-    #out <- calc_support(up, down, input)
-
-
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
-
-  }
-  final_output <- alldat %>% 
-    drop_na() 
-  # %>%
-  #   group_by(up, down) %>%
-  #   summarise(total = sum(total),
-  #             points = sum(points)) %>% 
-  #   mutate(prop = points/total)
-  return(final_output)
-}
-
-calculate_hierarchy_combos(routes, input, days(1))
-```
-#test this, figure out what is up w ith fb daily relative position
-```{r}
-routes_fb <- read_csv("fb_flowrouting.csv") %>% 
-  filter(up %in% FB_IDs) %>% 
-  filter(down %in% FB_IDs) %>% 
-  drop_na()
-
-input <- rbind(input_w3, input_fb, input_zz) %>%
-      mutate(hour = hour(datetime)) %>% 
-      filter(wshed == "FB", hour %in% c(12), mins %in% c(0)) %>%
-      select(datetime, binary, ID) %>%
-      mutate(ID = paste0("r_", ID)) %>%
-      pivot_wider(names_from = ID, values_from = binary)
-
-
-fb_test <- calculate_hierarchy_combos(routes_fb, input, days(1))
-fb_test_orig <- fb_test
-
-fb_test$t1_up <- as.numeric(substr(fb_test$Sequence, 1, 1))
-fb_test$t1_down <- as.numeric(substr(fb_test$Sequence, 2, 2))
-fb_test$t2_up <- as.numeric(substr(fb_test$Sequence, 3, 3))
-fb_test$t2_down <- as.numeric(substr(fb_test$Sequence, 4, 4))
-
-fb_test$sum_t1 <- fb_test$t1_up + fb_test$t1_down
-fb_test$sum_t2 <- fb_test$t2_up + fb_test$t2_down
-fb_test$direction <- "drying"
-fb_test$direction[fb_test$sum_t1 < fb_test$sum_t2] <- "wetting"
-
-total_state_changes <- fb_test %>% group_by(up, down, direction) %>% summarise(totals = sum(Frequency))
-supports <- c("0001","0111","1101", "0100")
-
-hierarchical_changes <- fb_test %>% 
-  filter(Sequence %in% supports) %>% group_by(up, down, direction) %>% summarise(hierarchical = sum(Frequency)) 
-
-total_state_changes %>% left_join(hierarchical_changes, by = c("direction", "up", "down")) %>% 
-  mutate(prop = hierarchical/totals) %>% 
-  mutate_all(~replace(., is.na(.), 0))
-```
-
 
 #Running analysis using refined functions
 Iterating through each pair of sensors, using the upstream sensor as the id, and the downstream sensor as the secondary or dependent. Seeing how often pairs of sensors wet up or dry down relative to each other.
@@ -4688,7 +4514,194 @@ fantastic_four_wd <- function(routes, shed){
 #for each scenario create the routes, inputs, and specify the timestep
 ```
 4-1-25, success! I can say what proportion of wetting and drying events follow a hierarchy
+##test versions, returns all combinations between two sensors, instead of prop value
+```{r all-combos}
+calc_support_combos <- function(up, down, input){
+#inputs to function- comment out in final version
+# i <- 4
+# up <- paste0("r_",routes$up[i])
+# down <- paste0("r_",routes$down[i])
+#input <- filtered_input
 
+#create output with the total and the sub, also the two input locations
+output <- data.frame(up, down)
+
+  
+no_dupes <- input %>% 
+      select(up,down, datetime) %>% #remove date
+      # make it so that there cannot be a sequence without change
+      # keep date column for indexing purposes later
+      filter(row_number() == 1 | !apply(select(., up, down) == lag(select(., up, down)), 1, all)) %>% 
+      #remove rows where one of the sensors is missing data
+      drop_na()
+#View(no_dupes)
+#all flowing all the time?
+check <- nrow(no_dupes)
+
+if(check <= 2){
+  sequence_df <- data.frame("Sequence" = NA, 
+                            "Frequency" = NA,
+                            "up" = up,
+                            "down" = down)
+  return(sequence_df)
+} 
+else {
+# Define window size
+window_size <- 2
+
+# Create sliding windows
+windows <- rollapply(
+  select(no_dupes, -datetime),
+  width = window_size,
+  by.column = FALSE,
+  FUN = function(x) paste(as.vector(t(x)), collapse = "")
+)
+
+# Count and sort sequences
+sequence_counts <- table(windows)
+sorted_counts <- sort(sequence_counts, decreasing = TRUE)
+
+# Display all sequences and their frequencies
+sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
+if(check > 1) colnames(sequence_df) <- c("Sequence", "Frequency")
+
+
+sequence_df$up <- up
+sequence_df$down <- down
+output$total <- sum(sequence_df$Frequency)
+#write some way to score the sequence_df
+#award one point for one of these configs:
+supports <- c("0001","0111","1101", "0100")
+
+
+sub <- filter(sequence_df, Sequence %in% supports)
+output$points <- sum(sub$Frequency)
+
+
+#create output with transitions
+#error handling- in situation where both points flowed 100% of the time
+
+return(sequence_df)}
+}
+
+#test function
+calc_support_combos("r_23", "r_6", input)
+
+#function to break up groups of continuous measurements, ensure that gaps are not considered
+#contains calc_support function
+iterate_groups_combos <- function(up, down, input, timestep){
+  #create group column that identifies gaps in continuous data in time
+
+# i <- 4
+# up <- paste0("r_",routes$up[i])
+# down <- paste0("r_",routes$down[i])
+# timestep <- hours(1)
+  input$group <- cumsum(c(TRUE, diff(input$datetime) != timestep))
+  #View(input)
+
+  for(u in 1:length(unique(input$group))){
+  # u <- 1
+  #   print(u)
+    filtered_input <- input %>% filter(group == u)
+    #this line throws error if 
+    output <- calc_support_combos(up, down, filtered_input)
+    
+
+     if(u == 1) iterate_groups_alldat <- output
+     if(u > 1) iterate_groups_alldat <- rbind(iterate_groups_alldat, output)
+  }
+  # final_iterate_groups_alldat <- iterate_groups_alldat %>% 
+  #   drop_na() %>% 
+  #   group_by(up, down) %>% 
+  #   summarise(total = sum(total),
+  #             points = sum(points))
+  return(iterate_groups_alldat)
+}
+
+#iterate_groups("r_23", "r_6", input, hours(1))
+#function to take a list of routes and input dataset
+#contains group iteration function
+#for loop to iterate through full list of combinations of up and downstream locations
+#IMPORTANT- calculate hierarchy and iterate groups only work if the input timestep is approriate
+calculate_hierarchy_combos <- function(routes, input, timestep){
+  for(x in 1:length(routes$up)){
+  up <- paste0("r_",routes$up[x])
+  down <- paste0("r_",routes$down[x])
+  #print(x)
+  
+  out <- iterate_groups_combos(up, down, input, timestep)
+    #out <- calc_support(up, down, input)
+
+
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
+
+  }
+  final_output <- alldat %>% 
+    drop_na() 
+  # %>%
+  #   group_by(up, down) %>%
+  #   summarise(total = sum(total),
+  #             points = sum(points)) %>% 
+  #   mutate(prop = points/total)
+  return(final_output)
+}
+
+calculate_hierarchy_combos(routes, input, days(1))
+```
+##finding flaw in wetting and drying analysis
+Determined that original version resulted in excluding all sensor pairs with no hierarchical behavior, so distributions seemed a lot better than earlier analyses.
+```{r finding-problem}
+routes_fb <- read_csv("fb_flowrouting.csv") %>% 
+  filter(up %in% FB_IDs) %>% 
+  filter(down %in% FB_IDs) %>% 
+  drop_na()
+
+input <- rbind(input_w3, input_fb, input_zz) %>%
+      mutate(hour = hour(datetime)) %>% 
+      filter(wshed == "FB", hour %in% c(12), mins %in% c(0)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+
+
+fb_test <- calculate_hierarchy_combos(routes_fb, input, days(1))
+fb_test_orig <- fb_test
+
+fb_test$t1_up <- as.numeric(substr(fb_test$Sequence, 1, 1))
+fb_test$t1_down <- as.numeric(substr(fb_test$Sequence, 2, 2))
+fb_test$t2_up <- as.numeric(substr(fb_test$Sequence, 3, 3))
+fb_test$t2_down <- as.numeric(substr(fb_test$Sequence, 4, 4))
+
+fb_test$sum_t1 <- fb_test$t1_up + fb_test$t1_down
+fb_test$sum_t2 <- fb_test$t2_up + fb_test$t2_down
+fb_test$direction <- "drying"
+fb_test$direction[fb_test$sum_t1 < fb_test$sum_t2] <- "wetting"
+
+total_state_changes <- fb_test %>% group_by(up, down, direction) %>% summarise(totals = sum(Frequency))
+supports <- c("0001","0111","1101", "0100")
+
+hierarchical_changes <- fb_test %>% 
+  filter(Sequence %in% supports) %>% group_by(up, down, direction) %>% summarise(hierarchical = sum(Frequency)) 
+
+total_state_changes %>% left_join(hierarchical_changes, by = c("direction", "up", "down")) %>% 
+  mutate(prop = hierarchical/totals) %>% 
+  mutate_all(~replace(., is.na(.), 0)) %>% View()
+
+#without wetting and derying
+total_state_changes <- fb_test %>% group_by(up, down) %>% summarise(totals = sum(Frequency))
+supports <- c("0001","0111","1101", "0100")
+
+hierarchical_changes <- fb_test %>% 
+  filter(Sequence %in% supports) %>% group_by(up, down) %>% summarise(hierarchical = sum(Frequency)) 
+
+un_split <- total_state_changes %>% left_join(hierarchical_changes, by = c("up", "down")) %>% 
+  mutate(prop = hierarchical/totals) %>% 
+  mutate_all(~replace(., is.na(.), 0))
+un_split
+```
+
+#Running analysis o n wetting versus drying
 ```{r relative-position-wetANDdry}
 #set routes for all 3 watersheds
 routes_w3 <- read_csv("w3_flowrouting.csv") %>% 
@@ -5042,5 +5055,4 @@ geom_density(alpha = 0.5)+
        y = "Density")+
   facet_wrap(~hierarchy)
 #maybe it would look better to add the randomly generated hierarchies for a comparison
-
 ```
