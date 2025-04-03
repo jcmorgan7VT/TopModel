@@ -959,6 +959,335 @@ geom_histogram(binwidth = 25)+
                      name = "Watershed")#+
   facet_wrap(~wshed)
 ```
+I did this, but I think we have decided to remove it
+
+## Instead of duration of flow- number of transitions
+```{r figuring-out-nt}
+bind23 <- data_23 %>% 
+  select(datetime, ID, wshed, binary, mins)
+bind24 <- data_24 %>% 
+  select(datetime, number, wshed, binary, mins) %>% 
+  rename("ID" = number)
+
+nt_w3 <- rbind(bind23, bind24) %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(year = year(datetime),
+         month = month(datetime),
+         day = day(datetime)) %>% 
+    group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) %>% 
+      ungroup() %>% 
+      group_by(ID, year, month, day) %>%
+  mutate(days = n()) %>% 
+  filter(days == 48) %>% 
+  filter(transition %in% c(-1, 1)) %>% #filtered to when there is a drying transition on a complete day
+  summarise(transitions = sum(abs(transition))) %>% #absolute value so that wetting and drying are the same
+      ungroup() %>% 
+      group_by(ID) %>%
+  summarise(avg_t_day = mean(transitions))%>% 
+  mutate(wshed = "W3")
+
+nt_fb <- rbind(bind23, bind24) %>% 
+  filter(wshed == "FB", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(year = year(datetime),
+         month = month(datetime),
+         day = day(datetime)) %>% 
+    group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) %>% 
+      ungroup() %>% 
+      group_by(ID, year, month, day) %>%
+  mutate(days = n()) %>% 
+  filter(days == 48) %>% 
+  filter(transition %in% c(-1, 1)) %>% #filtered to when there is a drying transition on a complete day
+  summarise(transitions = sum(abs(transition))) %>% #absolute value so that wetting and drying are the same
+      ungroup() %>% 
+      group_by(ID) %>%
+  summarise(avg_t_day = mean(transitions))%>% 
+  mutate(wshed = "FB")
+
+
+
+
+
+bind24 %>% 
+  filter(wshed == "ZZ", mins %in% c(0, 30), ID == 1) %>% 
+     filter(datetime > ymd_hms("2024-06-17 18:00:00") & datetime < ymd_hms("2024-06-20 18:00:00")) %>% 
+   select(datetime, ID, binary) %>% 
+     ggplot(aes(x = datetime, y = binary))+
+     geom_tile()
+```
+
+```{r nt-w3}
+duration23 <- bind23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(year = year(datetime),
+         month = month(datetime),
+         day = day(datetime)) %>% 
+      group_by(ID, year, month, day) %>%
+  mutate(days = n()) %>% 
+  ungroup() %>% 
+  filter(days == 48) %>% 
+  mutate(group = data.table::rleid(binary)) %>%
+    group_by(ID) %>% 
+    summarise(duration = max(datetime) - min(datetime)) %>% 
+  mutate(duration = as.numeric(duration, units = "days"))
+
+w3_nt_23 <- bind23 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(year = year(datetime),
+         month = month(datetime),
+         day = day(datetime)) %>% 
+    group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) %>% 
+      ungroup() %>% 
+      group_by(ID, year, month, day) %>%
+  mutate(days = n()) %>% 
+  filter(days == 48) %>% 
+  filter(transition %in% c(-1, 1)) %>% 
+    #filter(ID == 22) %>% #filtered to when there is a drying transition on a complete day
+  summarise(transitions = sum(abs(transition))) %>% 
+        filter(transitions <= 4) %>% #%>% #absolute value so that wetting and drying are the same
+      group_by(ID) %>%
+    summarise(total = sum(transitions)) %>% 
+    left_join(duration23, by = "ID") %>% 
+        group_by(ID) %>%
+    summarise(proportion = total/duration)
+
+duration24 <- bind24 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(year = year(datetime),
+         month = month(datetime),
+         day = day(datetime)) %>% 
+      group_by(ID, year, month, day) %>%
+  mutate(days = n()) %>% 
+  ungroup() %>% 
+  filter(days == 48) %>% 
+  mutate(group = data.table::rleid(binary)) %>%
+    group_by(ID) %>% 
+    summarise(duration = max(datetime) - min(datetime)) %>% 
+  mutate(duration = as.numeric(duration, units = "days"))
+
+w3_nt_24 <- bind24 %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(year = year(datetime),
+         month = month(datetime),
+         day = day(datetime)) %>% 
+    group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) %>% 
+      ungroup() %>% 
+      group_by(ID, year, month, day) %>%
+  mutate(days = n()) %>% 
+  filter(days == 48) %>% 
+  filter(transition %in% c(-1, 1)) %>% 
+    #filter(ID == 22) %>% #filtered to when there is a drying transition on a complete day
+  summarise(transitions = sum(abs(transition))) %>% 
+        filter(transitions <= 4) %>% #%>% #absolute value so that wetting and drying are the same
+      group_by(ID) %>%
+    summarise(total = sum(transitions)) %>% 
+    left_join(duration24, by = "ID") %>% 
+        group_by(ID) %>%
+    summarise(proportion = total/duration)
+#total number of transitions divided by duration in days of observation
+
+
+#calculate for 24 and 23 separately, then combine
+nt_w3 <- rbind(w3_nt_23, w3_nt_24) %>% 
+  group_by(ID) %>% 
+  summarise(avg_nt = mean(proportion))%>% 
+  mutate(wshed = "W3")
+```
+```{r nt-fb}
+duration23 <- bind23 %>% 
+  filter(wshed == "FB", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(year = year(datetime),
+         month = month(datetime),
+         day = day(datetime)) %>% 
+      group_by(ID, year, month, day) %>%
+  mutate(days = n()) %>% 
+  ungroup() %>% 
+  filter(days == 48) %>% 
+  mutate(group = data.table::rleid(binary)) %>%
+    group_by(ID) %>% 
+    summarise(duration = max(datetime) - min(datetime)) %>% 
+  mutate(duration = as.numeric(duration, units = "days"))
+
+fb_nt_23 <- bind23 %>% 
+  filter(wshed == "FB", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(year = year(datetime),
+         month = month(datetime),
+         day = day(datetime)) %>% 
+    group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) %>% 
+      ungroup() %>% 
+      group_by(ID, year, month, day) %>%
+  mutate(days = n()) %>% 
+  filter(days == 48) %>% 
+  filter(transition %in% c(-1, 1)) %>% 
+    #filter(ID == 22) %>% #filtered to when there is a drying transition on a complete day
+  summarise(transitions = sum(abs(transition))) %>% 
+        filter(transitions <= 4) %>% #%>% #absolute value so that wetting and drying are the same
+      group_by(ID) %>%
+    summarise(total = sum(transitions)) %>% 
+    left_join(duration23, by = "ID") %>% 
+        group_by(ID) %>%
+    summarise(proportion = total/duration)
+
+duration24 <- bind24 %>% 
+  filter(wshed == "FB", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(year = year(datetime),
+         month = month(datetime),
+         day = day(datetime)) %>% 
+      group_by(ID, year, month, day) %>%
+  mutate(days = n()) %>% 
+  ungroup() %>% 
+  filter(days == 48) %>% 
+  mutate(group = data.table::rleid(binary)) %>%
+    group_by(ID) %>% 
+    summarise(duration = max(datetime) - min(datetime)) %>% 
+  mutate(duration = as.numeric(duration, units = "days"))
+
+fb_nt_24 <- bind24 %>% 
+  filter(wshed == "FB", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(year = year(datetime),
+         month = month(datetime),
+         day = day(datetime)) %>% 
+    group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) %>% 
+      ungroup() %>% 
+      group_by(ID, year, month, day) %>%
+  mutate(days = n()) %>% 
+  filter(days == 48) %>% 
+  filter(transition %in% c(-1, 1)) %>% 
+    #filter(ID == 22) %>% #filtered to when there is a drying transition on a complete day
+  summarise(transitions = sum(abs(transition))) %>% 
+        filter(transitions <= 4) %>% #%>% #absolute value so that wetting and drying are the same
+      group_by(ID) %>%
+    summarise(total = sum(transitions)) %>% 
+    left_join(duration24, by = "ID") %>% 
+        group_by(ID) %>%
+    summarise(proportion = total/duration)
+#total number of transitions divided by duration in days of observation
+
+
+#calculate for 24 and 23 separately, then combine
+nt_fb <- rbind(fb_nt_23, fb_nt_24) %>% 
+  group_by(ID) %>% 
+  summarise(avg_nt = mean(proportion))%>% 
+  mutate(wshed = "FB")
+```
+```{r nt-zz}
+duration23 <- bind23 %>% 
+  filter(wshed == "ZZ", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(year = year(datetime),
+         month = month(datetime),
+         day = day(datetime)) %>% 
+      group_by(ID, year, month, day) %>%
+  mutate(days = n()) %>% 
+  ungroup() %>% 
+  filter(days == 48) %>% 
+  mutate(group = data.table::rleid(binary)) %>%
+    group_by(ID) %>% 
+    summarise(duration = max(datetime) - min(datetime)) %>% 
+  mutate(duration = as.numeric(duration, units = "days"))
+
+zz_nt_23 <- bind23 %>% 
+  filter(wshed == "ZZ", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(year = year(datetime),
+         month = month(datetime),
+         day = day(datetime)) %>% 
+    group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) %>% 
+      ungroup() %>% 
+      group_by(ID, year, month, day) %>%
+  mutate(days = n()) %>% 
+  filter(days == 48) %>% 
+  filter(transition %in% c(-1, 1)) %>% 
+    #filter(ID == 22) %>% #filtered to when there is a drying transition on a complete day
+  summarise(transitions = sum(abs(transition))) %>% 
+        filter(transitions <= 4) %>% #%>% #absolute value so that wetting and drying are the same
+      group_by(ID) %>%
+    summarise(total = sum(transitions)) %>% 
+    left_join(duration23, by = "ID") %>% 
+        group_by(ID) %>%
+    summarise(proportion = total/duration)
+
+duration24 <- bind24 %>% 
+  filter(wshed == "ZZ", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(year = year(datetime),
+         month = month(datetime),
+         day = day(datetime)) %>% 
+      group_by(ID, year, month, day) %>%
+  mutate(days = n()) %>% 
+  ungroup() %>% 
+  filter(days == 48) %>% 
+  mutate(group = data.table::rleid(binary)) %>%
+    group_by(ID) %>% 
+    summarise(duration = max(datetime) - min(datetime)) %>% 
+  mutate(duration = as.numeric(duration, units = "days"))
+
+zz_nt_24 <- bind24 %>% 
+  filter(wshed == "ZZ", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, binary) %>% 
+  mutate(year = year(datetime),
+         month = month(datetime),
+         day = day(datetime)) %>% 
+    group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) %>% 
+      ungroup() %>% 
+      group_by(ID, year, month, day) %>%
+  mutate(days = n()) %>% 
+  filter(days == 48) %>% 
+  filter(transition %in% c(-1, 1)) %>% 
+    #filter(ID == 22) %>% #filtered to when there is a drying transition on a complete day
+  summarise(transitions = sum(abs(transition))) %>% 
+        filter(transitions <= 4) %>% #%>% #absolute value so that wetting and drying are the same
+      group_by(ID) %>%
+    summarise(total = sum(transitions)) %>% 
+    left_join(duration24, by = "ID") %>% 
+        group_by(ID) %>%
+    summarise(proportion = total/duration)
+#total number of transitions divided by duration in days of observation
+
+
+#calculate for 24 and 23 separately, then combine
+nt_zz <- rbind(zz_nt_23, zz_nt_24) %>% 
+  group_by(ID) %>% 
+  summarise(avg_nt = mean(proportion))%>% 
+  mutate(wshed = "ZZ")
+```
+
+```{r}
+rbind(nt_w3, nt_fb, nt_zz) %>% 
+  ggplot(aes(x = wshed, y = (avg_nt)))+
+  geom_boxplot()+
+  geom_jitter(width = 0.1, alpha = 0.5)+
+  theme_classic()+
+  labs(title = "Distributions of the Number of Transitions",
+       x = "Watershed",
+       y = "NT normalized by duration of observation")
+```
+
 
 #Figure 4: How often does the network wet up, dry down, etc?
 ##Figure out how to test this behavior
@@ -969,9 +1298,9 @@ test <- data_23 %>%
     group_by(ID) %>% 
   rename("DATETIME" = datetime) %>% 
   left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
-  #filter(ID == 1)%>% 
+  filter(ID == 1)%>% 
   mutate(lagged = lag(binary),
-         transition = (binary - lagged)) #%>% 
+         transition = (binary - lagged)) %>% 
   filter(transition %in% c(-1, 1))
 
 test$state_change <- "none"
@@ -1831,32 +2160,30 @@ all_pk <- rbind(fantastic_four(routes_w3, "W3"),
 
 write_csv(all_pk, "./hierarchy_analysis_results/flowPermanence.csv")
 ```
-```{r duration-of-flow}
+```{r number-of-transitions}
 #make list that make pairs of sites based on local persistency
-routes_w3 <- dof_w3 %>%
+routes_w3 <- nt_w3 %>%
     filter(ID %in% W3_IDs) %>% 
-  arrange(desc(avg_days_flowing)) %>% 
+  arrange(desc(avg_nt)) %>% 
   mutate(down = lag(ID)) %>% 
   rename("up" = ID) %>% drop_na() %>% 
   select(up, down)
 
-routes_fb <- dof_fb %>% 
+routes_fb <- nt_fb %>% 
     filter(ID %in% FB_IDs) %>% 
-
-  arrange(desc(avg_days_flowing)) %>% 
+  arrange(desc(avg_nt)) %>% 
   mutate(down = lag(ID)) %>% 
   rename("up" = ID) %>% drop_na() %>% 
   select(up, down)
 
-routes_zz <- dof_zz %>% 
+routes_zz <- nt_zz %>% 
     filter(ID %in% ZZ_IDs) %>% 
-
-  arrange(desc(avg_days_flowing)) %>% 
+  arrange(desc(avg_nt)) %>% 
   mutate(down = lag(ID)) %>% 
   rename("up" = ID) %>% drop_na() %>% 
   select(up, down)
 
-all_dof <- rbind(fantastic_four(routes_w3, "W3"),
+all_nt <- rbind(fantastic_four(routes_w3, "W3"),
                  fantastic_four(routes_fb, "FB"),
                  fantastic_four(routes_zz, "ZZ")) %>% 
   mutate("hierarchy" = "Duration of Flow")
@@ -2264,7 +2591,7 @@ all_uaa <- read_csv("./hierarchy_analysis_results/drainageArea.csv")
 
 sults_so_far <- rbind(all_position,
                       all_pk,
-                      all_dof,
+                      all_nt,
                       all_uaa#,
                       #random_w3
                       ) %>% 
@@ -2423,7 +2750,6 @@ geom_density(alpha = 0.5)+
 sults_so_far %>% 
   filter(timescale %in% c("4hr", "daily")) %>% 
   ggplot(aes(x = prop, y = after_stat(density))) +
-  
 geom_density(aes(fill = shed, color = shed), alpha = 0.5)+
     geom_density(alpha = 0.5, lty = 3)+
       geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
@@ -2439,18 +2765,23 @@ geom_density(aes(fill = shed, color = shed), alpha = 0.5)+
                      name = "Watershed")+
   facet_grid(timescale~hierarchy)
 
-
 sults_so_far %>% 
   filter(timescale %in% c("30mins", "hourly")) %>% 
-  ggplot() +
-geom_density(alpha = 0.5)+
-      geom_vline(xintercept = 0.5, lty = 2)+
-    theme_classic()+
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(fill = shed, color = shed), alpha = 0.5)+
+    geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
   labs(title = "Distributions of Proportion of time Hiearchies Followed",
        x = "Proportion of time followed",
        y = "Density")+
-  facet_wrap(~hierarchy)
-#maybe it would look better to add the randomly generated hierarchies for a comparison
+  scale_fill_manual(values = c("#397367", "#FFA400", "#93C2F1"),
+                     
+                     name = "Watershed")+
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1"),
+                     
+                     name = "Watershed")+
+  facet_grid(timescale~hierarchy)
 
 ```
 ##find times when the network goes from very dry to very wet
@@ -4766,6 +5097,14 @@ summarized_pk_wd <- all_pk_wd %>%
               avg_dry_prop = mean(drying))
 ```
 ```{r duration-of-flow}
+#change duration of flow to the number of times a sensor changes state
+routes_w3 <- dof_w3 %>%
+    filter(ID %in% W3_IDs) %>% 
+  arrange(desc(avg_days_flowing)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
 #make list that make pairs of sites based on local persistency
 routes_w3 <- dof_w3 %>%
     filter(ID %in% W3_IDs) %>% 
