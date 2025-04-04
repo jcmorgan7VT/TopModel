@@ -1357,6 +1357,10 @@ w3_twi <- extract(rast(twi_output), locs_shape, ID = FALSE, bind = TRUE) %>%
   rename("twi" = `10mdem_twi`) %>% 
   as_tibble()
 
+w3_slope <- extract(rast(slope_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+  rename("slope" = `10mdem_slope`) %>% 
+  as_tibble()
+
 ```
 ```{r tpi-fb}
 #flow accumulation/upslope drainage area at 3 m resolution calculated earlier in markdown
@@ -1418,6 +1422,10 @@ fb_tpi <- extract(rast(tpi_output), locs_shape, ID = FALSE, bind = TRUE) %>%
 fb_twi <- extract(rast(twi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("twi" = `10mdem_twi`) %>% 
   as_tibble()
+
+fb_slope <- extract(rast(slope_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+  rename("slope" = `10mdem_slope`) %>% 
+  as_tibble()
 ```
 ```{r tpi-zz}
 #flow accumulation/upslope drainage area at 3 m resolution calculated earlier in markdown
@@ -1478,6 +1486,10 @@ zz_tpi <- extract(rast(tpi_output), locs_shape, ID = FALSE, bind = TRUE) %>%
 
 zz_twi <- extract(rast(twi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("twi" = `10mdem_twi`) %>% 
+  as_tibble()
+
+zz_slope <- extract(rast(slope_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+  rename("slope" = `10mdem_slope`) %>% 
   as_tibble()
 ```
 
@@ -2491,7 +2503,41 @@ all_twi <- rbind(fantastic_four(routes_w3, "W3"),
 
 write_csv(all_twi, "./hierarchy_analysis_results/twi.csv")
 ```
+```{r slope}
+routes_w3 <- w3_slope %>% 
+    filter(ID %in% W3_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange(slope) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
 
+routes_fb <- fb_slope %>% 
+    filter(ID %in% FB_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange((slope)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down)
+
+routes_zz <- zz_slope %>% 
+    filter(ID %in% ZZ_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange((slope)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+all_slope <- rbind(fantastic_four(routes_w3, "W3"),
+                 fantastic_four(routes_fb, "FB"),
+                 fantastic_four(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Slope")
+
+write_csv(all_slope, "./hierarchy_analysis_results/slope.csv")
+```
+
+add accumulated drainage area
+add slope
 
 ##looping by drainage area UNFINISHED
 Lost in a file hell
@@ -2856,7 +2902,7 @@ sults_so_far <- rbind(all_position,
                       all_pk,
                       #all_nt,
                       all_uaa,
-                      all_tpi,
+                      all_slope,
                       all_twi
                       ) %>% 
   mutate(timescale = fct_relevel(timescale,
@@ -2868,7 +2914,7 @@ sults_so_far <- rbind(all_position,
                                 "Flow Permanence",
                                 "Relative Position",
                                 "Drainage Area",
-                                "Topographic Position Index",
+                                "Slope",
                                 "Topographic Wetness Index")))#,
                                 #"Random")))
 sults_so_far %>% 
@@ -4868,7 +4914,7 @@ summary(model)
 ```
 
 ##Fixing multilinear regression
-```{r tpi-fb}
+```{r regression-fb}
 #flow accumulation/upslope drainage area at 3 m resolution calculated earlier in markdown
 flowacc_output <- "./HB/1m hydro enforced DEM/dem3m_flowacc.tif"
 
@@ -4936,7 +4982,7 @@ model_fb <- lm(pk ~ uaa + slope + twi + tpi, data = vals_df_fb)
 summary(model_fb)
 
 ```
-```{r tpi-zz}
+```{r regression-zz}
 #flow accumulation/upslope drainage area at 3 m resolution calculated earlier in markdown
 flowacc_output <- "./HB/1m hydro enforced DEM/dem3m_flowacc.tif"
 
@@ -5658,6 +5704,42 @@ summarized_twi_wd <- all_twi_wd %>%
     summarise(avg_wet_prop = mean(wetting),
               avg_dry_prop = mean(drying))
 ```
+```{r slope}
+routes_w3 <- w3_slope %>% 
+    filter(ID %in% W3_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange(slope) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+routes_fb <- fb_slope %>% 
+    filter(ID %in% FB_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange((slope)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down)
+
+routes_zz <- zz_slope %>% 
+    filter(ID %in% ZZ_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange((slope)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+all_slope_wd <- rbind(fantastic_four_wd(routes_w3, "W3"),
+                 fantastic_four_wd(routes_fb, "FB"),
+                 fantastic_four_wd(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Slope")
+
+summarized_slope_wd <- all_slope_wd %>% 
+  group_by(up, down, timescale, shed, hierarchy) %>%
+    summarise(avg_wet_prop = mean(wetting),
+              avg_dry_prop = mean(drying))
+
+```
 ##Plots based on wetting and drying broken up
 Consolidate the gains!!
 ```{r consolidating-progress}
@@ -5668,7 +5750,8 @@ sults_so_far <- rbind(summarized_position_wd,
                       summarized_dof_wd,
                       summarized_uaa_wd,
                       summarized_tpi_wd,
-                      summarized_twi_wd
+                      summarized_twi_wd,
+                      summarized_slope_wd
                       ) %>% ungroup() %>% 
   mutate(timescale = fct_relevel(timescale,
                               c("30mins", "hourly", "4hr", "daily")),
@@ -5680,7 +5763,8 @@ sults_so_far <- rbind(summarized_position_wd,
                                 "Relative Position",
                                 "Drainage Area",
                                 "Topographic Position Index",
-                                "Topographic Wetness Index"))) %>% 
+                                "Topographic Wetness Index",
+                                "Slope"))) %>% 
   pivot_longer(cols = starts_with("avg"),
                names_to = "direction",
                values_to = "prop") 
@@ -5729,7 +5813,7 @@ sults_so_far %>%
 
 possible_times <- c("30mins", "hourly", "4hr", "daily")
 
-t <- 4
+t <- 1
 sults_so_far %>% 
   filter(timescale %in% c(possible_times[t])) %>% 
   ggplot(aes(x = prop, y = after_stat(density))) +
