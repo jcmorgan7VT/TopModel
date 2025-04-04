@@ -4848,16 +4848,16 @@ wbt_wetness_index(sca = flowacc_output, #flow accumulation
 #drainage area from ARC
 
 #extract values
-vals_df <- bind_cols(extract(rast(flowacc_output), locs_shape),
-          extract(rast(slope_output), locs_shape)[,2],
-          extract(rast(twi_output), locs_shape)[,2],
-          extract(rast(tpi_output), locs_shape)[,2]) %>% 
-  rename("uaa" = '10mdem_flowacc', "slope" = `...3`, "twi" = `...4`, "tpi" = `...5`) %>% 
+vals_df_w3 <- bind_cols(as_tibble(extract(rast(flowacc_output), 
+                                       locs_shape, ID = FALSE, bind = TRUE)),
+            as_tibble(extract(rast(slope_output), 
+                              locs_shape, ID = FALSE, bind = TRUE))[,2],
+            as_tibble(extract(rast(twi_output), locs_shape, ID = FALSE, bind = TRUE))[,2],
+            as_tibble(extract(rast(tpi_output), locs_shape, ID = FALSE, bind = TRUE))[,2]) %>% 
+  rename("uaa" = '10mdem_flowacc', "slope" = `10mdem_slope`, "twi" = `10mdem_twi`, "tpi" = `10mdem_tpi`) %>% 
   left_join(pks_w3, by = "ID") %>% 
   select(-wshed, -ID)
 
-w3_tpi <- extract(rast(tpi_output), locs_shape) %>% 
-  rename("tpi" = `10mdem_tpi`)
 
 ```
 
@@ -4865,6 +4865,149 @@ w3_tpi <- extract(rast(tpi_output), locs_shape) %>%
 #use reformatted df with sensor flow permanence and topo metrics in a multilinear regression
 model <- lm(pk ~ uaa + slope + twi + tpi, data = vals_df)
 summary(model)
+```
+
+##Fixing multilinear regression
+```{r tpi-fb}
+#flow accumulation/upslope drainage area at 3 m resolution calculated earlier in markdown
+flowacc_output <- "./HB/1m hydro enforced DEM/dem3m_flowacc.tif"
+
+#convert STIC data to a SpatVector data format
+locs_shape <- vect(fb_locs, 
+                   geom=c("POINT_X", "POINT_Y"), 
+                   crs = crs(rast(flowacc_output))) #set crs to NAD 83
+
+#calculate 10m DEM, then breach and fill
+dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
+m1 <- rast(dem)
+m10 <- aggregate(m1, 10)
+#save raster, because whitebox wants it is a files location instead of an object in R
+writeRaster(m10, "./w3_dems/10mdem.tif", overwrite = TRUE)
+
+
+breach_output <- "./w3_dems/10mdem_breach.tif"
+wbt_breach_depressions_least_cost(
+  dem = "./w3_dems/10mdem.tif",
+  output = breach_output,
+  dist = 10,
+  fill = TRUE)
+
+fill_output <- "./w3_dems/10mdem_fill.tif"
+wbt_fill_depressions_wang_and_liu(
+  dem = breach_output,
+  output = fill_output
+)
+
+#flow accumulation/drainage area
+flowacc_output <- "./w3_dems/10mdem_flowacc.tif"
+wbt_d_inf_flow_accumulation(input = fill_output,
+                            output = flowacc_output,
+                            out_type = "Specific Contributing Area")
+#Slope
+slope_output <- "./w3_dems/10mdem_slope.tif"
+wbt_slope(dem = fill_output,
+          output = slope_output,
+          units = "degrees")
+#calculate TPI
+tpi_output <- "./w3_dems/10mdem_tpi.tif"
+wbt_relative_topographic_position(
+    dem = fill_output, 
+    output = tpi_output, 
+    filterx=11, 
+    filtery=11)
+#TWI
+twi_output <- "./w3_dems/10mdem_twi.tif"
+wbt_wetness_index(sca = flowacc_output, #flow accumulation
+                  slope = slope_output,
+                  output = twi_output)
+
+
+vals_df_fb <- bind_cols(as_tibble(extract(rast(flowacc_output), 
+                                       locs_shape, ID = FALSE, bind = TRUE)),
+            as_tibble(extract(rast(slope_output), 
+                              locs_shape, ID = FALSE, bind = TRUE))[,2],
+            as_tibble(extract(rast(twi_output), locs_shape, ID = FALSE, bind = TRUE))[,2],
+            as_tibble(extract(rast(tpi_output), locs_shape, ID = FALSE, bind = TRUE))[,2]) %>% 
+  rename("uaa" = '10mdem_flowacc', "slope" = `10mdem_slope`, "twi" = `10mdem_twi`, "tpi" = `10mdem_tpi`) %>% 
+  left_join(pks_fb, by = "ID") %>% 
+  select(-wshed, -ID)
+
+model_fb <- lm(pk ~ uaa + slope + twi + tpi, data = vals_df_fb)
+summary(model_fb)
+
+```
+```{r tpi-zz}
+#flow accumulation/upslope drainage area at 3 m resolution calculated earlier in markdown
+flowacc_output <- "./HB/1m hydro enforced DEM/dem3m_flowacc.tif"
+
+#convert STIC data to a SpatVector data format
+locs_shape <- vect(zz_locs, 
+                   geom=c("POINT_X", "POINT_Y"), 
+                   crs = crs(rast(flowacc_output))) #set crs to NAD 83
+
+#calculate 10m DEM, then breach and fill
+dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
+m1 <- rast(dem)
+m10 <- aggregate(m1, 10)
+#save raster, because whitebox wants it is a files location instead of an object in R
+writeRaster(m10, "./w3_dems/10mdem.tif", overwrite = TRUE)
+
+
+breach_output <- "./w3_dems/10mdem_breach.tif"
+wbt_breach_depressions_least_cost(
+  dem = "./w3_dems/10mdem.tif",
+  output = breach_output,
+  dist = 10,
+  fill = TRUE)
+
+fill_output <- "./w3_dems/10mdem_fill.tif"
+wbt_fill_depressions_wang_and_liu(
+  dem = breach_output,
+  output = fill_output
+)
+
+#flow accumulation/drainage area
+flowacc_output <- "./w3_dems/10mdem_flowacc.tif"
+wbt_d_inf_flow_accumulation(input = fill_output,
+                            output = flowacc_output,
+                            out_type = "Specific Contributing Area")
+#Slope
+slope_output <- "./w3_dems/10mdem_slope.tif"
+wbt_slope(dem = fill_output,
+          output = slope_output,
+          units = "degrees")
+#calculate TPI
+tpi_output <- "./w3_dems/10mdem_tpi.tif"
+wbt_relative_topographic_position(
+    dem = fill_output, 
+    output = tpi_output, 
+    filterx=11, 
+    filtery=11)
+#TWI
+twi_output <- "./w3_dems/10mdem_twi.tif"
+wbt_wetness_index(sca = flowacc_output, #flow accumulation
+                  slope = slope_output,
+                  output = twi_output)
+
+vals_df_zz <- bind_cols(as_tibble(extract(rast(flowacc_output), 
+                                       locs_shape, ID = FALSE, bind = TRUE)),
+            as_tibble(extract(rast(slope_output), 
+                              locs_shape, ID = FALSE, bind = TRUE))[,2],
+            as_tibble(extract(rast(twi_output), locs_shape, ID = FALSE, bind = TRUE))[,2],
+            as_tibble(extract(rast(tpi_output), locs_shape, ID = FALSE, bind = TRUE))[,2]) %>% 
+  rename("uaa" = '10mdem_flowacc', "slope" = `10mdem_slope`, "twi" = `10mdem_twi`, "tpi" = `10mdem_tpi`) %>% 
+  left_join(pks_zz, by = "ID") %>% 
+  select(-wshed, -ID)
+
+model_zz <- lm(pk ~ uaa + slope + twi + tpi, data = vals_df_zz)
+summary(model_zz)
+```
+
+```{r combine-and-model}
+vals_all <- rbind(vals_df_w3, vals_df_fb, vals_df_zz)
+
+model_all <- lm(pk ~ uaa + slope + twi + tpi, data = vals_all)
+summary(model_all)
 ```
 
 #Running analysis again, but comparing wetting versus drying... how well do they follow hierarchy when distinguised
@@ -5515,7 +5658,7 @@ summarized_twi_wd <- all_twi_wd %>%
     summarise(avg_wet_prop = mean(wetting),
               avg_dry_prop = mean(drying))
 ```
-##Compile all of my results so far 2
+##Plots based on wetting and drying broken up
 Consolidate the gains!!
 ```{r consolidating-progress}
 
@@ -5557,6 +5700,14 @@ sults_so_far %>%
             wcx_upperb = wilcox.test(prop, mu = 0.5, alternative = "greater", exact = FALSE, conf.int = TRUE)$conf.int[1],
             wcx_lowerb = wilcox.test(prop, mu = 0.5, alternative = "greater", exact = FALSE, conf.int = TRUE)$conf.int[2]) %>% 
   filter(wcx_pvalue <= 0.1) %>% 
+  knitr::kable()
+
+sults_so_far %>% 
+  group_by(shed, hierarchy, timescale, direction) %>% 
+  summarise(wcx_pvalue = wilcox.test(prop, mu = 0.5, alternative = "two.sided", exact = FALSE, conf.int = TRUE, conf.level = 0.95)$p.value,
+            wcx_lowerb = wilcox.test(prop, mu = 0.5, alternative = "two.sided", exact = FALSE, conf.int = TRUE, conf.level = 0.95)$conf.int[1],
+            wcx_upperb = wilcox.test(prop, mu = 0.5, alternative = "two.sided", exact = FALSE, conf.int = TRUE, conf.level = 0.95)$conf.int[2]) %>% 
+  filter(wcx_pvalue <= 0.05) %>% 
   knitr::kable()
 
 sults_so_far %>% 
@@ -5732,3 +5883,9 @@ geom_density(alpha = 0.5)+
   facet_wrap(~hierarchy)
 #maybe it would look better to add the randomly generated hierarchies for a comparison
 ```
+
+#Run daily analysis again
+Alter code to test two scenarios and compare to the original one
+- test every hour for daily observation
+- average state
+- most common state in a day
