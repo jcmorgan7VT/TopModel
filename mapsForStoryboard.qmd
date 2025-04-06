@@ -163,8 +163,8 @@ valley_plot <- ggplot()+
   theme(rect = element_rect(fill = "transparent", color = NA))+
   ggspatial::annotation_scale(location = 'tr', pad_x = unit(0.5, "cm"), 
                               pad_y = unit(0.5, "cm")) #, line_width = 3, text_cex = 5, tick_height = 20)
-
-ggsave("valley.png", plot = valley_plot, limitsize = FALSE, units = "in", bg = NULL,)
+valley_plot
+#ggsave("valley.png", plot = valley_plot, limitsize = FALSE, units = "in", bg = NULL,)
 
 #combine 3 watershed shapes into one layer, and either label or make distinct colors
 
@@ -367,6 +367,43 @@ plotRGB(naip_csf_br,
         main = "RGB image \nColdsprings fire scar")
 big_image <- merge(color)
 ```
+##Fixed maps for department seminar
+```{r}
+HB_bounds <- "./HB/hbef_wsheds/hbef_wsheds.shp"
+sheds <- vect(HB_bounds)
+sheds <- terra::project(sheds, crs(hill))
+plot(sheds)
+
+hb_outline <- aggregate(sheds)
+
+
+shed_colors <- c("#397367", "#FFD166", "#7E6B8F")
+
+valley_plot <- ggplot()+
+  geom_spatraster(data = valley_hill2, maxcell = 5e+05)+#make max cells bigger on final version
+  theme_void()+
+  theme(legend.position = "")+
+  scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
+    new_scale_fill() +
+  geom_spatraster(data = m1, alpha = 0.5)+
+  geom_sf(data = hb_outline, fill = NA, color = "black", alpha = 0.6, lwd = 1, lty = 2) +
+  geom_sf(data = fb_outline, fill = shed_colors[1], color = shed_colors[1], alpha = 0.6, lwd = 1) +
+  geom_sf(data = w3_outline, fill = shed_colors[2], color = shed_colors[2], alpha = 0.6, lwd = 1) +
+  geom_sf(data = zz_outline, fill = shed_colors[3], color = shed_colors[3], alpha = 0.6, lwd = 1) +
+
+  #geom_sf(data = fb_net, colour = "darkslategray3") +#, lwd = 3) +
+    #geom_sf(data = lcc, colour = "midnightblue") + #, pch = 19, size = 6) +
+  #geom_sf(data = fb_pour, colour = "black") + #, pch = 8, size = 3) +
+   scale_fill_hypso_c(palette = "dem_screen")+#, limits = c(200, 1000))+
+  theme(rect = element_rect(fill = "transparent", color = NA))+
+  ggspatial::annotation_scale(location = 'tr', pad_x = unit(0.5, "cm"), 
+                              pad_y = unit(0.5, "cm"))
+
+
+ggsave("valley.png", plot = valley_plot, limitsize = FALSE, units = "in", bg = NULL,)
+
+```
+
 ## Topo variables
 ```{r topo-distributions}
 #get the areas of each watershed, and the whole valley
