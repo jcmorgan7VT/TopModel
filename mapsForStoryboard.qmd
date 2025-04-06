@@ -396,7 +396,7 @@ valley_plot <- ggplot()+
   #geom_sf(data = fb_pour, colour = "black") + #, pch = 8, size = 3) +
    scale_fill_hypso_c(palette = "dem_screen")+#, limits = c(200, 1000))+
   theme(rect = element_rect(fill = "transparent", color = NA))+
-  ggspatial::annotation_scale(location = 'tr', pad_x = unit(0.5, "cm"), 
+  ggspatial::annotation_scale(location = 'tr', pad_x = unit(1, "cm"), 
                               pad_y = unit(0.5, "cm"))
 
 
