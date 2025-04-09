@@ -2574,8 +2574,242 @@ write_csv(all_slope, "./hierarchy_analysis_results/slope.csv")
 ```
 
 add accumulated drainage area
-add slope
+##Compile all of my results so far 2
+Consolidate the gains!!
+```{r consolidating-progress}
+#prop stands for proportion or percentage of transitions that support the hypothesis
+all_position <- read_csv("./hierarchy_analysis_results/relativePosition.csv")
+all_pk <- read_csv("./hierarchy_analysis_results/flowPermanence.csv")
+all_uaa <- read_csv("./hierarchy_analysis_results/drainageArea.csv")
 
+
+sults_so_far <- rbind(all_position,
+                      all_pk,
+                      #all_nt,
+                      #all_uaa,
+                      #all_slope,
+                      all_twi
+                      ) %>% 
+  mutate(timescale = fct_relevel(timescale,
+                              c("30mins", "hourly", "4hr", "daily")),
+         hierarchy = as.factor(str_trim(as.character(hierarchy))),
+         
+         hierarchy = fct_relevel(hierarchy, 
+                                 c(
+                                "Flow Permanence",
+                                "Relative Position",
+                                #"Drainage Area",
+                                #"Slope",
+                                "Topographic Wetness Index")))#,
+                                #"Random")))
+sults_so_far %>% 
+  ggplot(aes(x = shed, y = prop, color = hierarchy)) +
+  geom_boxplot()+
+  theme_classic()+
+    geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
+  geom_hline(yintercept = 0.5, lty = 2)+
+  labs(x = "Watershed",
+       y = "Proportion",
+       title = "How often do adjacent sensors follow a hierarchy?")+
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+                     labels = c("Duration of Flow",
+                                "Flow Permanence",
+                                "Relative Position",
+                                "Drainage Area"),
+                     name = "Organizing Scheme")+
+  facet_grid(~timescale)
+
+
+#instead of boxplots, show the ecdf and one-sided violin plot
+sults_so_far %>% 
+  filter(timescale == "30mins", shed == "W3") %>% 
+  ggplot(aes(x = shed, y = prop, color = hierarchy)) +
+  geom_violin()+
+  theme_classic()+
+  geom_point(position = position_jitterdodge(jitter.width = 0.1), alpha = 0.5)+
+  geom_hline(yintercept = 0.5, lty = 2)+
+  labs(x = "Watershed",
+       y = "Proportion",
+       title = "How often do adjacent sensors follow a hierarchy?")+
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F", "grey"),
+                     name = "Organizing Scheme")+
+  facet_wrap(~timescale)
+
+#violin plot of just 30 min timescale
+sults_so_far %>% 
+  filter(timescale %in% c("30mins", "hourly")) %>% 
+  ggplot(aes(x = timescale, y = prop, color = hierarchy)) +
+  geom_violin()+
+  theme_classic()+
+  geom_point(position = position_jitterdodge(jitter.width = 0.1), alpha = 0.5)+
+  geom_hline(yintercept = 0.5, lty = 2)+
+  labs(x = "Timescale",
+       y = "Proportion",
+       title = "How often do adjacent sensors follow a hierarchy (daily timescale?")+
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+                     name = "Organizing Scheme")+
+    facet_grid(rows = "shed")
+
+#one sided violin plot
+# p_load(devtools)
+# devtools::install_github("psyteachr/introdataviz")
+# library(introdataviz)
+
+# sults_so_far %>% 
+#   ggplot(aes(x = shed, y = prop, color = type)) +
+#   geom_split_violin()+
+#   theme_classic()+
+#     #geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
+#   geom_hline(yintercept = 0.5, lty = 2)+
+#   labs(x = "Watershed",
+#        y = "Proportion",
+#        title = "How often do adjacent sensors follow a hierarchy?")+
+#   scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+#                      labels = c("Duration of Flow",
+#                                 "Flow Permanence",
+#                                 "Relative Position",
+#                                 "Drainage Area"),
+#                      name = "Organizing Scheme")+
+#   facet_wrap(~type)
+
+#plot ecdf instead of boxplots or violin plots
+plot(ecdf(w3_hourly$prop))
+plot(ecdf(alldat$prop))
+ggplot()+
+  stat_ecdf(data = w3_pairs, aes(prop))+
+  stat_ecdf(data = w3_new, aes(prop), color = "blue")
+
+sults_so_far %>% 
+  filter(timescale == "30mins") %>% 
+  ggplot(aes(prop, color = hierarchy)) +
+  stat_ecdf(geom = "line")+
+  theme_classic()+
+    #geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
+  geom_hline(yintercept = 0.5, lty = 2)+
+    geom_vline(xintercept = 0.5, lty = 2)+
+
+  labs(x = "Prop",
+       y = "Percentage of values less than or equal",
+       title = "How often do adjacent sensors follow a hierarchy?")+
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+                     name = "Organizing Scheme")+
+  facet_wrap(~shed)#+
+  lims(x = c(0.5,1),
+       y = c(0.5, 1))
+
+#just plain distributions might look better?
+sults_so_far %>% 
+  filter(timescale == "30mins") %>% 
+  ggplot(aes(prop, color = hierarchy)) +
+geom_density(alpha = 0.5)+
+    theme_classic()+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+
+    #geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
+  labs(x = "Prop",
+       y = "Density",
+       title = "How often do adjacent sensors follow a hierarchy?")+
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+                     name = "Organizing Scheme")+
+  facet_wrap(~shed)#+
+
+#try plain histogram
+sults_so_far %>% 
+  filter(timescale == "30mins") %>% 
+  ggplot(aes(prop, fill = hierarchy)) +
+geom_histogram(binwidth = 0.1)+
+    theme_classic()+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+
+    #geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
+  labs(x = "Prop",
+       y = "Density",
+       title = "How often do adjacent sensors follow a hierarchy?")+
+  scale_fill_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
+                     
+                     name = "Organizing Scheme")+
+  facet_grid(hierarchy~shed)
+
+sults_so_far %>% 
+  filter(timescale %in% c("30mins", "hourly")) %>% 
+  ggplot(aes(x = prop, fill = shed, y = after_stat(density))) +
+geom_density(alpha = 0.5)+
+      geom_vline(xintercept = 0.5, lty = 2)+
+    theme_classic()+
+  labs(title = "Distributions of Proportion of time Hiearchies Followed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  scale_fill_manual(values = c("#397367", "#FFA400", "#93C2F1"),
+                     
+                     name = "Watershed")+
+  facet_wrap(~hierarchy)
+
+#FINAL DENSITY PLOTS
+
+sults_so_far %>% 
+  filter(timescale %in% c("4hr", "daily")) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(fill = shed, color = shed), alpha = 0.5)+
+    geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  ylim(c(0, 3))+
+  xlim(c(0,1))+
+  labs(title = "Distributions of Proportion of time Hiearchies Followed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  scale_fill_manual(values = c("#397367", "#FFA400", "#93C2F1"),
+                     
+                     name = "Watershed")+
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1"),
+                     
+                     name = "Watershed")+
+  facet_grid(timescale~hierarchy)
+
+sults_so_far %>% 
+  filter(timescale %in% c("30mins", "hourly")) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(fill = shed, color = shed), alpha = 0.5)+
+    geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  ylim(c(0, 3))+
+  xlim(c(0,1))+
+  labs(title = "Distributions of Proportion of time Hiearchies Followed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  scale_fill_manual(values = c("#397367", "#FFA400", "#93C2F1"),
+                     
+                     name = "Watershed")+
+  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1"),
+                     
+                     name = "Watershed")+
+  facet_grid(timescale~hierarchy)
+
+shed_colors <- c("#397367", "#FFD166", "#7E6B8F")
+
+#plots for committee meeting
+sults_so_far %>% 
+  filter(timescale %in% c("30mins", "daily")#, hierarchy == "Flow Permanence"
+         ) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(fill = shed, color = shed), alpha = 0.5)+
+    #geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  ylim(c(0, 3))+
+  xlim(c(0,1))+
+  labs(title = "Distributions of Proportion of time Hiearchies Followed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  scale_fill_manual(values = shed_colors,
+                     
+                     name = "Watershed")+
+  scale_color_manual(values = shed_colors,
+                     
+                     name = "Watershed")+
+  facet_grid(timescale~hierarchy)
+```
 ##looping by drainage area UNFINISHED
 Lost in a file hell
 ```{r create-3m-network}
@@ -2926,242 +3160,7 @@ alldat3 %>% group_by(iteration) %>%
 
 ```
 
-##Compile all of my results so far 2
-Consolidate the gains!!
-```{r consolidating-progress}
-#prop stands for proportion or percentage of transitions that support the hypothesis
-all_position <- read_csv("./hierarchy_analysis_results/relativePosition.csv")
-all_pk <- read_csv("./hierarchy_analysis_results/flowPermanence.csv")
-all_uaa <- read_csv("./hierarchy_analysis_results/drainageArea.csv")
 
-
-sults_so_far <- rbind(all_position,
-                      all_pk,
-                      #all_nt,
-                      #all_uaa,
-                      #all_slope,
-                      all_twi
-                      ) %>% 
-  mutate(timescale = fct_relevel(timescale,
-                              c("30mins", "hourly", "4hr", "daily")),
-         hierarchy = as.factor(str_trim(as.character(hierarchy))),
-         
-         hierarchy = fct_relevel(hierarchy, 
-                                 c(
-                                "Flow Permanence",
-                                "Relative Position",
-                                #"Drainage Area",
-                                #"Slope",
-                                "Topographic Wetness Index")))#,
-                                #"Random")))
-sults_so_far %>% 
-  ggplot(aes(x = shed, y = prop, color = hierarchy)) +
-  geom_boxplot()+
-  theme_classic()+
-    geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
-  geom_hline(yintercept = 0.5, lty = 2)+
-  labs(x = "Watershed",
-       y = "Proportion",
-       title = "How often do adjacent sensors follow a hierarchy?")+
-  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
-                     labels = c("Duration of Flow",
-                                "Flow Permanence",
-                                "Relative Position",
-                                "Drainage Area"),
-                     name = "Organizing Scheme")+
-  facet_grid(~timescale)
-
-
-#instead of boxplots, show the ecdf and one-sided violin plot
-sults_so_far %>% 
-  filter(timescale == "30mins", shed == "W3") %>% 
-  ggplot(aes(x = shed, y = prop, color = hierarchy)) +
-  geom_violin()+
-  theme_classic()+
-  geom_point(position = position_jitterdodge(jitter.width = 0.1), alpha = 0.5)+
-  geom_hline(yintercept = 0.5, lty = 2)+
-  labs(x = "Watershed",
-       y = "Proportion",
-       title = "How often do adjacent sensors follow a hierarchy?")+
-  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F", "grey"),
-                     name = "Organizing Scheme")+
-  facet_wrap(~timescale)
-
-#violin plot of just 30 min timescale
-sults_so_far %>% 
-  filter(timescale %in% c("30mins", "hourly")) %>% 
-  ggplot(aes(x = timescale, y = prop, color = hierarchy)) +
-  geom_violin()+
-  theme_classic()+
-  geom_point(position = position_jitterdodge(jitter.width = 0.1), alpha = 0.5)+
-  geom_hline(yintercept = 0.5, lty = 2)+
-  labs(x = "Timescale",
-       y = "Proportion",
-       title = "How often do adjacent sensors follow a hierarchy (daily timescale?")+
-  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
-                     name = "Organizing Scheme")+
-    facet_grid(rows = "shed")
-
-#one sided violin plot
-# p_load(devtools)
-# devtools::install_github("psyteachr/introdataviz")
-# library(introdataviz)
-
-# sults_so_far %>% 
-#   ggplot(aes(x = shed, y = prop, color = type)) +
-#   geom_split_violin()+
-#   theme_classic()+
-#     #geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
-#   geom_hline(yintercept = 0.5, lty = 2)+
-#   labs(x = "Watershed",
-#        y = "Proportion",
-#        title = "How often do adjacent sensors follow a hierarchy?")+
-#   scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
-#                      labels = c("Duration of Flow",
-#                                 "Flow Permanence",
-#                                 "Relative Position",
-#                                 "Drainage Area"),
-#                      name = "Organizing Scheme")+
-#   facet_wrap(~type)
-
-#plot ecdf instead of boxplots or violin plots
-plot(ecdf(w3_hourly$prop))
-plot(ecdf(alldat$prop))
-ggplot()+
-  stat_ecdf(data = w3_pairs, aes(prop))+
-  stat_ecdf(data = w3_new, aes(prop), color = "blue")
-
-sults_so_far %>% 
-  filter(timescale == "30mins") %>% 
-  ggplot(aes(prop, color = hierarchy)) +
-  stat_ecdf(geom = "line")+
-  theme_classic()+
-    #geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
-  geom_hline(yintercept = 0.5, lty = 2)+
-    geom_vline(xintercept = 0.5, lty = 2)+
-
-  labs(x = "Prop",
-       y = "Percentage of values less than or equal",
-       title = "How often do adjacent sensors follow a hierarchy?")+
-  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
-                     name = "Organizing Scheme")+
-  facet_wrap(~shed)#+
-  lims(x = c(0.5,1),
-       y = c(0.5, 1))
-
-#just plain distributions might look better?
-sults_so_far %>% 
-  filter(timescale == "30mins") %>% 
-  ggplot(aes(prop, color = hierarchy)) +
-geom_density(alpha = 0.5)+
-    theme_classic()+
-      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
-
-    #geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
-  labs(x = "Prop",
-       y = "Density",
-       title = "How often do adjacent sensors follow a hierarchy?")+
-  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
-                     name = "Organizing Scheme")+
-  facet_wrap(~shed)#+
-
-#try plain histogram
-sults_so_far %>% 
-  filter(timescale == "30mins") %>% 
-  ggplot(aes(prop, fill = hierarchy)) +
-geom_histogram(binwidth = 0.1)+
-    theme_classic()+
-      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
-
-    #geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
-  labs(x = "Prop",
-       y = "Density",
-       title = "How often do adjacent sensors follow a hierarchy?")+
-  scale_fill_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
-                     
-                     name = "Organizing Scheme")+
-  facet_grid(hierarchy~shed)
-
-sults_so_far %>% 
-  filter(timescale %in% c("30mins", "hourly")) %>% 
-  ggplot(aes(x = prop, fill = shed, y = after_stat(density))) +
-geom_density(alpha = 0.5)+
-      geom_vline(xintercept = 0.5, lty = 2)+
-    theme_classic()+
-  labs(title = "Distributions of Proportion of time Hiearchies Followed",
-       x = "Proportion of time followed",
-       y = "Density")+
-  scale_fill_manual(values = c("#397367", "#FFA400", "#93C2F1"),
-                     
-                     name = "Watershed")+
-  facet_wrap(~hierarchy)
-
-#FINAL DENSITY PLOTS
-
-sults_so_far %>% 
-  filter(timescale %in% c("4hr", "daily")) %>% 
-  ggplot(aes(x = prop, y = after_stat(density))) +
-geom_density(aes(fill = shed, color = shed), alpha = 0.5)+
-    geom_density(alpha = 0.5, lty = 3)+
-      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
-    theme_bw()+
-  ylim(c(0, 3))+
-  xlim(c(0,1))+
-  labs(title = "Distributions of Proportion of time Hiearchies Followed",
-       x = "Proportion of time followed",
-       y = "Density")+
-  scale_fill_manual(values = c("#397367", "#FFA400", "#93C2F1"),
-                     
-                     name = "Watershed")+
-  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1"),
-                     
-                     name = "Watershed")+
-  facet_grid(timescale~hierarchy)
-
-sults_so_far %>% 
-  filter(timescale %in% c("30mins", "hourly")) %>% 
-  ggplot(aes(x = prop, y = after_stat(density))) +
-geom_density(aes(fill = shed, color = shed), alpha = 0.5)+
-    geom_density(alpha = 0.5, lty = 3)+
-      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
-    theme_bw()+
-  ylim(c(0, 3))+
-  xlim(c(0,1))+
-  labs(title = "Distributions of Proportion of time Hiearchies Followed",
-       x = "Proportion of time followed",
-       y = "Density")+
-  scale_fill_manual(values = c("#397367", "#FFA400", "#93C2F1"),
-                     
-                     name = "Watershed")+
-  scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1"),
-                     
-                     name = "Watershed")+
-  facet_grid(timescale~hierarchy)
-
-shed_colors <- c("#397367", "#FFD166", "#7E6B8F")
-
-#plots for committee meeting
-sults_so_far %>% 
-  filter(timescale %in% c("30mins", "daily")#, hierarchy == "Flow Permanence"
-         ) %>% 
-  ggplot(aes(x = prop, y = after_stat(density))) +
-geom_density(aes(fill = shed, color = shed), alpha = 0.5)+
-    #geom_density(alpha = 0.5, lty = 3)+
-      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
-    theme_bw()+
-  ylim(c(0, 3))+
-  xlim(c(0,1))+
-  labs(title = "Distributions of Proportion of time Hiearchies Followed",
-       x = "Proportion of time followed",
-       y = "Density")+
-  scale_fill_manual(values = shed_colors,
-                     
-                     name = "Watershed")+
-  scale_color_manual(values = shed_colors,
-                     
-                     name = "Watershed")+
-  facet_grid(timescale~hierarchy)
-```
 ##find times when the network goes from very dry to very wet
 ```{r}
 #plot the number of sensors activated through time
@@ -5279,226 +5278,7 @@ fantastic_four_wd <- function(routes, shed){
 #for each scenario create the routes, inputs, and specify the timestep
 ```
 4-1-25, success! I can say what proportion of wetting and drying events follow a hierarchy
-##test versions, returns all combinations between two sensors, instead of prop value
-```{r all-combos}
-calc_support_combos <- function(up, down, input){
-#inputs to function- comment out in final version
-# i <- 4
-# up <- paste0("r_",routes$up[i])
-# down <- paste0("r_",routes$down[i])
-#input <- filtered_input
 
-#create output with the total and the sub, also the two input locations
-output <- data.frame(up, down)
-
-  
-no_dupes <- input %>% 
-      select(up,down, datetime) %>% #remove date
-      # make it so that there cannot be a sequence without change
-      # keep date column for indexing purposes later
-      filter(row_number() == 1 | !apply(select(., up, down) == lag(select(., up, down)), 1, all)) %>% 
-      #remove rows where one of the sensors is missing data
-      drop_na()
-#View(no_dupes)
-#all flowing all the time?
-check <- nrow(no_dupes)
-
-if(check <= 2){
-  sequence_df <- data.frame("Sequence" = NA, 
-                            "Frequency" = NA,
-                            "up" = up,
-                            "down" = down)
-  return(sequence_df)
-} 
-else {
-# Define window size
-window_size <- 2
-
-# Create sliding windows
-windows <- rollapply(
-  select(no_dupes, -datetime),
-  width = window_size,
-  by.column = FALSE,
-  FUN = function(x) paste(as.vector(t(x)), collapse = "")
-)
-
-# Count and sort sequences
-sequence_counts <- table(windows)
-sorted_counts <- sort(sequence_counts, decreasing = TRUE)
-
-# Display all sequences and their frequencies
-sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
-if(check > 1) colnames(sequence_df) <- c("Sequence", "Frequency")
-
-
-sequence_df$up <- up
-sequence_df$down <- down
-output$total <- sum(sequence_df$Frequency)
-#write some way to score the sequence_df
-#award one point for one of these configs:
-supports <- c("0001","0111","1101", "0100")
-
-
-sub <- filter(sequence_df, Sequence %in% supports)
-output$points <- sum(sub$Frequency)
-
-
-#create output with transitions
-#error handling- in situation where both points flowed 100% of the time
-
-return(sequence_df)}
-}
-
-#test function
-calc_support_combos("r_23", "r_6", input)
-
-#function to break up groups of continuous measurements, ensure that gaps are not considered
-#contains calc_support function
-iterate_groups_combos <- function(up, down, input, timestep){
-  #create group column that identifies gaps in continuous data in time
-
-# i <- 4
-# up <- paste0("r_",routes$up[i])
-# down <- paste0("r_",routes$down[i])
-# timestep <- hours(1)
-  input$group <- cumsum(c(TRUE, diff(input$datetime) != timestep))
-  #View(input)
-
-  for(u in 1:length(unique(input$group))){
-  # u <- 1
-  #   print(u)
-    filtered_input <- input %>% filter(group == u)
-    #this line throws error if 
-    output <- calc_support_combos(up, down, filtered_input)
-    
-
-     if(u == 1) iterate_groups_alldat <- output
-     if(u > 1) iterate_groups_alldat <- rbind(iterate_groups_alldat, output)
-  }
-  # final_iterate_groups_alldat <- iterate_groups_alldat %>% 
-  #   drop_na() %>% 
-  #   group_by(up, down) %>% 
-  #   summarise(total = sum(total),
-  #             points = sum(points))
-  return(iterate_groups_alldat)
-}
-
-iterate_groups("r_23", "r_6", input, hours(1))
-#function to take a list of routes and input dataset
-#contains group iteration function
-#for loop to iterate through full list of combinations of up and downstream locations
-#IMPORTANT- calculate hierarchy and iterate groups only work if the input timestep is approriate
-calculate_hierarchy_combos <- function(routes, input, timestep){
-  for(x in 1:length(routes$up)){
-  up <- paste0("r_",routes$up[x])
-  down <- paste0("r_",routes$down[x])
-  #print(x)
-  
-  out <- iterate_groups_combos(up, down, input, timestep)
-    #out <- calc_support(up, down, input)
-
-
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
-
-  }
-  final_output <- alldat %>% 
-    drop_na() %>%
-    group_by(up, down, Sequence) %>%
-    summarise(Frequency = sum(Frequency))
-  return(final_output)
-}
-
-#calculate_hierarchy_combos(routes, input, days(1))
-
-fantastic_four_combos <- function(routes, shed){
-  theFour <- c("30mins", "hourly", "4hr", "daily")
-  
-  for(q in 1:length(theFour)){
-    #if statements to detect timescale, calculate appropriate inputs
-    timescale <- theFour[q]
-  if(timescale == "30mins"){
-    input <- rbind(input_w3, input_fb, input_zz) %>%
-      filter(wshed == shed, mins %in% c(0, 30)) %>%
-      select(datetime, binary, ID) %>%
-      mutate(ID = paste0("r_", ID)) %>%
-      pivot_wider(names_from = ID, values_from = binary)
-    timestep <- minutes(30)
-  } 
-  else if(timescale == "hourly"){
-    input <- rbind(input_w3, input_fb, input_zz) %>%
-      filter(wshed == shed, mins %in% c(0)) %>%
-      select(datetime, binary, ID) %>%
-      mutate(ID = paste0("r_", ID)) %>%
-      pivot_wider(names_from = ID, values_from = binary)
-    timestep <- hours(1)
-  } 
-  else if(timescale == "4hr"){
-    input <- rbind(input_w3, input_fb, input_zz) %>%
-      mutate(hour = hour(datetime)) %>% 
-      filter(wshed == shed, hour %in% c(0,4,8,12,16,20,24), mins %in% c(0)) %>%
-      select(datetime, binary, ID) %>%
-      mutate(ID = paste0("r_", ID)) %>%
-      pivot_wider(names_from = ID, values_from = binary)
-    timestep <- hours(4)
-  } 
-  else if(timescale == "daily"){
-    input <- rbind(input_w3, input_fb, input_zz) %>%
-      mutate(hour = hour(datetime)) %>% 
-      filter(wshed == shed, hour %in% c(12), mins %in% c(0)) %>%
-      select(datetime, binary, ID) %>%
-      mutate(ID = paste0("r_", ID)) %>%
-      pivot_wider(names_from = ID, values_from = binary)
-    timestep <- days(1)
-  } 
-  else {
-    stop("Not a timescale anticipated!")
-  }
-    out <- calculate_hierarchy_combos(routes, input, timestep)
-    out$timescale <- theFour[q]
-    
-    if(q == 1) fanfar <- out
-    if(q > 1) fanfar <- rbind(fanfar, out)
-  }
-  fanfar$shed <- shed
-  return(fanfar)
-}
-
-routes_w3 <- read_csv("w3_flowrouting.csv") %>% 
-  filter(sensor %in% W3_IDs, drains_from %in% W3_IDs) %>% 
-  rename("up" = drains_from, "down" = sensor) %>% 
-  select(up, down) %>% 
-  filter(down != 100, up != 0)
-
-test <- fantastic_four_combos(routes_w3, "W3")
-  
-#test removing 0011 and 1100, and calcing prop values
-test %>% 
-  filter(Sequence != 0011, Sequence != 1100) %>% 
-  group_by(up, down, timescale, shed) %>% 
-  summarise()
-
-
-total_state_changes <- test %>% 
-    filter(Sequence != 0011, Sequence != 1100) %>% 
-    group_by(up, down, timescale, shed) %>% 
-    summarise(totals = sum(Frequency))
-supports <- c("0001","0111","1101", "0100")
-
-hierarchical_changes <- test %>% 
-    filter(Sequence != 0011, Sequence != 1100) %>% 
-    filter(Sequence %in% supports) %>% 
-    group_by(up, down, timescale, shed) %>%  
-    summarise(hierarchical = sum(Frequency)) 
-
-un_split <- total_state_changes %>% 
-  left_join(hierarchical_changes, by = c("up", "down", "shed", "timescale")) %>% 
-  mutate(prop = hierarchical/totals) %>% 
-  mutate_all(~replace(., is.na(.), 0))
-un_split
-
-#use this chunk to re-run everything
-```
 ##finding flaw in wetting and drying analysis
 Determined that original version resulted in excluding all sensor pairs with no hierarchical behavior, so distributions seemed a lot better than earlier analyses.
 ```{r finding-problem}
@@ -6055,3 +5835,585 @@ Alter code to test two scenarios and compare to the original one
 
 #new analysis after committee meeting
 ##remove 0011, see how this affects distributions
+###developing functions to return all combinations
+Included a new function, calc_props that removes 0011 and 1100, but a function for different scenarios could be developed here instead
+```{r all-combos}
+calc_support_combos <- function(up, down, input){
+#inputs to function- comment out in final version
+# i <- 4
+# up <- paste0("r_",routes$up[i])
+# down <- paste0("r_",routes$down[i])
+#input <- filtered_input
+
+#create output with the total and the sub, also the two input locations
+output <- data.frame(up, down)
+
+  
+no_dupes <- input %>% 
+      select(up,down, datetime) %>% #remove date
+      # make it so that there cannot be a sequence without change
+      # keep date column for indexing purposes later
+      filter(row_number() == 1 | !apply(select(., up, down) == lag(select(., up, down)), 1, all)) %>% 
+      #remove rows where one of the sensors is missing data
+      drop_na()
+#View(no_dupes)
+#all flowing all the time?
+check <- nrow(no_dupes)
+
+if(check <= 2){
+  sequence_df <- data.frame("Sequence" = NA, 
+                            "Frequency" = NA,
+                            "up" = up,
+                            "down" = down)
+  return(sequence_df)
+} 
+else {
+# Define window size
+window_size <- 2
+
+# Create sliding windows
+windows <- rollapply(
+  select(no_dupes, -datetime),
+  width = window_size,
+  by.column = FALSE,
+  FUN = function(x) paste(as.vector(t(x)), collapse = "")
+)
+
+# Count and sort sequences
+sequence_counts <- table(windows)
+sorted_counts <- sort(sequence_counts, decreasing = TRUE)
+
+# Display all sequences and their frequencies
+sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
+if(check > 1) colnames(sequence_df) <- c("Sequence", "Frequency")
+
+
+sequence_df$up <- up
+sequence_df$down <- down
+output$total <- sum(sequence_df$Frequency)
+#write some way to score the sequence_df
+#award one point for one of these configs:
+supports <- c("0001","0111","1101", "0100")
+
+
+sub <- filter(sequence_df, Sequence %in% supports)
+output$points <- sum(sub$Frequency)
+
+
+#create output with transitions
+#error handling- in situation where both points flowed 100% of the time
+
+return(sequence_df)}
+}
+
+#test function
+calc_support_combos("r_23", "r_20", input)
+
+#function to break up groups of continuous measurements, ensure that gaps are not considered
+#contains calc_support function
+iterate_groups_combos <- function(up, down, input, timestep){
+  #create group column that identifies gaps in continuous data in time
+
+# i <- 4
+# up <- paste0("r_",routes$up[i])
+# down <- paste0("r_",routes$down[i])
+# timestep <- hours(1)
+  input$group <- cumsum(c(TRUE, diff(input$datetime) != timestep))
+  #View(input)
+
+  for(u in 1:length(unique(input$group))){
+  # u <- 1
+  #   print(u)
+    filtered_input <- input %>% filter(group == u)
+    #this line throws error if 
+    output <- calc_support_combos(up, down, filtered_input)
+    
+
+     if(u == 1) iterate_groups_alldat <- output
+     if(u > 1) iterate_groups_alldat <- rbind(iterate_groups_alldat, output)
+  }
+  # final_iterate_groups_alldat <- iterate_groups_alldat %>% 
+  #   drop_na() %>% 
+  #   group_by(up, down) %>% 
+  #   summarise(total = sum(total),
+  #             points = sum(points))
+  return(iterate_groups_alldat)
+}
+
+#iterate_groups("r_23", "r_6", input, hours(1))
+#function to take a list of routes and input dataset
+#contains group iteration function
+#for loop to iterate through full list of combinations of up and downstream locations
+#IMPORTANT- calculate hierarchy and iterate groups only work if the input timestep is approriate
+calculate_hierarchy_combos <- function(routes, input, timestep){
+  for(x in 1:length(routes$up)){
+  up <- paste0("r_",routes$up[x])
+  down <- paste0("r_",routes$down[x])
+  #print(x)
+  
+  out <- iterate_groups_combos(up, down, input, timestep)
+    #out <- calc_support(up, down, input)
+
+
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
+
+  }
+  final_output <- alldat %>% 
+    drop_na() %>%
+    group_by(up, down, Sequence) %>%
+    summarise(Frequency = sum(Frequency))
+  return(final_output)
+}
+
+#calculate_hierarchy_combos(routes, input, days(1))
+
+fantastic_four_combos <- function(routes, shed){
+  theFour <- c("30mins", "hourly", "4hr", "daily")
+  
+  for(q in 1:length(theFour)){
+    #if statements to detect timescale, calculate appropriate inputs
+    timescale <- theFour[q]
+  if(timescale == "30mins"){
+    input <- rbind(input_w3, input_fb, input_zz) %>%
+      filter(wshed == shed, mins %in% c(0, 30)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- minutes(30)
+  } 
+  else if(timescale == "hourly"){
+    input <- rbind(input_w3, input_fb, input_zz) %>%
+      filter(wshed == shed, mins %in% c(0)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- hours(1)
+  } 
+  else if(timescale == "4hr"){
+    input <- rbind(input_w3, input_fb, input_zz) %>%
+      mutate(hour = hour(datetime)) %>% 
+      filter(wshed == shed, hour %in% c(0,4,8,12,16,20,24), mins %in% c(0)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- hours(4)
+  } 
+  else if(timescale == "daily"){
+    input <- rbind(input_w3, input_fb, input_zz) %>%
+      mutate(hour = hour(datetime)) %>% 
+      filter(wshed == shed, hour %in% c(12), mins %in% c(0)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- days(1)
+  } 
+  else {
+    stop("Not a timescale anticipated!")
+  }
+    out <- calculate_hierarchy_combos(routes, input, timestep)
+    out$timescale <- theFour[q]
+    
+    if(q == 1) fanfar <- out
+    if(q > 1) fanfar <- rbind(fanfar, out)
+  }
+  fanfar$shed <- shed
+  return(fanfar)
+}
+
+routes_w3 <- read_csv("w3_flowrouting.csv") %>% 
+  filter(sensor %in% W3_IDs, drains_from %in% W3_IDs) %>% 
+  rename("up" = drains_from, "down" = sensor) %>% 
+  select(up, down) %>% 
+  filter(down != 100, up != 0)
+
+test <- fantastic_four_combos(routes_w3, "W3")
+
+
+#must calculate prop values after and outside of fantastic 4
+calc_props <- function(routes, shed){
+  full_combos <- fantastic_four_combos(routes, shed)
+total_state_changes <- full_combos %>% 
+    filter(Sequence != 0011, Sequence != 1100) %>% 
+    group_by(up, down, timescale, shed) %>% 
+    summarise(totals = sum(Frequency))
+supports <- c("0001","0111","1101", "0100")
+
+hierarchical_changes <- full_combos %>% 
+    filter(Sequence != 0011, Sequence != 1100) %>% 
+    filter(Sequence %in% supports) %>% 
+    group_by(up, down, timescale, shed) %>%  
+    summarise(hierarchical = sum(Frequency)) 
+
+un_split <- total_state_changes %>% 
+  left_join(hierarchical_changes, by = c("up", "down", "shed", "timescale")) %>% 
+  mutate(prop = hierarchical/totals) %>% 
+  mutate_all(~replace(., is.na(.), 0))
+return(un_split)
+}
+
+
+#code used to develop calc_props!
+calc_props(routes_w3, "W3")
+total_state_changes <- test %>% 
+    filter(Sequence != 0011, Sequence != 1100) %>% 
+    group_by(up, down, timescale, shed) %>% 
+    summarise(totals = sum(Frequency))
+supports <- c("0001","0111","1101", "0100")
+
+hierarchical_changes <- test %>% 
+    filter(Sequence != 0011, Sequence != 1100) %>% 
+    filter(Sequence %in% supports) %>% 
+    group_by(up, down, timescale, shed) %>%  
+    summarise(hierarchical = sum(Frequency)) 
+
+un_split <- total_state_changes %>% 
+  left_join(hierarchical_changes, by = c("up", "down", "shed", "timescale")) %>% 
+  mutate(prop = hierarchical/totals) %>% 
+  mutate_all(~replace(., is.na(.), 0))
+un_split
+
+#use this chunk to re-run everything
+```
+###re-run original analysis without 0011 and 1100 being included in prop value calculation
+```{r relative-position}
+#set routes for all 3 watersheds
+routes_w3 <- read_csv("w3_flowrouting.csv") %>% 
+  filter(sensor %in% W3_IDs, drains_from %in% W3_IDs) %>% 
+  rename("up" = drains_from, "down" = sensor) %>% 
+  select(up, down) %>% 
+  filter(down != 100, up != 0)
+  
+routes_fb <- read_csv("fb_flowrouting.csv") %>% 
+  filter(up %in% FB_IDs) %>% 
+  filter(down %in% FB_IDs) %>% 
+  drop_na()
+routes_zz <- read_csv("zz_flowrouting.csv") %>% 
+  filter(up %in% ZZ_IDs) %>% 
+  filter(down %in% ZZ_IDs) %>% 
+  drop_na()
+
+#run calc_support for all sheds and timesteps for relative position
+all_position_combo <- rbind(calc_props(routes_w3, "W3"),
+                      calc_props(routes_fb, "FB"),
+                      calc_props(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Relative Position")
+#write_csv(all_position, "./hierarchy_analysis_results/relativePosition.csv")
+#test <- read_csv("./hierarchy_analysis_results/relativePosition.csv")
+```
+```{r flow-permanence}
+#make list that make pairs of sites based on local persistency
+routes_w3 <- pks_w3 %>% 
+    filter(ID %in% W3_IDs) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+routes_fb <- pks_fb %>%
+    filter(ID %in% FB_IDs) %>% 
+  filter(pk != 1) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+routes_zz <- pks_zz %>%
+    filter(ID %in% ZZ_IDs) %>% 
+  filter(pk != 1) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+all_pk_combo <- rbind(calc_props(routes_w3, "W3"),
+                calc_props(routes_fb, "FB"),
+                calc_props(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Flow Permanence")
+
+#write_csv(all_pk, "./hierarchy_analysis_results/flowPermanence.csv")
+```
+```{r number-of-transitions}
+#make list that make pairs of sites based on local persistency
+routes_w3 <- nt_w3 %>%
+    filter(ID %in% W3_IDs) %>% 
+  arrange(desc(avg_nt)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+routes_fb <- nt_fb %>% 
+    filter(ID %in% FB_IDs) %>% 
+  arrange(desc(avg_nt)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+routes_zz <- nt_zz %>% 
+    filter(ID %in% ZZ_IDs) %>% 
+  arrange(desc(avg_nt)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+all_nt_combo <- rbind(calc_props(routes_w3, "W3"),
+                 calc_props(routes_fb, "FB"),
+                 calc_props(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Duration of Flow")
+
+#write_csv(all_dof, "./hierarchy_analysis_results/durationOfFlow.csv")
+```
+```{r drainage-area}
+#I was not confident in my R determined values, so I extracted drainage area in Arc. Reading in results
+
+#.csv files with extracted 1m drainage area values, but also contain snapped coords in UTM
+fb_uaa_1m <- read_csv("./STIC_uaa/fb2.csv")
+zz_uaa_1m <- read_csv("./STIC_uaa/zz2.csv")
+w3_uaa_1m <- read_csv("./STIC_uaa/w32.csv")
+
+routes_w3 <- w3_uaa_1m %>% 
+    filter(ID %in% W3_IDs) %>% 
+  rename("up" = ID, "uaa" = RASTERVALU) %>%
+  arrange(desc(uaa)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+routes_fb <- fb_uaa_1m %>%
+    filter(ID %in% FB_IDs) %>% 
+  rename("up" = ID, "uaa" = RASTERVALU) %>%
+  arrange(desc(uaa)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+routes_zz <- zz_uaa_1m %>% 
+    filter(ID %in% ZZ_IDs) %>% 
+  rename("up" = ID, "uaa" = RASTERVALU) %>%
+  arrange(desc(uaa)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+all_uaa_combo <- rbind(calc_props(routes_w3, "W3"),
+                 calc_props(routes_fb, "FB"),
+                 calc_props(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Drainage Area")
+
+#write_csv(all_uaa, "./hierarchy_analysis_results/drainageArea.csv")
+```
+```{r topographic-position-index}
+# fb_uaa_1m <- read_csv("./STIC_uaa/fb2.csv")
+# zz_uaa_1m <- read_csv("./STIC_uaa/zz2.csv")
+# w3_uaa_1m <- read_csv("./STIC_uaa/w32.csv")
+
+routes_w3 <- w3_tpi %>% 
+    filter(ID %in% W3_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange(desc(tpi)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+routes_fb <- fb_tpi %>% 
+    filter(ID %in% FB_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange(desc(tpi)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down)
+
+routes_zz <- zz_tpi %>% 
+    filter(ID %in% ZZ_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange(desc(tpi)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+all_tpi_combo <- rbind(calc_props(routes_w3, "W3"),
+                 calc_props(routes_fb, "FB"),
+                 calc_props(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Topographic Position Index")
+
+#write_csv(all_tpi, "./hierarchy_analysis_results/tpi.csv")
+```
+```{r topographic-wetness-index}
+routes_w3 <- w3_twi %>% 
+    filter(ID %in% W3_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange(desc(twi)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+routes_fb <- fb_twi %>% 
+    filter(ID %in% FB_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange(desc(twi)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down)
+
+routes_zz <- zz_twi %>% 
+    filter(ID %in% ZZ_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange(desc(twi)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+all_twi_combo <- rbind(calc_props(routes_w3, "W3"),
+                 calc_props(routes_fb, "FB"),
+                 calc_props(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Topographic Wetness Index")
+
+#write_csv(all_twi, "./hierarchy_analysis_results/twi.csv")
+```
+```{r slope}
+routes_w3 <- w3_slope %>% 
+    filter(ID %in% W3_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange(slope) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+routes_fb <- fb_slope %>% 
+    filter(ID %in% FB_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange((slope)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down)
+
+routes_zz <- zz_slope %>% 
+    filter(ID %in% ZZ_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange((slope)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+all_slope_combo <- rbind(calc_props(routes_w3, "W3"),
+                 calc_props(routes_fb, "FB"),
+                 calc_props(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Slope")
+
+#write_csv(all_slope, "./hierarchy_analysis_results/slope.csv")
+```
+###plot results
+```{r}
+sults_so_far <- rbind(all_position_combo,
+                      all_pk_combo,
+                      #all_nt_combo,
+                      all_uaa_combo,
+                      #all_tpi_combo,
+                      all_slope_combo,
+                      all_twi_combo
+                      ) #%>% 
+  mutate(timescale = fct_relevel(timescale,
+                              c("30mins", "hourly", "4hr", "daily")),
+         hierarchy = as.factor(str_trim(as.character(hierarchy))),
+         
+         hierarchy = fct_relevel(hierarchy, 
+                                 c(
+                                "Flow Permanence",
+                                "Number of Transitions",
+                                "Relative Position",
+                                "Drainage Area",
+                                "Slope",
+                                "Topographic Wetness Index",
+                                "Topographic Position Index")))#,
+                                #"Random")))
+
+shed_colors <- c("#397367", "#FFD166", "#7E6B8F")
+
+#plots for committee meeting
+sults_so_far %>% 
+  filter(timescale %in% c("30mins", "daily")#, hierarchy == "Flow Permanence"
+         ) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(fill = shed, color = shed), alpha = 0.5)+
+    geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  ylim(c(0, 3))+
+  xlim(c(0,1))+
+  labs(title = "Distributions of Proportion of time Sequence Followed",
+       subtitle = "0011 and 1100 removed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  scale_fill_manual(values = shed_colors,
+                     
+                     name = "Watershed")+
+  scale_color_manual(values = shed_colors,
+                     
+                     name = "Watershed")+
+  facet_grid(timescale~hierarchy)
+
+
+```
+##Try all combinations
+```{r iterating-smart-W3}
+#pick a sensor randomly, then test every other sensor to see which has the best hierarchical behavior with that one. Proceed down the list without replacement
+# combos <- W3_uaa_ex %>% 
+#   rename("up" = ID, "uaa" = '10mdem_flowacc') %>%
+#   arrange(desc(uaa)) %>% 
+#   mutate(down = lag(up)) %>% 
+#    drop_na() %>% 
+#   select(up, down) %>% 
+#   mutate(up = paste0("r_",up),
+#          down = paste0("r_",down)) %>% 
+#   select(up)
+
+#combos <- unique(combos$up)
+
+input <- rbind(bind23, bind24) %>%
+  filter(wshed == "W3", mins %in% c(0, 30)) %>%
+  select(datetime, binary, ID) %>%
+  mutate(ID = paste0("r_",ID)) %>% 
+  pivot_wider(names_from = ID, values_from = binary)
+
+combos <- unique(colnames(input[-1]))
+#find the starting point
+
+for(t in 1:length(combos)){
+ #t <- 1 
+begin <- combos[t]
+options_initial <- combos[combos != begin]
+options <- combos[combos != begin]
+
+routes <- data.frame("up" = rep(begin, length(options_initial)),
+                     "down" = options_initial)
+for(x in 1:length(options_initial)){
+#x <- 1
+#calc_support("r_23", "r_6", input)
+
+  for(i in 1:length(options)){
+        out <- calc_support_combos(routes$up[i], routes$down[i], input)
+        if(i == 1) inner_out <- out
+        if(i > 1) inner_out <- rbind(inner_out, out)
+  }
+  
+  routes <- data.frame("up" = combos[x],
+                     "down" = combos)
+print(paste0("x = ",x))
+
+  if(x == 1) big_keep <- kep
+  if(x > 1) big_keep <- rbind(big_keep, kep)
+}
+big_keep$start <- begin
+if(t == 1) biggest_keep <- big_keep
+  if(t > 1) biggest_keep <- rbind(biggest_keep, big_keep)
+}
+#started at 1:55 pm, finished 1:59
+smart_iterate_w3 <- biggest_keep
+smart_iterate_w3 %>% group_by(start) #%>% 
+  ggplot()+
+  geom_density(data = smart_iterate_w3, 
+               aes(x = prop, y = after_stat(density), color = start))+
+  geom_density(data = filter(all_pk, timescale == "30mins" | shed == "W3"))+
+  aes(x = prop, y = after_stat(density))#+
+
+```
