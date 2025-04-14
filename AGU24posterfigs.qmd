@@ -16,6 +16,8 @@ seis <- read_csv("seismic_12_2_24.csv") %>%
   filter(quality %in% c("yes", "1 away"),
          grilla_number != 158)
 
+seis_all <- read_csv("seismic_12_2_24.csv")
+
 ggplot(seis, aes(x = long, y = lat, color = as.numeric(depth)))+
   geom_point()+
   theme_classic()
@@ -25,9 +27,15 @@ depths <- vect(seis,
                   geom=c("long", "lat"), 
                    crs = "+proj=longlat +datum=WGS84")
 plot(depths)
+
+#dem
+dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
+m1 <- rast(dem)
 #reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
 dd <- terra::project(depths, crs(m1))
 plot(dd)
+
+dd$depth <- as.numeric(dd$depth)
 
 ```
 ```{r depth-measurement-locations-map}
@@ -60,9 +68,62 @@ plot(w3_stream_crop)
 #or i could use old classification
 
 #point locations- snapped points from above chunk
+w3_stic_locs_snap <- "w3_stic_locs_snap.shp"
+
 w3_stic_locs_r <- vect(w3_stic_locs_snap) %>% 
   left_join(pks, by = "ID")
 
+
+
+w3_stic_locs_r <- vect(w3_stic_locs_snap)
+
+w3_net <- vect("./carrieZigZag/w3_network.shp")
+plot(w3_net)
+
+test <- ggplot()+
+  geom_spatraster(data = hill)+
+  theme_void()+
+  #theme(legend.position = "")+
+  scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
+    new_scale_fill() +
+  geom_spatraster(data = crop1, alpha = 0.5)+
+  geom_sf(data = w3_outline, fill = NA, color = "black", alpha = 0.3)+
+  geom_sf(data = w3_net, colour = "darkslategray3") +
+  geom_sf(data = w3_stic_locs_r, colour = "midnightblue", pch = 21, size = 5) +
+  geom_sf(data = dd, aes(color = (depth)), pch = 19, size = 3) +
+  scale_color_gradient(low = "black", high = "white")+
+  #geom_sf(data = w3_pour, colour = "black") +
+   scale_fill_hypso_c(palette = "dem_screen" , limits = c(200, 1000))+
+  theme(rect = element_rect(fill = "transparent", color = NA))+
+  ggspatial::annotation_scale(location = 'tr')
+
+
+```
+```{r plotly-version}
+library(plotly)
+
+nc <- sf::st_read(system.file("shape/nc.shp", package = "sf"), quiet = TRUE)
+w3_outline_sf <- sf::st_as_sf(w3_outline)
+ggplotly(test)
+ggplotly(ggplot()+
+             geom_spatraster(data = hill)+
+             scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
+           new_scale_fill() +
+  geom_spatraster(data = crop1, alpha = 0.5)+
+
+  geom_sf(data = w3_net, colour = "darkslategray3") +
+  geom_sf(data = w3_stic_locs_r, colour = "midnightblue", pch = 21, size = 5) +
+  geom_sf(data = dd, aes(color = (depth)), pch = 19, size = 3) +
+  scale_color_gradient(low = "black", high = "white")+
+    
+  #geom_sf(data = w3_pour, colour = "black") +
+  # scale_fill_hypso_c(palette = "dem_screen" , limits = c(200, 1000))+
+  theme(rect = element_rect(fill = "transparent", color = NA))+
+    theme_void())
+  #ggspatial::annotation_scale(location = 'tr')
+```
+
+```{r only-8-11}
 ggplot()+
   geom_spatraster(data = hill)+
   theme_void()+
@@ -71,16 +132,16 @@ ggplot()+
     new_scale_fill() +
   geom_spatraster(data = crop1, alpha = 0.5)+
   geom_sf(data = w3_outline, fill = NA, color = "black", alpha = 0.3)+
-  #geom_sf(data = w3_net, colour = "darkslategray3") +
-    #geom_sf(data = lcc, colour = "midnightblue", pch = 19, size = 6) +
-  geom_sf(data = dd, aes(colour = as.numeric(depth)), pch = 19, size = 3) +
+  geom_sf(data = w3_net, colour = "darkslategray3") +
+  geom_sf(data = filter(w3_stic_locs_r, ID %in% c(8, 11)), colour = "midnightblue", pch = 21, size = 5) +
+  #geom_sf(data = dd, aes(color = (depth)), pch = 19, size = 3) +
+  #scale_color_gradient(low = "black", high = "white")+
   #geom_sf(data = w3_pour, colour = "black") +
    scale_fill_hypso_c(palette = "dem_screen" , limits = c(200, 1000))+
   theme(rect = element_rect(fill = "transparent", color = NA))+
   ggspatial::annotation_scale(location = 'tr')
-
-
 ```
+
 ```{r exploration-of-seismic-for-analysis}
 
 #map with stream segments labelled
