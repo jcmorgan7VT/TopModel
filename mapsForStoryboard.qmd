@@ -697,7 +697,7 @@ geom_histogram(binwidth = 0.1)+
        y = "Density")+
   scale_fill_manual(values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
                      
-                     name = "Watershed")#+
+                     name = "Watershed")+
   facet_wrap(~wshed)
 
 ```
@@ -6662,7 +6662,7 @@ input_zz <- input_zz %>%
 
       
 ```
-```{r}
+```{r is-it-really-random?}
 #durations that sensors were deployed
 input_w3 %>% 
   group_by(ID) %>% 
@@ -6683,7 +6683,6 @@ testing <- input_w3 %>%
   select(ID, datetime, binary, random_state) %>% 
   pivot_longer(cols = c(binary, random_state))
 
-p_load(ggbreak)
 #figuring out if the randomly generated flows are actually different
 testing %>% 
   #filter(DATETIME > start & DATETIME < stop) %>% 
@@ -6703,8 +6702,7 @@ testing %>%
     theme(legend.position="bottom")#+
   scale_x_break(c(("2023-11-10 10:00:00"), ("2024-5-10 10:00:00")))
 ```
-
-###re-run original analysis without 0011 and 1100 being included in prop value calculation
+####running random flow states
 ```{r relative-position-random}
 #set routes for all 3 watersheds
 routes_w3 <- read_csv("w3_flowrouting.csv") %>% 
@@ -6896,7 +6894,7 @@ all_slope_random <- rbind(calc_props(routes_w3, "W3"),
 #write_csv(all_slope, "./hierarchy_analysis_results/slope.csv")
 ```
 
-```{r}
+```{r plot-random-results}
 sults_so_far_random <- rbind(all_position_random,
                       all_pk_random,
                       #all_nt_combo,
@@ -6975,6 +6973,55 @@ left_join(sults_so_far, sults_so_far_random, by = c("up", "down", "timescale", "
   filter(p_value <= 0.1) %>% 
   knitr::kable()
 ```
+
+####Creating a new randomly generated dataset where the flow permanence was randomly generated
+```{r generate-random-pks}
+
+rbind(pks_w3, pks_fb, pks_zz) %>% 
+  ggplot(aes(x = wshed, y = pk))+
+  geom_boxplot()+
+  geom_jitter(width = 0.1, alpha = 0.5)+
+  theme_classic()+
+  labs(title = "Distributions of Proportion of Time Flowing",
+       x = "Watershed",
+       y = "Proportion of Time Flowing")
+
+runif(30, min = min(pks_w3$pk), max = max(pks_w3$pk))
+
+#Botter and Durighetto used a normal and beta distribution to randomly sample pk values for a simulation with 1000 nodes
+#use beta distribution for all of mine
+hist(rbeta(10000,5,2))
+hist(rbeta(10000,2,5))
+hist(rbeta(10000,5,5))
+p_load(fitdistrplus)
+fitdistr(pks_w3$pk, "beta",
+         start = list(shape1 = 2, shape2 = 2))
+hist(rbeta(1000,2,2))
+hist(rbeta(1000,1.1831220,0.9849231))
+
+fitdistr(pks_fb$pk, 
+         start = list(shape1 = 1, shape2 = 1), densfun="beta", method = "Brent")
+
+fitdistrplus::plotdist(pks_w3$pk, "beta", list(1.1831220, 0.9849231))
+
+input_w3 <- rbind(bind23, bind24) %>%
+  filter(wshed == "W3") %>% 
+  filter(ID %in% W3_IDs)
+
+testing <- input_w3 %>% 
+  group_by(ID) %>% 
+  summarise(duration = length(datetime)) %>% 
+  left_join(input_w3, by = "ID") %>% 
+  left_join(pks_w3, by = "ID") %>% 
+  group_by(ID) %>% 
+  mutate(random_state = rbinom(duration, 1, pk)) %>% 
+    filter(mins %in% c(0, 30)) %>%
+  select(ID, datetime, binary, random_state) %>% 
+  pivot_longer(cols = c(binary, random_state))
+```
+
+
+
 ###additional last task- determine minimum number of observations to get "true" proportion of time flowing
 ```{r}
 #function from W3_STIC, 
