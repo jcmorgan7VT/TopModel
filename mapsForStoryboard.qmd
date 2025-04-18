@@ -702,6 +702,7 @@ geom_histogram(binwidth = 0.1)+
 
 ```
 
+#VERY IMPORTANT SET UP CHUNK
 ```{r prepare-inputs}
 #create input that only uses sensors that were deployed during both deployments
 #need to make a list of sensors deployed in both campaigns for each watershed
@@ -6312,7 +6313,8 @@ sults_so_far <- rbind(all_position_combo,
                       #all_tpi_combo,
                       all_slope_combo,
                       all_twi_combo
-                      ) #%>% 
+                      ) %>% 
+  mutate("real_or_random" = "real")
   mutate(timescale = fct_relevel(timescale,
                               c("30mins", "hourly", "4hr", "daily")),
          hierarchy = as.factor(str_trim(as.character(hierarchy))),
@@ -6320,12 +6322,13 @@ sults_so_far <- rbind(all_position_combo,
          hierarchy = fct_relevel(hierarchy, 
                                  c(
                                 "Flow Permanence",
-                                "Number of Transitions",
+                                #"Number of Transitions",
                                 "Relative Position",
                                 "Drainage Area",
                                 "Slope",
                                 "Topographic Wetness Index",
-                                "Topographic Position Index")))#,
+                                #"Topographic Position Index"
+                                )))#,
                                 #"Random")))
 
 shed_colors <- c("#397367", "#FFD166", "#7E6B8F")
@@ -6339,7 +6342,7 @@ geom_density(aes(fill = shed, color = shed), alpha = 0.5)+
     geom_density(alpha = 0.5, lty = 3)+
       geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
     theme_bw()+
-  ylim(c(0, 3))+
+  ylim(c(0, 6.25))+
   xlim(c(0,1))+
   labs(title = "Distributions of Proportion of time Sequence Followed",
        subtitle = "0011 and 1100 removed",
@@ -6355,6 +6358,9 @@ geom_density(aes(fill = shed, color = shed), alpha = 0.5)+
 
 
 ```
+
+
+
 ##Try all combinations
 ```{r iterating-smart-W3}
 #pick a sensor randomly, then test every other sensor to see which has the best hierarchical behavior with that one. Proceed down the list without replacement
@@ -6544,11 +6550,460 @@ test <- calc_props(all_combos_routes, "W3")
 ```{r}
 #figure out how to display results of testing all possible combinations
 #output the highest downstream for each upstream
+
+p_load(igraph)
+
+test %>% 
+  group_by(up, timescale) %>%
+  filter(timescale == "daily") %>% 
+  reframe(max_prop = max(prop),
+    down1 = down[which(prop == max(prop))]) %>% 
+  filter(max_prop != 0, !down1 %in% c("r_12", "r_19", "r_20"))
+
+edges <- test %>% 
+  group_by(up, timescale) %>%
+  filter(timescale == "30mins") %>% 
+  reframe(max_prop = max(prop),
+    down1 = down[which(prop == max(prop))]) %>% 
+  filter(max_prop != 0, !down1 %in% c("r_12", "r_19", "r_20")) %>% 
+  select(up, down1)
+
+  # create the network object
+network <- graph_from_data_frame(d=edges, directed=T) 
+
+# plot it
+igraph_options(label.cex = 2, arrow.size = 0.1)
+plot(network)
+  
 test %>% 
   group_by(up, timescale) %>%
   reframe(max_prop = max(prop),
     down1 = down[which(prop == max(prop))]) %>% 
-  View()
+  filter(max_prop != 0, !down1 %in% c("r_12", "r_19", "r_20")) %>% 
+  group_by(down1, timescale) %>%
+  summarise(count = length(down1)) %>% 
+  pivot_wider(id_cols = down1, names_from = timescale, values_from = count)
+```
+
+###last task- generate random numbers, see if they are hierarchical
+create an input that is randomly generated, and then compare it to the actual
+```{r prepare-random inputs}
+#create input that only uses sensors that were deployed during both deployments
+#need to make a list of sensors deployed in both campaigns for each watershed
+#W3
+w3_deployed24 <- unique(filter(data_24, wshed == "W3")$number)
+w3_deployed23 <- unique(filter(data_23, wshed == "W3")$ID)
+W3_IDs <- intersect(w3_deployed24, w3_deployed23)
+#FB
+fb_deployed24 <- unique(filter(data_24, wshed == "FB")$number)
+fb_deployed23 <- unique(filter(data_23, wshed == "FB")$ID)
+FB_IDs <- intersect(fb_deployed24, fb_deployed23)
+#ZZ
+zz_deployed24 <- unique(filter(data_24, wshed == "ZZ")$number)
+zz_deployed23 <- unique(filter(data_23, wshed == "ZZ")$ID)
+ZZ_IDs <- intersect(zz_deployed24, zz_deployed23)
+
+
+bind24 <- data_24 %>% 
+  select(datetime, number, wshed, binary, mins) %>% 
+  rename("ID" = number)
+
+
+bind23 <- data_23 %>% 
+  filter(ID %in% intersect(bind24$ID, data_23$ID)) %>% 
+  select(datetime, ID, wshed, binary, mins)
+
+#filter by each watershed, then recombine at the end
+input_w3 <- rbind(bind23, bind24) %>%
+  filter(wshed == "W3") %>% 
+  filter(ID %in% W3_IDs)
+input_fb <- rbind(bind23, bind24) %>%
+  filter(wshed == "FB") %>% 
+  filter(ID %in% FB_IDs)
+input_zz <- rbind(bind23, bind24) %>%
+  filter(wshed == "ZZ") %>% 
+  filter(ID %in% ZZ_IDs)
+
+rbind(input_w3, input_fb, input_zz)
+
+#create function that will generate a random series of 1 and 0, with the success probability equal to the proportion of time flowing
+X <- rbinom(20, 1, 0.5)
+
+#create new input_w3, and later specify that this is the randomly generated one
+input_w3 <- input_w3 %>% 
+  group_by(ID) %>% 
+  summarise(duration = length(datetime)) %>% 
+  left_join(input_w3, by = "ID") %>% 
+  left_join(pks_w3, by = "ID") %>% 
+  group_by(ID) %>% 
+  mutate(random_state = rbinom(duration, 1, pk)) %>% 
+  select(-duration, -wshed.y, -binary, -pk) %>% 
+  rename("binary" = random_state, "wshed" = wshed.x)
+
+input_fb <- input_fb %>% 
+  group_by(ID) %>% 
+  summarise(duration = length(datetime)) %>% 
+  left_join(input_fb, by = "ID") %>% 
+  left_join(pks_fb, by = "ID") %>% 
+  group_by(ID) %>% 
+  mutate(random_state = rbinom(duration, 1, pk)) %>% 
+  select(-duration, -wshed.y, -binary, -pk) %>% 
+  rename("binary" = random_state, "wshed" = wshed.x)
+
+input_zz <- input_zz %>% 
+  group_by(ID) %>% 
+  summarise(duration = length(datetime)) %>% 
+  left_join(input_zz, by = "ID") %>% 
+  left_join(pks_zz, by = "ID") %>% 
+  group_by(ID) %>% 
+  mutate(random_state = rbinom(duration, 1, pk)) %>% 
+  select(-duration, -wshed.y, -binary, -pk) %>% 
+  rename("binary" = random_state, "wshed" = wshed.x)
+
+      
+```
+```{r}
+#durations that sensors were deployed
+input_w3 %>% 
+  group_by(ID) %>% 
+  summarise(duration = length(datetime))
+
+input_w3 <- rbind(bind23, bind24) %>%
+  filter(wshed == "W3") %>% 
+  filter(ID %in% W3_IDs)
+
+testing <- input_w3 %>% 
+  group_by(ID) %>% 
+  summarise(duration = length(datetime)) %>% 
+  left_join(input_w3, by = "ID") %>% 
+  left_join(pks_w3, by = "ID") %>% 
+  group_by(ID) %>% 
+  mutate(random_state = rbinom(duration, 1, pk)) %>% 
+    filter(mins %in% c(0, 30)) %>%
+  select(ID, datetime, binary, random_state) %>% 
+  pivot_longer(cols = c(binary, random_state))
+
+p_load(ggbreak)
+#figuring out if the randomly generated flows are actually different
+testing %>% 
+  #filter(DATETIME > start & DATETIME < stop) %>% 
+  #filter(threshold == "agree_or_no_90") %>% 
+  ggplot()+
+  geom_tile(aes(x = datetime, y = ID, fill = as.character(value)))+
+  facet_grid(~name, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c(0, 1),
+                    labels = c("No flow", "flowing"),
+                    name = ""
+                    )+
+  labs(title = "Streamflow permanence in W3",
+       x = "")+
+  theme_classic()+
+    theme(legend.position="bottom")#+
+  scale_x_break(c(("2023-11-10 10:00:00"), ("2024-5-10 10:00:00")))
+```
+
+###re-run original analysis without 0011 and 1100 being included in prop value calculation
+```{r relative-position-random}
+#set routes for all 3 watersheds
+routes_w3 <- read_csv("w3_flowrouting.csv") %>% 
+  filter(sensor %in% W3_IDs, drains_from %in% W3_IDs) %>% 
+  rename("up" = drains_from, "down" = sensor) %>% 
+  select(up, down) %>% 
+  filter(down != 100, up != 0)
   
+routes_fb <- read_csv("fb_flowrouting.csv") %>% 
+  filter(up %in% FB_IDs) %>% 
+  filter(down %in% FB_IDs) %>% 
+  drop_na()
+routes_zz <- read_csv("zz_flowrouting.csv") %>% 
+  filter(up %in% ZZ_IDs) %>% 
+  filter(down %in% ZZ_IDs) %>% 
+  drop_na()
+
+#run calc_support for all sheds and timesteps for relative position
+all_position_random <- rbind(calc_props(routes_w3, "W3"),
+                      calc_props(routes_fb, "FB"),
+                      calc_props(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Relative Position")
+#write_csv(all_position, "./hierarchy_analysis_results/relativePosition.csv")
+#test <- read_csv("./hierarchy_analysis_results/relativePosition.csv")
+```
+```{r flow-permanence-random}
+#randomly genrated inputs
+input_w3 <- input_w3 %>% 
+  group_by(ID) %>% 
+  summarise(duration = length(datetime)) %>% 
+  left_join(input_w3, by = "ID") %>% 
+  left_join(pks_w3, by = "ID") %>% 
+  group_by(ID) %>% 
+  mutate(random_state = rbinom(duration, 1, pk)) %>% 
+  select(-duration, -wshed.y, -binary, -pk) %>% 
+  rename("binary" = random_state, "wshed" = wshed.x)
+
+input_fb <- input_fb %>% 
+  group_by(ID) %>% 
+  summarise(duration = length(datetime)) %>% 
+  left_join(input_fb, by = "ID") %>% 
+  left_join(pks_fb, by = "ID") %>% 
+  group_by(ID) %>% 
+  mutate(random_state = rbinom(duration, 1, pk)) %>% 
+  select(-duration, -wshed.y, -binary, -pk) %>% 
+  rename("binary" = random_state, "wshed" = wshed.x)
+
+input_zz <- input_zz %>% 
+  group_by(ID) %>% 
+  summarise(duration = length(datetime)) %>% 
+  left_join(input_zz, by = "ID") %>% 
+  left_join(pks_zz, by = "ID") %>% 
+  group_by(ID) %>% 
+  mutate(random_state = rbinom(duration, 1, pk)) %>% 
+  select(-duration, -wshed.y, -binary, -pk) %>% 
+  rename("binary" = random_state, "wshed" = wshed.x)
+#make list that make pairs of sites based on local persistency
+routes_w3 <- pks_w3 %>% 
+    filter(ID %in% W3_IDs) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+routes_fb <- pks_fb %>%
+    filter(ID %in% FB_IDs) %>% 
+  filter(pk != 1) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+routes_zz <- pks_zz %>%
+    filter(ID %in% ZZ_IDs) %>% 
+  filter(pk != 1) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+all_pk_random <- rbind(calc_props(routes_w3, "W3"),
+                calc_props(routes_fb, "FB"),
+                calc_props(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Flow Permanence")
+
+#write_csv(all_pk, "./hierarchy_analysis_results/flowPermanence.csv")
+```
+```{r drainage-area-random}
+#I was not confident in my R determined values, so I extracted drainage area in Arc. Reading in results
+
+#.csv files with extracted 1m drainage area values, but also contain snapped coords in UTM
+fb_uaa_1m <- read_csv("./STIC_uaa/fb2.csv")
+zz_uaa_1m <- read_csv("./STIC_uaa/zz2.csv")
+w3_uaa_1m <- read_csv("./STIC_uaa/w32.csv")
+
+routes_w3 <- w3_uaa_1m %>% 
+    filter(ID %in% W3_IDs) %>% 
+  rename("up" = ID, "uaa" = RASTERVALU) %>%
+  arrange(desc(uaa)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+routes_fb <- fb_uaa_1m %>%
+    filter(ID %in% FB_IDs) %>% 
+  rename("up" = ID, "uaa" = RASTERVALU) %>%
+  arrange(desc(uaa)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+routes_zz <- zz_uaa_1m %>% 
+    filter(ID %in% ZZ_IDs) %>% 
+  rename("up" = ID, "uaa" = RASTERVALU) %>%
+  arrange(desc(uaa)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+all_uaa_random <- rbind(calc_props(routes_w3, "W3"),
+                 calc_props(routes_fb, "FB"),
+                 calc_props(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Drainage Area")
+
+#write_csv(all_uaa, "./hierarchy_analysis_results/drainageArea.csv")
+```
+```{r topographic-wetness-index-random}
+routes_w3 <- w3_twi %>% 
+    filter(ID %in% W3_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange(desc(twi)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+routes_fb <- fb_twi %>% 
+    filter(ID %in% FB_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange(desc(twi)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down)
+
+routes_zz <- zz_twi %>% 
+    filter(ID %in% ZZ_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange(desc(twi)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+all_twi_random <- rbind(calc_props(routes_w3, "W3"),
+                 calc_props(routes_fb, "FB"),
+                 calc_props(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Topographic Wetness Index")
+
+#write_csv(all_twi, "./hierarchy_analysis_results/twi.csv")
+```
+```{r slope-random}
+routes_w3 <- w3_slope %>% 
+    filter(ID %in% W3_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange(slope) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+routes_fb <- fb_slope %>% 
+    filter(ID %in% FB_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange((slope)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down)
+
+routes_zz <- zz_slope %>% 
+    filter(ID %in% ZZ_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange((slope)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+all_slope_random <- rbind(calc_props(routes_w3, "W3"),
+                 calc_props(routes_fb, "FB"),
+                 calc_props(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Slope")
+
+#write_csv(all_slope, "./hierarchy_analysis_results/slope.csv")
+```
+
+```{r}
+sults_so_far_random <- rbind(all_position_random,
+                      all_pk_random,
+                      #all_nt_combo,
+                      all_uaa_random,
+                      #all_tpi_combo,
+                      all_slope_random,
+                      all_twi_random
+                      ) %>% 
+  mutate("real_or_random" = "random")#%>% 
+  mutate(timescale = fct_relevel(timescale,
+                              c("30mins", "hourly", "4hr", "daily")),
+         hierarchy = as.factor(str_trim(as.character(hierarchy))),
+         
+         hierarchy = fct_relevel(hierarchy, 
+                                 c(
+                                "Flow Permanence",
+                                #"Number of Transitions",
+                                "Relative Position",
+                                "Drainage Area",
+                                "Slope",
+                                "Topographic Wetness Index",
+                                #"Topographic Position Index"
+                                )))#,
+                                #"Random")))
+
+shed_colors <- c("#397367", "#FFD166", "#7E6B8F")
+
+#plots for committee meeting
+sults_so_far_random %>% 
+  filter(timescale %in% c("30mins", "daily")#, hierarchy == "Flow Permanence"
+         ) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(fill = shed, color = shed), alpha = 0.5)+
+    geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  ylim(c(0, 6.25))+
+  xlim(c(0,1))+
+  labs(title = "Distributions of Proportion of time Sequence Followed",
+       subtitle = "Randomly generated flow values",
+       x = "Proportion of time followed",
+       y = "Density")+
+  scale_fill_manual(values = shed_colors,
+                     
+                     name = "Watershed")+
+  scale_color_manual(values = shed_colors,
+                     
+                     name = "Watershed")+
+  facet_grid(timescale~hierarchy)
+
+
+```
+
+```{r ks-test}
+#testing whether randomly generated prop values distribution is different than the actual one
+sults_so_far_random %>% filter(timescale == "30mins", shed == "W3", hierarchy == "Flow Permanence")%>% select(prop)
+
+real <- sults_so_far %>% filter(timescale == "30mins", shed == "W3", hierarchy == "Relative Position")
+random <- sults_so_far_random %>% filter(timescale == "30mins", shed == "W3", hierarchy == "Relative Position")
+ks.test(real$prop, 
+        random$prop,
+        alternative = c("two.sided"),
+        exact = TRUE, simulate.p.value = TRUE, B = 2000)[2]
+
+left_join(sults_so_far, sults_so_far_random, by = c("up", "down", "timescale", "shed", "hierarchy")) %>% 
+  group_by(shed, hierarchy, timescale) %>% 
+  summarise(
+    # ks.test(prop.x, 
+    #     prop.y,
+    #     alternative = c("two.sided"),
+    #     exact = TRUE, simulate.p.value = TRUE, B = 2000)[1],
+       p_value= ks.test(prop.x, 
+        prop.y,
+        alternative = c("two.sided"),
+        exact = TRUE, simulate.p.value = TRUE, B = 2000)[2]) %>% 
+  filter(p_value <= 0.1) %>% 
+  knitr::kable()
+```
+###additional last task- determine minimum number of observations to get "true" proportion of time flowing
+```{r}
+#function from W3_STIC, 
+boot <- function(shed, iterations, percent_retained){
+  out <- seq(1, iterations, 1)
+
+  one_shed <- filter(all_sheds2, 
+                     wshed == shed)
+  #for loop to bootstrap n = iterations times
+  for(i in 1:iterations){
+  
+    IDs <- unique(one_shed$ID)
+    set.seed(i)
+    sampled <- sample(IDs, round(percent_retained * length(IDs)))
+  
+    pruned <- one_shed %>% 
+      filter(ID %in% sampled)
+
+    #seasonal flow permanence of whole watershed for
+    perc_flow <- length(pruned$wetdry[pruned$wetdry == "wet"]) / length(pruned$wetdry)
+    out[i] <- perc_flow
+  }
+
+  avg <- mean(out)
+  sd <- sd(out)
+
+final <- paste0(signif(avg, 2)," +/- ",signif(sd, 2))
+}
+
+w3_boot <- boot("W3", 100, 0.9)
 ```
 
