@@ -6975,7 +6975,7 @@ left_join(sults_so_far, sults_so_far_random, by = c("up", "down", "timescale", "
 ```
 
 ####Creating a new randomly generated dataset where the flow permanence was randomly generated
-```{r generate-random-pks}
+```{r figuring-it-out}
 
 rbind(pks_w3, pks_fb, pks_zz) %>% 
   ggplot(aes(x = wshed, y = pk))+
@@ -7000,9 +7000,44 @@ hist(rbeta(1000,2,2))
 hist(rbeta(1000,1.1831220,0.9849231))
 
 fitdistr(pks_fb$pk, 
-         start = list(shape1 = 1, shape2 = 1), densfun="beta", method = "Brent")
+         start = list(shape1 = 1, shape2 = 1), densfun="beta")
+
+#determining which distribution to use
+plotdist(pks_w3$pk, histo = TRUE, demp = TRUE)
+descdist(pks_w3$pk, boot = 1000)
+
+fu <- fitdist(pks_w3$pk, "uniform")
+fn <- fitdist(groundbeef$serving, "normal")
+fb <- fitdist(pks_w3$pk, "beta")
+plot(fitdist(pks_fb$pk, "beta"))
+plot(fitdist(pks_zz$pk, "beta"))
+
+plot(fitdist(pks_w3$pk, "unif"))
+plot(fitdist(pks_w3$pk, "norm"))
+
+plot(fitdist(pks_fb$pk, "weibull"))
+plot(fitdist(pks_w3$pk, "weibull"))
+plot(fitdist(pks_zz$pk, "weibull"))
+
+un <- fitdist(pks_w3$pk, "unif")
+nl <- fitdist(pks_w3$pk, "norm")
+wb <- fitdist(pks_w3$pk, "weibull")
+fb <- fitdist(pks_w3$pk, "beta")
+plot.legend <- c("uniform", "normal", "weibull", "beta")
+denscomp(list(un, nl, wb, fb), legendtext = plot.legend, plotstyle = "ggplot")+
+  theme_classic()
+qqcomp(list(un, nl, wb, fb), legendtext = plot.legend, plotstyle = "ggplot")+
+  theme_classic()
+cdfcomp(list(un, nl, wb, fb), legendtext = plot.legend, plotstyle = "ggplot")+
+  theme_classic()
+ppcomp(list(un, nl, wb, fb), legendtext = plot.legend, plotstyle = "ggplot")+
+  theme_classic()
 
 fitdistrplus::plotdist(pks_w3$pk, "beta", list(1.1831220, 0.9849231))
+fitdistrplus::plotdist(pks_fb$pk, "beta", list(5, 1))
+
+plotdist('beta', params=list( 3, 10), kind='density')
+plotdist('beta', params=list( 3, 10), kind='cdf')
 
 input_w3 <- rbind(bind23, bind24) %>%
   filter(wshed == "W3") %>% 
@@ -7020,8 +7055,264 @@ testing <- input_w3 %>%
   pivot_longer(cols = c(binary, random_state))
 ```
 
+```{r w3-fit-distribution}
+p_load(patchwork)
+dataset <- pks_w3$pk
+plotdist(dataset, histo = TRUE, demp = TRUE)
+
+un <- fitdist(dataset, "unif")
+plot(un)
+nl <- fitdist(dataset, "norm")
+wb <- fitdist(dataset, "weibull")
+fb <- fitdist(dataset, "beta")
+plot.legend <- c("uniform", "normal", "weibull", "beta")
+dens <- denscomp(list(un, nl, wb, fb), legendtext = plot.legend, plotstyle = "ggplot")+
+  theme_classic()
+qq <- qqcomp(list(un, nl, wb, fb), legendtext = plot.legend, plotstyle = "ggplot")+
+  theme_classic()
+cdf <- cdfcomp(list(un, nl, wb, fb), legendtext = plot.legend, plotstyle = "ggplot")+
+  theme_classic()
+pp <- ppcomp(list(un, nl, wb, fb), legendtext = plot.legend, plotstyle = "ggplot")+
+  theme_classic()
+
+(dens + qq) / (cdf + pp)
+w3_distribution <- fitdist(dataset, "unif")
+```
+```{r fb-fit-distribution}
+dataset <- pks_fb$pk
+fb <- fitdist(dataset, "beta")
+fb_distribution <- fitdist(dataset, "beta")
+
+plotdist(dataset, histo = TRUE, demp = TRUE)
+
+plot(fb)
+
+plot.legend <- c("beta")
+denscomp(list(fb), legendtext = plot.legend, plotstyle = "graphic")
+qqcomp(list(nl, wb, fb), legendtext = plot.legend, plotstyle = "ggplot")+
+  theme_classic()
+cdfcomp(list(nl, wb, fb), legendtext = plot.legend, plotstyle = "ggplot")+
+  theme_classic()
+ppcomp(list(nl, wb, fb), legendtext = plot.legend, plotstyle = "ggplot")+
+  theme_classic()
+```
+```{r zz-fit-distribution}
+dataset <- pks_zz$pk
+plotdist(dataset, histo = TRUE, demp = TRUE)
+
+un <- fitdist(dataset, "unif")
+plot(fb)
+nl <- fitdist(dataset, "norm")
+wb <- fitdist(dataset, "weibull")
+fb <- fitdist(dataset, "beta")
+plot.legend <- c("uniform", "normal", "weibull", "beta")
+denscomp(list(un, nl, wb, fb), legendtext = plot.legend, plotstyle = "ggplot")+
+  theme_classic()
+qqcomp(list(un, nl, wb, fb), legendtext = plot.legend, plotstyle = "ggplot")+
+  theme_classic()
+cdfcomp(list(un, nl, wb, fb), legendtext = plot.legend, plotstyle = "ggplot")+
+  theme_classic()
+ppcomp(list(un, nl, wb, fb), legendtext = plot.legend, plotstyle = "ggplot")+
+  theme_classic()
+
+dens <- denscomp(list(un, nl, wb, fb), legendtext = plot.legend, plotstyle = "ggplot")+
+  theme_classic()
+qq <- qqcomp(list(un, nl, wb, fb), legendtext = plot.legend, plotstyle = "ggplot")+
+  theme_classic()
+cdf <- cdfcomp(list(un, nl, wb, fb), legendtext = plot.legend, plotstyle = "ggplot")+
+  theme_classic()
+pp <- ppcomp(list(un, nl, wb, fb), legendtext = plot.legend, plotstyle = "ggplot")+
+  theme_classic()
+
+(dens + qq) / (cdf + pp)
+
+zz_distribution <- fitdist(dataset, "beta")
+
+```
+
+```{r}
+#randomly sample pk distributions
+
+runif(30, min = w3_distribution$estimate[1], max = w3_distribution$estimate[2])
+rbeta(30, shape1 = fb_distribution$estimate[1], shape2 = fb_distribution$estimate[2])
+rbeta(30, shape1 = zz_distribution$estimate[1], shape2 = zz_distribution$estimate[2])
+
+#original/actual input datasets
+input_w3 <- rbind(bind23, bind24) %>%
+  filter(wshed == "W3") %>% 
+  filter(ID %in% W3_IDs)
+input_fb <- rbind(bind23, bind24) %>%
+  filter(wshed == "FB") %>% 
+  filter(ID %in% FB_IDs)
+input_zz <- rbind(bind23, bind24) %>%
+  filter(wshed == "ZZ") %>% 
+  filter(ID %in% ZZ_IDs)
+
+timeframe <- input_w3 %>% 
+  filter(ID == 2, mins %in% c(0, 30))
+
+length(timeframe$datetime)
+#W3
+pks_w3_random <- runif(30, min = w3_distribution$estimate[1], max = w3_distribution$estimate[2])
+
+for(z in 1:length(pks_w3_random)){
+  flows <- rbinom(length(timeframe$datetime), 1, pks_w3_random[z])
+  sheep_w3 <- tibble("datetime" = timeframe$datetime) %>% 
+  mutate("ID" = z,
+         "binary" = flows)
+    if(z == 1) big_sheep <- sheep_w3
+    if(z > 1) big_sheep <- rbind(big_sheep, sheep_w3)
+}
+
+input_w3 <- big_sheep %>% 
+  mutate(wshed = "W3",
+         mins = minute(datetime))
+
+pks_fb_random <- rbeta(30, shape1 = fb_distribution$estimate[1], shape2 = fb_distribution$estimate[2])
+
+for(z in 1:length(pks_fb_random)){
+  flows <- rbinom(length(timeframe$datetime), 1, pks_fb_random[z])
+  sheep_fb <- tibble("datetime" = timeframe$datetime) %>% 
+  mutate("ID" = z,
+         "binary" = flows)
+    if(z == 1) big_sheep <- sheep_fb
+    if(z > 1) big_sheep <- rbind(big_sheep, sheep_fb)
+}
+
+input_fb <- big_sheep %>% 
+  mutate(wshed = "FB",
+         mins = minute(datetime))
+
+pks_zz_random <- rbeta(30, shape1 = zz_distribution$estimate[1], shape2 = zz_distribution$estimate[2])
+
+for(z in 1:length(pks_zz_random)){
+  flows <- rbinom(length(timeframe$datetime), 1, pks_zz_random[z])
+  sheep_fb <- tibble("datetime" = timeframe$datetime) %>% 
+  mutate("ID" = z,
+         "binary" = flows)
+    if(z == 1) big_sheep <- sheep_fb
+    if(z > 1) big_sheep <- rbind(big_sheep, sheep_fb)
+}
+
+input_zz <- big_sheep %>% 
+  mutate(wshed = "ZZ",
+         mins = minute(datetime))
+```
+
+```{r flow-permanence-random}
+#make list that make pairs of sites based on local persistency
+#library(MASS, exclude = "select")
+detach("package:fitdistrplus")
+detach("package:MASS")
+routes_w3 <- data.frame("ID" = seq(1, 30, 1),
+                    "pk" = pks_w3_random )%>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+routes_fb <- data.frame("ID" = seq(1, 30, 1),
+                    "pk" = pks_fb_random )%>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  dplyr::select(up, down)
+
+routes_zz <- data.frame("ID" = seq(1, 30, 1),
+                    "pk" = pks_zz_random )%>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  dplyr::select(up, down)
+
+all_pk_random2 <- rbind(calc_props(routes_w3, "W3"),
+                calc_props(routes_fb, "FB"),
+                calc_props(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Flow Permanence")
+
+#write_csv(all_pk, "./hierarchy_analysis_results/flowPermanence.csv")
+```
+Chunk to plot totally random pk versus the actual, see how it does
+```{r}
+
+```
 
 
+```{r prepare-random inputs}
+#create input that only uses sensors that were deployed during both deployments
+#need to make a list of sensors deployed in both campaigns for each watershed
+#W3
+w3_deployed24 <- unique(filter(data_24, wshed == "W3")$number)
+w3_deployed23 <- unique(filter(data_23, wshed == "W3")$ID)
+W3_IDs <- intersect(w3_deployed24, w3_deployed23)
+#FB
+fb_deployed24 <- unique(filter(data_24, wshed == "FB")$number)
+fb_deployed23 <- unique(filter(data_23, wshed == "FB")$ID)
+FB_IDs <- intersect(fb_deployed24, fb_deployed23)
+#ZZ
+zz_deployed24 <- unique(filter(data_24, wshed == "ZZ")$number)
+zz_deployed23 <- unique(filter(data_23, wshed == "ZZ")$ID)
+ZZ_IDs <- intersect(zz_deployed24, zz_deployed23)
+
+
+bind24 <- data_24 %>% 
+  select(datetime, number, wshed, binary, mins) %>% 
+  rename("ID" = number)
+
+
+bind23 <- data_23 %>% 
+  filter(ID %in% intersect(bind24$ID, data_23$ID)) %>% 
+  select(datetime, ID, wshed, binary, mins)
+
+#filter by each watershed, then recombine at the end
+input_w3 <- rbind(bind23, bind24) %>%
+  filter(wshed == "W3") %>% 
+  filter(ID %in% W3_IDs)
+input_fb <- rbind(bind23, bind24) %>%
+  filter(wshed == "FB") %>% 
+  filter(ID %in% FB_IDs)
+input_zz <- rbind(bind23, bind24) %>%
+  filter(wshed == "ZZ") %>% 
+  filter(ID %in% ZZ_IDs)
+
+rbind(input_w3, input_fb, input_zz)
+
+#create function that will generate a random series of 1 and 0, with the success probability equal to the proportion of time flowing
+X <- rbinom(20, 1, 0.5)
+
+#create new input_w3, and later specify that this is the randomly generated one
+input_w3 <- input_w3 %>% 
+  group_by(ID) %>% 
+  summarise(duration = length(datetime)) %>% 
+  left_join(input_w3, by = "ID") %>% 
+  left_join(pks_w3, by = "ID") %>% 
+  group_by(ID) %>% 
+  mutate(random_state = rbinom(duration, 1, pk)) %>% 
+  select(-duration, -wshed.y, -binary, -pk) %>% 
+  rename("binary" = random_state, "wshed" = wshed.x)
+
+input_fb <- input_fb %>% 
+  group_by(ID) %>% 
+  summarise(duration = length(datetime)) %>% 
+  left_join(input_fb, by = "ID") %>% 
+  left_join(pks_fb, by = "ID") %>% 
+  group_by(ID) %>% 
+  mutate(random_state = rbinom(duration, 1, pk)) %>% 
+  select(-duration, -wshed.y, -binary, -pk) %>% 
+  rename("binary" = random_state, "wshed" = wshed.x)
+
+input_zz <- input_zz %>% 
+  group_by(ID) %>% 
+  summarise(duration = length(datetime)) %>% 
+  left_join(input_zz, by = "ID") %>% 
+  left_join(pks_zz, by = "ID") %>% 
+  group_by(ID) %>% 
+  mutate(random_state = rbinom(duration, 1, pk)) %>% 
+  select(-duration, -wshed.y, -binary, -pk) %>% 
+  rename("binary" = random_state, "wshed" = wshed.x)
+
+      
+```
 ###additional last task- determine minimum number of observations to get "true" proportion of time flowing
 ```{r}
 #function from W3_STIC, 
