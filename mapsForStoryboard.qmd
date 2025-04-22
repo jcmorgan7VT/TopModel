@@ -7378,7 +7378,7 @@ rbind(input_w3, input_fb, input_zz)
 df1 <- input_w3 %>% 
   group_by(datetime) %>% 
   summarise("percent_flowing" = sum(binary)/length(binary)) %>% 
-  filter(percent_flowing == 0) %>% 
+  filter(percent_flowing <= 0.1) %>% 
   mutate(date = date(datetime)) %>% 
   select(-datetime, -percent_flowing) %>% unique() %>% 
   rowid_to_column("dry_ID") %>% 
@@ -7387,7 +7387,7 @@ df1 <- input_w3 %>%
 df2 <- input_w3 %>% 
   group_by(datetime) %>% 
   summarise("percent_flowing" = sum(binary)/length(binary)) %>% 
-  filter(percent_flowing == 1) %>% 
+  filter(percent_flowing >= 0.9) %>% 
   mutate(date = date(datetime)) %>% 
   select(-datetime, -percent_flowing) %>% unique()%>% 
   rowid_to_column("wet_ID") %>% 
@@ -7457,23 +7457,73 @@ ggplot()+
 ```
 
 ```{r}
-start <- ymd_hms("2024-06-09 00:00:00")
-stop <- ymd_hms("2024-06-22 00:00:00")
-input_w3 %>% 
-  filter(datetime > start & datetime < stop) %>% #filter(ID == 17)
+ # Function factory for secondary axis transforms
+train_sec <- function(primary, secondary, na.rm = TRUE) {
+  # Thanks Henry Holm for including the na.rm argument!
+  from <- range(secondary, na.rm = na.rm)
+  to   <- range(primary, na.rm = na.rm)
+  # Forward transform for the data
+  forward <- function(x) {
+    rescale(x, from = from, to = to)
+  }
+  # Reverse transform for the secondary axis
+  reverse <- function(x) {
+    rescale(x, from = to, to = from)
+  }
+  list(fwd = forward, rev = reverse)
+}
+
+sec <- with(economics, train_sec(unemploy, psavert))
+
+ggplot(economics, aes(date)) +
+  geom_line(aes(y = unemploy), colour = "blue") +
+  geom_line(aes(y = sec$fwd(psavert)), colour = "red") +
+  scale_y_continuous(sec.axis = sec_axis(~sec$rev(.), name = "psavert"))
+  
+
+start <- ymd_hms("2023-10-20 00:00:00")
+stop <- ymd_hms("2023-10-22 00:00:00")
+
+
+test_IDS <- input_w3 %>% 
+    filter(datetime > start & datetime < stop)
+
+remainder <- test_IDS$ID
+
+pks_ordered <- pks_w3 %>% 
+filter(ID %in% remainder) %>% 
+  arrange((pk)) %>% 
+  rowid_to_column("pk_order")
+
+test <- input_w3 %>% 
+    filter(datetime > start & datetime < stop) %>% 
+  #filter(ID == 17)
+  #filter(ID %in% W3_IDs) %>% 
+  left_join(pks_ordered, by = "ID") #%>% 
+sec2 <- with(test, train_sec(pk_order, pk))
+
   #filter(threshold == "agree_or_no_90") %>% 
-  ggplot()+
-  geom_tile(aes(x = datetime, y = ID, fill = as.character(binary)))+
+geom_line(aes(y = unemploy), colour = "blue") +
+  geom_line(aes(y = sec$fwd(psavert)), colour = "red") +
+  scale_y_continuous(sec.axis = sec_axis(~sec$rev(.), name = "psavert"))
+test %>% 
+  ggplot(aes(x = datetime))+
+  geom_tile(aes(y = pk_order, fill = as.character(binary)))+
+  ylab("Proposed Activation Order")+
+  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Proportion of Time Flowwing")) +
   #facet_grid(~name, scales = "free") + 
   scale_fill_manual(drop = FALSE,
                      values = binary,
                     breaks = c(0, 1),
-                    labels = c("No flow", "flowing"),
+                    labels = c("Dry", "Wet"),
                     name = ""
                     )+
-  labs(title = "Streamflow permanence in W3",
+  labs(title = "Very dry to very wet",
+       subtitle = "span of 2 days, W3, 2023",
        x = "")+
   theme_classic()+
-    theme(legend.position="bottom")
+    theme(legend.position="right")
+
+#add hydrograph to plot
 ```
 
