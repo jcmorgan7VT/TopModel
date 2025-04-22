@@ -726,12 +726,14 @@ detach("package:MASS")
 
 bind24 <- data_24 %>% 
   select(datetime, number, wshed, binary, mins) %>% 
-  rename("ID" = number)
+  rename("ID" = number)%>% 
+  filter(mins %in% c(0, 30))
 
 
 bind23 <- data_23 %>% 
   filter(ID %in% intersect(bind24$ID, data_23$ID)) %>% 
-  select(datetime, ID, wshed, binary, mins)
+  select(datetime, ID, wshed, binary, mins) %>% 
+  filter(mins %in% c(0, 30))
 
 #filter by each watershed, then recombine at the end
 input_w3 <- rbind(bind23, bind24) %>%
@@ -7453,3 +7455,25 @@ ggplot()+
   labs(title = "Driest extent in W3")+
   coord_equal()
 ```
+
+```{r}
+start <- ymd_hms("2024-06-09 00:00:00")
+stop <- ymd_hms("2024-06-22 00:00:00")
+input_w3 %>% 
+  filter(datetime > start & datetime < stop) %>% #filter(ID == 17)
+  #filter(threshold == "agree_or_no_90") %>% 
+  ggplot()+
+  geom_tile(aes(x = datetime, y = ID, fill = as.character(binary)))+
+  #facet_grid(~name, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c(0, 1),
+                    labels = c("No flow", "flowing"),
+                    name = ""
+                    )+
+  labs(title = "Streamflow permanence in W3",
+       x = "")+
+  theme_classic()+
+    theme(legend.position="bottom")
+```
+
