@@ -6976,7 +6976,7 @@ left_join(sults_so_far, sults_so_far_random, by = c("up", "down", "timescale", "
 
 ####Creating a new randomly generated dataset where the flow permanence was randomly generated
 ```{r figuring-it-out}
-
+p_load(fitdistrplus)
 rbind(pks_w3, pks_fb, pks_zz) %>% 
   ggplot(aes(x = wshed, y = pk))+
   geom_boxplot()+
@@ -7228,13 +7228,39 @@ routes_zz <- data.frame("ID" = seq(1, 30, 1),
 all_pk_random2 <- rbind(calc_props(routes_w3, "W3"),
                 calc_props(routes_fb, "FB"),
                 calc_props(routes_zz, "ZZ")) %>% 
-  mutate("hierarchy" = "Flow Permanence")
+  mutate("hierarchy" = "Flow Permanence",
+         "real_or_random" = "random")
 
 #write_csv(all_pk, "./hierarchy_analysis_results/flowPermanence.csv")
 ```
 Chunk to plot totally random pk versus the actual, see how it does
-```{r}
+```{r plot-results}
+#" 
+real_colors <- c("#397367","#FFD166")#, "#7E6B8F")
 
+
+sults_so_far %>% 
+  filter(hierarchy == "Flow Permanence") %>% 
+  rbind(all_pk_random2) %>% 
+  #filter(timescale %in% c("30mins", "daily")) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(fill = real_or_random, color = real_or_random), alpha = 0.5)+
+    #geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  ylim(c(0, 8.75))+
+  xlim(c(0,1))+
+  labs(title = "Distributions of Proportion of time Sequence Followed",
+       subtitle = "Sequence based on real proportion of time flowing, real works better than random?",
+       x = "Proportion of time followed",
+       y = "Density")+
+  scale_fill_manual(values = real_colors,
+                     
+                     name = "Real or Random?")+
+  scale_color_manual(values = real_colors,
+                     
+                     name = "Real or Random?")+
+  facet_grid(shed~timescale)
 ```
 
 
