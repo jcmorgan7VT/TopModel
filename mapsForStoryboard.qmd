@@ -5837,7 +5837,7 @@ Alter code to test two scenarios and compare to the original one
 ###developing functions to return all combinations
 Output of these functions will return all combinations of 4 observed and their counts, instead of filtering to combinations of interest like earlier attempts
 Included a new function, calc_props that removes 0011 and 1100, but a function for different scenarios could be developed here instead
-```{r all-combos}
+```{r all-combos-functions}
 calc_support_combos <- function(up, down, input){
 #inputs to function- comment out in final version
 # i <- 4
@@ -6303,7 +6303,7 @@ all_slope_combo <- rbind(calc_props(routes_w3, "W3"),
 #write_csv(all_slope, "./hierarchy_analysis_results/slope.csv")
 ```
 ###plot results
-```{r}
+```{r plot-results}
 sults_so_far <- rbind(all_position_combo,
                       all_pk_combo,
                       #all_nt_combo,
@@ -6423,7 +6423,7 @@ smart_iterate_w3 %>% group_by(start) #%>%
 
 ```
 
-```{r}
+```{r define-combos-function}
 #function that will take two sensors, and determine which one is dominant, and what percentage of time it follows that hierarchy
 calc_support_combos <- function(up, down, input){
 #inputs to function- comment out in final version
@@ -6972,7 +6972,7 @@ left_join(sults_so_far, sults_so_far_random, by = c("up", "down", "timescale", "
   knitr::kable()
 ```
 
-####Creating a new randomly generated dataset where the flow permanence was randomly generated
+####More randomness, flow permanence was randomly generated
 ```{r figuring-it-out}
 p_load(fitdistrplus)
 rbind(pks_w3, pks_fb, pks_zz) %>% 
@@ -7128,7 +7128,7 @@ zz_distribution <- fitdist(dataset, "beta")
 
 ```
 
-```{r}
+```{r randomly-sample-pk-distributions}
 #randomly sample pk distributions
 
 runif(30, min = w3_distribution$estimate[1], max = w3_distribution$estimate[2])
@@ -7370,7 +7370,7 @@ w3_boot <- boot("W3", 100, 0.9)
 ```
 
 #Determine the wettest and driest times for each watershed
-```{r}
+```{r determine-when-it-goes-from-all-dry-to-all-wet}
 #make binary columns for wet and dry
 rbind(input_w3, input_fb, input_zz)
 
@@ -7456,7 +7456,7 @@ ggplot()+
   coord_equal()
 ```
 
-```{r}
+```{r first-fully-dry-to-wet}
  # Function factory for secondary axis transforms
 train_sec <- function(primary, secondary, na.rm = TRUE) {
   # Thanks Henry Holm for including the na.rm argument!
@@ -7627,8 +7627,121 @@ scale_x_continuous(breaks=c(ymd_hms("2023-10-20 00:00:00"),
 
 
 ```
+```{r second}
 
-```{r}
+
+d <- 1
+start <- ymd_hms(paste0("2023-07-15 00:00:00"))
+stop <- ymd_hms(paste0(crossed_up$wet_date[d]," 00:00:00"))
+#add precipitation
+#add hydrograph to plot
+q_23_plotting <- q_23_f %>% 
+    filter(DATETIME > start & DATETIME < stop) %>% 
+  rename("datetime" = DATETIME)
+q_23_plotting %>% 
+ggplot(aes(x  = datetime, y = Q_mm_day))+
+  geom_line()+
+  labs(title = "Discharge from W3, July to Nov 2023",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()
+
+    
+
+
+
+
+precip1 <- read_csv("./HB/HBEF_W3precipitation_15min.csv") %>% 
+    filter(DateTime >= start & DateTime <= stop) %>% 
+    mutate(day = day(DateTime),
+           hour = hour(DateTime)) %>% 
+    group_by(day, hour) %>% 
+    reframe(hourly_precip = sum(precip), across()) %>% 
+    mutate(mins = minute(DateTime)) %>% 
+    filter(mins == 0) %>%
+  rename("datetime" = DateTime) %>% 
+    left_join(q_23_plotting, by = "datetime") %>% 
+  select(datetime, hourly_precip, Q_mm_day)
+
+
+sec3 <- with(precip1, train_sec(hourly_precip, Q_mm_day))
+
+
+water <- precip1 %>% 
+    ggplot(aes(x = datetime))+
+    geom_col(aes(y = hourly_precip))+
+    geom_line(aes(y = sec3$fwd(Q_mm_day)), colour = "blue") +
+    scale_y_continuous("Hourly Precipitation (mm)",
+                       sec.axis = sec_axis(~sec3$rev(.),
+                       name = "Discharge (mm/day)"))+
+    labs(x = "",
+         y = "Precipitation (mm)")+
+      theme_classic()+
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y = element_text(angle = 0),
+        axis.title.y.right = element_text(angle = 0)
+        )
+
+
+test_IDS <- input_w3 %>% 
+    filter(datetime > start & datetime < stop)
+
+remainder <- test_IDS$ID
+
+pks_ordered <- pks_w3 %>% 
+filter(ID %in% remainder) %>% 
+  arrange(desc(pk)) %>% 
+  rowid_to_column("pk_order")
+
+
+#sec2 <- with(test, train_sec(pk_order, pk))
+
+test <- 
+  input_w3 %>% 
+    filter(datetime > start & datetime < stop) %>% 
+    filter(mins == 0) %>% 
+  #filter(ID == 17)
+  #filter(ID %in% W3_IDs) %>% 
+  left_join(precip1, by = "datetime") %>% 
+  left_join(pks_ordered, by = "ID") 
+
+sec2 <- with(test, train_sec(pk_order, hourly_precip))
+
+
+
+tiles <- test %>% 
+  ggplot(aes(x = datetime))+
+  geom_tile(aes(y = pk_order, fill = as.character(binary)))+
+  scale_y_continuous("Supposed Activation Order")+
+  #facet_grid(~name, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c(0, 1),
+                    labels = c("Dry", "Wet"),
+                    name = ""
+                    )+
+  labs(#title = "Very dry to very wet",
+       #subtitle = "W3, 10/20 - 10/22, 2023",
+       x = "")+
+# scale_x_continuous(breaks=c(ymd_hms("2023-07-20 00:00:00"),
+#                             ymd_hms("2023-07-21 00:00:00"),
+#                             ymd_hms("2023-07-22 00:00:00")),
+#                    labels = c("7/20/23",
+#                               "7/21/23",
+#                               "7/22/23"))+
+  theme_classic()+
+    theme(legend.position="right",
+          axis.title.y = element_text(angle = 0))
+
+
+(water)/tiles + plot_layout(heights = c(1, 5))
+
+
+
+
+```
+```{r old-plot-presence/absence-with-discharge}
 
 d <- 1
 start <- ymd_hms(paste0(crossed_up$dry_date[d]," 00:00:00"))
@@ -7694,3 +7807,321 @@ scale_x_continuous(breaks=c(ymd_hms("2023-07-20 00:00:00"),
 crossed_up
 ```
 
+#Test hierarchies spanning all three watersheds
+```{r prepare-combined-input}
+#create input that only uses sensors that were deployed during both deployments
+#need to make a list of sensors deployed in both campaigns for each watershed
+#W3
+w3_deployed24 <- unique(filter(data_24, wshed == "W3")$number)
+w3_deployed23 <- unique(filter(data_23, wshed == "W3")$ID)
+W3_IDs <- intersect(w3_deployed24, w3_deployed23)
+#FB
+fb_deployed24 <- unique(filter(data_24, wshed == "FB")$number)
+fb_deployed23 <- unique(filter(data_23, wshed == "FB")$ID)
+FB_IDs <- intersect(fb_deployed24, fb_deployed23)
+#ZZ
+zz_deployed24 <- unique(filter(data_24, wshed == "ZZ")$number)
+zz_deployed23 <- unique(filter(data_23, wshed == "ZZ")$ID)
+ZZ_IDs <- intersect(zz_deployed24, zz_deployed23)
+
+
+bind24 <- data_24 %>% 
+  select(datetime, number, wshed, binary, mins) %>% 
+  rename("ID" = number)
+
+
+bind23 <- data_23 %>% 
+  filter(ID %in% intersect(bind24$ID, data_23$ID)) %>% 
+  select(datetime, ID, wshed, binary, mins)
+
+#filter by each watershed, then recombine at the end
+input_w3 <- 
+  rbind(bind23, bind24) %>%
+  filter(wshed == "W3") %>% 
+  filter(ID %in% W3_IDs) %>% 
+  mutate(ID = paste0("W3_",ID)) %>% 
+  select(-wshed)
+input_fb <- 
+  rbind(bind23, bind24) %>%
+  filter(wshed == "FB") %>% 
+  filter(ID %in% FB_IDs) %>% 
+  mutate(ID = paste0("FB_",ID)) %>% 
+  select(-wshed)
+input_zz <- rbind(bind23, bind24) %>%
+  filter(wshed == "ZZ") %>% 
+  filter(ID %in% ZZ_IDs) %>% 
+  mutate(ID = paste0("ZZ_",ID)) %>% 
+  select(-wshed)
+
+big_input <- rbind(input_w3, input_fb, input_zz) %>% 
+  pivot_wider(names_from = ID, values_from = binary)
+```
+
+```{r prepare-combined-routes}
+routes_w3 <- 
+  pks_w3 %>% 
+    filter(ID %in% W3_IDs) %>% 
+  mutate(ID = paste0("W3_",ID)) %>% 
+  select(-wshed)
+
+routes_fb <- 
+  pks_fb %>%
+    filter(ID %in% FB_IDs) %>%
+  mutate(ID = paste0("FB_",ID)) %>% 
+  select(-wshed)
+  #filter(pk != 1) %>% 
+  
+routes_zz <- 
+  pks_zz %>%
+    filter(ID %in% ZZ_IDs) %>% 
+    mutate(ID = paste0("ZZ_",ID)) %>% 
+  select(-wshed)
+big_routes <- 
+  rbind(routes_w3, routes_fb, routes_zz) %>% 
+  filter(pk != 1) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+```
+
+```{r all-combos-functions}
+input <- big_input
+calc_support_combos <- function(up, down, input){
+#inputs to function- comment out in final version
+# i <- 4
+# up <- paste0("r_",routes$up[i])
+# down <- paste0("r_",routes$down[i])
+#input <- filtered_input
+
+#create output with the total and the sub, also the two input locations
+output <- data.frame(up, down)
+
+  
+no_dupes <- input %>% 
+      select(up,down, datetime) %>% #remove date
+      # make it so that there cannot be a sequence without change
+      # keep date column for indexing purposes later
+      filter(row_number() == 1 | !apply(select(., up, down) == lag(select(., up, down)), 1, all)) %>% 
+      #remove rows where one of the sensors is missing data
+      drop_na()
+#View(no_dupes)
+#all flowing all the time?
+check <- nrow(no_dupes)
+
+if(check <= 2){
+  sequence_df <- data.frame("Sequence" = NA, 
+                            "Frequency" = NA,
+                            "up" = up,
+                            "down" = down)
+  return(sequence_df)
+} 
+else {
+# Define window size
+window_size <- 2
+
+# Create sliding windows
+windows <- rollapply(
+  select(no_dupes, -datetime),
+  width = window_size,
+  by.column = FALSE,
+  FUN = function(x) paste(as.vector(t(x)), collapse = "")
+)
+
+# Count and sort sequences
+sequence_counts <- table(windows)
+sorted_counts <- sort(sequence_counts, decreasing = TRUE)
+
+# Display all sequences and their frequencies
+sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
+if(check > 1) colnames(sequence_df) <- c("Sequence", "Frequency")
+
+
+sequence_df$up <- up
+sequence_df$down <- down
+output$total <- sum(sequence_df$Frequency)
+#write some way to score the sequence_df
+#award one point for one of these configs:
+supports <- c("0001","0111","1101", "0100")
+
+
+sub <- filter(sequence_df, Sequence %in% supports)
+output$points <- sum(sub$Frequency)
+
+
+#create output with transitions
+#error handling- in situation where both points flowed 100% of the time
+
+return(sequence_df)}
+}
+
+#test function
+calc_support_combos("ZZ_27", "FB_14", big_input)
+
+#function to break up groups of continuous measurements, ensure that gaps are not considered
+#contains calc_support function
+iterate_groups_combos <- function(up, down, input, timestep){
+  #create group column that identifies gaps in continuous data in time
+
+# i <- 4
+# up <- paste0("r_",routes$up[i])
+# down <- paste0("r_",routes$down[i])
+# timestep <- hours(1)
+  input$group <- cumsum(c(TRUE, diff(input$datetime) != timestep))
+  #View(input)
+
+  for(u in 1:length(unique(input$group))){
+  # u <- 1
+  #   print(u)
+    filtered_input <- input %>% filter(group == u)
+    #this line throws error if 
+    output <- calc_support_combos(up, down, filtered_input)
+    
+
+     if(u == 1) iterate_groups_alldat <- output
+     if(u > 1) iterate_groups_alldat <- rbind(iterate_groups_alldat, output)
+  }
+  # final_iterate_groups_alldat <- iterate_groups_alldat %>% 
+  #   drop_na() %>% 
+  #   group_by(up, down) %>% 
+  #   summarise(total = sum(total),
+  #             points = sum(points))
+  return(iterate_groups_alldat)
+}
+
+iterate_groups("ZZ_27", "FB_14", big_input, minutes(30))
+#function to take a list of routes and input dataset
+#contains group iteration function
+#for loop to iterate through full list of combinations of up and downstream locations
+#IMPORTANT- calculate hierarchy and iterate groups only work if the input timestep is approriate
+calculate_hierarchy_combos <- function(routes, input, timestep){
+  for(x in 1:length(routes$up)){
+  up <- routes$up[x]
+  down <- routes$down[x]
+  #print(x)
+  
+  out <- iterate_groups_combos(up, down, input, timestep)
+    #out <- calc_support(up, down, input)
+
+
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
+
+  }
+  final_output <- alldat %>% 
+    drop_na() %>%
+    group_by(up, down, Sequence) %>%
+    summarise(Frequency = sum(Frequency))
+  return(final_output)
+}
+
+calculate_hierarchy_combos(big_routes, big_input, minutes(30))
+
+fantastic_four_combos <- function(routes, shed){
+  theFour <- c("30mins", "hourly", "4hr", "daily")
+  
+  for(q in 1:length(theFour)){
+    #if statements to detect timescale, calculate appropriate inputs
+    timescale <- theFour[q]
+  if(timescale == "30mins"){
+    input <- rbind(input_w3, input_fb, input_zz) %>%
+      filter(wshed == shed, mins %in% c(0, 30)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- minutes(30)
+  } 
+  else if(timescale == "hourly"){
+    input <- rbind(input_w3, input_fb, input_zz) %>%
+      filter(wshed == shed, mins %in% c(0)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- hours(1)
+  } 
+  else if(timescale == "4hr"){
+    input <- rbind(input_w3, input_fb, input_zz) %>%
+      mutate(hour = hour(datetime)) %>% 
+      filter(wshed == shed, hour %in% c(0,4,8,12,16,20,24), mins %in% c(0)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- hours(4)
+  } 
+  else if(timescale == "daily"){
+    input <- rbind(input_w3, input_fb, input_zz) %>%
+      mutate(hour = hour(datetime)) %>% 
+      filter(wshed == shed, hour %in% c(12), mins %in% c(0)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- days(1)
+  } 
+  else {
+    stop("Not a timescale anticipated!")
+  }
+    out <- calculate_hierarchy_combos(routes, input, timestep)
+    out$timescale <- theFour[q]
+    
+    if(q == 1) fanfar <- out
+    if(q > 1) fanfar <- rbind(fanfar, out)
+  }
+  fanfar$shed <- shed
+  return(fanfar)
+}
+
+routes_w3 <- read_csv("w3_flowrouting.csv") %>% 
+  filter(sensor %in% W3_IDs, drains_from %in% W3_IDs) %>% 
+  rename("up" = drains_from, "down" = sensor) %>% 
+  select(up, down) %>% 
+  filter(down != 100, up != 0)
+
+#test <- fantastic_four_combos(routes_w3, "W3")
+
+
+#must calculate prop values after and outside of fantastic 4
+calc_props <- function(routes, shed){
+  full_combos <- fantastic_four_combos(routes, shed)
+total_state_changes <- full_combos %>% 
+    filter(Sequence != 0011, Sequence != 1100) %>% 
+    group_by(up, down, timescale, shed) %>% 
+    summarise(totals = sum(Frequency))
+supports <- c("0001","0111","1101", "0100")
+
+hierarchical_changes <- full_combos %>% 
+    filter(Sequence != 0011, Sequence != 1100) %>% 
+    filter(Sequence %in% supports) %>% 
+    group_by(up, down, timescale, shed) %>%  
+    summarise(hierarchical = sum(Frequency)) 
+
+un_split <- total_state_changes %>% 
+  left_join(hierarchical_changes, by = c("up", "down", "shed", "timescale")) %>% 
+  mutate(prop = hierarchical/totals) %>% 
+  mutate_all(~replace(., is.na(.), 0))
+return(un_split)
+}
+
+calc_props(big_routes, "W3")
+
+#code used to develop calc_props!
+calc_props(routes_w3, "W3")
+total_state_changes <- test %>% 
+    filter(Sequence != 0011, Sequence != 1100) %>% 
+    group_by(up, down, timescale, shed) %>% 
+    summarise(totals = sum(Frequency))
+supports <- c("0001","0111","1101", "0100")
+
+hierarchical_changes <- test %>% 
+    filter(Sequence != 0011, Sequence != 1100) %>% 
+    filter(Sequence %in% supports) %>% 
+    group_by(up, down, timescale, shed) %>%  
+    summarise(hierarchical = sum(Frequency)) 
+
+un_split <- total_state_changes %>% 
+  left_join(hierarchical_changes, by = c("up", "down", "shed", "timescale")) %>% 
+  mutate(prop = hierarchical/totals) %>% 
+  mutate_all(~replace(., is.na(.), 0))
+un_split
+
+#use this chunk to re-run everything
+```
