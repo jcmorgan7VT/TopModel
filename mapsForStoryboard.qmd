@@ -7394,7 +7394,7 @@ df2 <- input_w3 %>%
   rename("wet_date" = date)
 
 #dataframe that tells us when the network went from fully dry to fully wet and vice versa
-cross_join(df1, df2) %>% 
+crossed_up <- cross_join(df1, df2) %>% 
   mutate(difference = wet_date - dry_date) %>% 
   group_by(dry_date) %>% 
   filter(abs(difference) == min(abs(difference))) %>% 
@@ -7473,16 +7473,69 @@ train_sec <- function(primary, secondary, na.rm = TRUE) {
   list(fwd = forward, rev = reverse)
 }
 
-sec <- with(economics, train_sec(unemploy, psavert))
+# sec <- with(economics, train_sec(unemploy, psavert))
+# 
+# ggplot(economics, aes(date)) +
+#   geom_line(aes(y = unemploy), colour = "blue") +
+#   geom_line(aes(y = sec$fwd(psavert)), colour = "red") +
+#   scale_y_continuous(sec.axis = sec_axis(~sec$rev(.), name = "psavert"))
 
-ggplot(economics, aes(date)) +
-  geom_line(aes(y = unemploy), colour = "blue") +
-  geom_line(aes(y = sec$fwd(psavert)), colour = "red") +
-  scale_y_continuous(sec.axis = sec_axis(~sec$rev(.), name = "psavert"))
-  
+#add precipitation
+#add hydrograph to plot
+q_23_plotting <- q_23_f %>% 
+    filter(DATETIME > start & DATETIME < stop) %>% 
+  rename("datetime" = DATETIME)
+q_23_plotting %>% 
+ggplot(aes(x  = datetime, y = Q_mm_day))+
+  geom_line()+
+  labs(title = "Discharge from W3, July to Nov 2023",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()
+
+    
 
 start <- ymd_hms("2023-10-20 00:00:00")
 stop <- ymd_hms("2023-10-22 00:00:00")
+
+#precip <- 
+  read_csv("./HB/dailyWatershedPrecip1956-2024.csv") %>% 
+    filter(watershed == "W3") %>% 
+        filter(DATE >= start & DATE <= stop) %>% 
+    ggplot()+
+    geom_bar(aes(x = DATE, y = Precip), stat = "identity")
+
+precip1 <- read_csv("./HB/HBEF_W3precipitation_15min.csv") %>% 
+    filter(DateTime >= start & DateTime <= stop) %>% 
+    mutate(day = day(DateTime),
+           hour = hour(DateTime)) %>% 
+    group_by(day, hour) %>% 
+    reframe(hourly_precip = sum(precip), across()) %>% 
+    mutate(mins = minute(DateTime)) %>% 
+    filter(mins == 0) %>%
+  rename("datetime" = DateTime) %>% 
+    left_join(q_23_plotting, by = "datetime") %>% 
+  select(datetime, hourly_precip, Q_mm_day)
+
+
+sec3 <- with(precip1, train_sec(hourly_precip, Q_mm_day))
+
+
+water <- precip1 %>% 
+    ggplot(aes(x = datetime))+
+    geom_col(aes(y = hourly_precip))+
+    geom_line(aes(y = sec3$fwd(Q_mm_day)), colour = "blue") +
+    scale_y_continuous("Hourly Precipitation (mm)",
+                       sec.axis = sec_axis(~sec3$rev(.),
+                       name = "Discharge (mm/day)"))+
+    labs(x = "",
+         y = "Precipitation (mm)")+
+      theme_classic()+
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y = element_text(angle = 0),
+        axis.title.y.right = element_text(angle = 0)
+        )
 
 
 test_IDS <- input_w3 %>% 
@@ -7492,7 +7545,7 @@ remainder <- test_IDS$ID
 
 pks_ordered <- pks_w3 %>% 
 filter(ID %in% remainder) %>% 
-  arrange((pk)) %>% 
+  arrange(desc(pk)) %>% 
   rowid_to_column("pk_order")
 
 test <- input_w3 %>% 
@@ -7502,15 +7555,57 @@ test <- input_w3 %>%
   left_join(pks_ordered, by = "ID") #%>% 
 sec2 <- with(test, train_sec(pk_order, pk))
 
-  #filter(threshold == "agree_or_no_90") %>% 
-geom_line(aes(y = unemploy), colour = "blue") +
-  geom_line(aes(y = sec$fwd(psavert)), colour = "red") +
-  scale_y_continuous(sec.axis = sec_axis(~sec$rev(.), name = "psavert"))
-test %>% 
-  ggplot(aes(x = datetime))+
+test <- 
+  input_w3 %>% 
+    filter(datetime > start & datetime < stop) %>% 
+    mutate(day = day(datetime),
+           hour = hour(datetime)) %>% 
+  #filter(ID == 17)
+  #filter(ID %in% W3_IDs) %>% 
+  left_join(precip1, by = c("day", "hour")) %>% 
+  left_join(pks_ordered, by = "ID") %>% 
+  filter(mins.x == 0)
+test2 <- test %>% 
+  select(datetime.x, binary, hourly_precip, pk_order)
+sec2 <- with(test2, train_sec(pk_order, hourly_precip))
+
+
+
+tiles <- test2 %>% 
+  ggplot(aes(x = datetime.x))+
   geom_tile(aes(y = pk_order, fill = as.character(binary)))+
-  ylab("Proposed Activation Order")+
-  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Proportion of Time Flowwing")) +
+  scale_y_continuous("Supposed Activation Order")+
+  #facet_grid(~name, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c(0, 1),
+                    labels = c("Dry", "Wet"),
+                    name = ""
+                    )+
+  labs(#title = "Very dry to very wet",
+       #subtitle = "W3, 10/20 - 10/22, 2023",
+       x = "")+
+scale_x_continuous(breaks=c(ymd_hms("2023-10-20 00:00:00"),
+                            ymd_hms("2023-10-21 00:00:00"),
+                            ymd_hms("2023-10-22 00:00:00")),
+                   labels = c("10/20/23",
+                              "10/21/23",
+                              "10/22/23"))+
+  theme_classic()+
+    theme(legend.position="right",
+          axis.title.y = element_text(angle = 0))
+
+p_load(patchwork)
+
+(water)/tiles + plot_layout(heights = c(1, 5))
+
+
+test2 %>% 
+  ggplot(aes(x = datetime.x))+
+  geom_tile(aes(y = (pk_order), fill = as.character(binary)))+
+  geom_col(aes(y = sec2$fwd(hourly_precip)))+
+  ylab("Supposed activation order")+
+  scale_y_continuous(sec.axis = sec_axis(~sec2$fwd(.), name = "Instantaneous Q (mm/day)")) +
   #facet_grid(~name, scales = "free") + 
   scale_fill_manual(drop = FALSE,
                      values = binary,
@@ -7519,11 +7614,83 @@ test %>%
                     name = ""
                     )+
   labs(title = "Very dry to very wet",
-       subtitle = "span of 2 days, W3, 2023",
+       subtitle = "W3, 10/20 - 10/22, 2023",
        x = "")+
+scale_x_continuous(breaks=c(ymd_hms("2023-10-20 00:00:00"),
+                            ymd_hms("2023-10-21 00:00:00"),
+                            ymd_hms("2023-10-22 00:00:00")),
+                   labels = c("10/20/23",
+                              "10/21/23",
+                              "10/22/23"))+
+  theme_classic()+
+    theme(legend.position="right")
+
+
+```
+
+```{r}
+
+d <- 1
+start <- ymd_hms(paste0(crossed_up$dry_date[d]," 00:00:00"))
+stop <- ymd_hms(paste0(crossed_up$wet_date[d]," 00:00:00"))
+
+
+test_IDS <- input_w3 %>% 
+    filter(datetime > start & datetime < stop)
+
+remainder <- test_IDS$ID
+
+pks_ordered <- pks_w3 %>% 
+filter(ID %in% remainder) %>% 
+  arrange(desc(pk)) %>% 
+  rowid_to_column("pk_order")
+
+q_23_plotting <- q_23_f %>% 
+    filter(DATETIME > start & DATETIME < stop) %>% 
+  rename("datetime" = DATETIME)
+q_23_plotting %>% 
+ggplot(aes(x  = datetime, y = Q_mm_day))+
+  geom_line()+
+  labs(title = "Discharge from W3, July to Nov 2023",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()
+
+
+test <- input_w3 %>% 
+    filter(datetime > start & datetime < stop) %>% 
+  #filter(ID == 17)
+  #filter(ID %in% W3_IDs) %>% 
+  left_join(q_23_plotting, by = "datetime") %>% 
+  left_join(pks_ordered, by = "ID")
+sec2 <- with(test, train_sec(pk_order, Q_mm_day))
+
+test %>% 
+  ggplot(aes(x = datetime))+
+  geom_tile(aes(y = (pk_order), fill = as.character(binary)))+
+      geom_line(aes(y = sec2$fwd(Q_mm_day)), color = "white")+
+  ylab("Supposed activation order")+
+  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Instantaneous Q (mm/day)")) +
+  #facet_grid(~name, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c(0, 1),
+                    labels = c("Dry", "Wet"),
+                    name = ""
+                    )+
+  labs(title = "Very dry to very wet",
+       subtitle = "W3, 7/20 - 7/22, 2023",
+       x = "")+
+scale_x_continuous(breaks=c(ymd_hms("2023-07-20 00:00:00"),
+                            ymd_hms("2023-07-21 00:00:00"),
+                            ymd_hms("2023-07-22 00:00:00")),
+                   labels = c("7/20/23",
+                              "7/21/23",
+                              "7/22/23"))+
   theme_classic()+
     theme(legend.position="right")
 
 #add hydrograph to plot
+crossed_up
 ```
 
