@@ -8060,9 +8060,8 @@ un_split <- total_state_changes %>%
 return(un_split)
 }
 
-big_output <- calc_props(big_routes)
 ```
-```{r prepare-combined-routes}
+```{r pk}
 routes_w3 <- 
   pks_w3 %>% 
     filter(ID %in% W3_IDs) %>% 
@@ -8088,9 +8087,142 @@ big_routes <-
   mutate(down = lag(ID)) %>% 
   rename("up" = ID) %>% drop_na() %>% 
   select(up, down)
+
+big_output_pk <- calc_props(big_routes) %>% 
+  mutate("hierarchy" = "Proportion of Time Flowing")
+
+```
+```{r drainage-area}
+#I was not confident in my R determined values, so I extracted drainage area in Arc. Reading in results
+
+#.csv files with extracted 1m drainage area values, but also contain snapped coords in UTM
+fb_uaa_1m <- read_csv("./STIC_uaa/fb2.csv")
+zz_uaa_1m <- read_csv("./STIC_uaa/zz2.csv")
+w3_uaa_1m <- read_csv("./STIC_uaa/w32.csv")
+
+routes_w3 <- w3_uaa_1m %>% 
+    filter(ID %in% W3_IDs) %>% 
+  mutate(ID = paste0("W3_",ID)) %>% 
+  select(ID, RASTERVALU)
+   
+
+routes_fb <- fb_uaa_1m %>%
+    filter(ID %in% FB_IDs)%>% 
+  mutate(ID = paste0("FB_",ID))%>% 
+  select(ID, RASTERVALU)
+ 
+
+routes_zz <- zz_uaa_1m %>% 
+    filter(ID %in% ZZ_IDs) %>% 
+  mutate(ID = paste0("ZZ_",ID))%>% 
+  select(ID, RASTERVALU)
+ 
+big_routes <- 
+  rbind(routes_w3, routes_fb, routes_zz) %>% 
+  arrange(desc(RASTERVALU)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID, "uaa" = RASTERVALU) %>% drop_na() %>% 
+  select(up, down)
+
+big_output_uaa <- calc_props(big_routes) %>% 
+  mutate("hierarchy" = "Drainage Area")
+
+#write_csv(all_uaa, "./hierarchy_analysis_results/drainageArea.csv")
+```
+```{r topographic-position-index}
+# fb_uaa_1m <- read_csv("./STIC_uaa/fb2.csv")
+# zz_uaa_1m <- read_csv("./STIC_uaa/zz2.csv")
+# w3_uaa_1m <- read_csv("./STIC_uaa/w32.csv")
+routes_w3 <- w3_uaa_1m %>% 
+    filter(ID %in% W3_IDs) %>% 
+  mutate(ID = paste0("W3_",ID)) %>% 
+  select(ID, RASTERVALU)
+routes_w3 <- w3_tpi %>% 
+    filter(ID %in% W3_IDs) %>%
+    mutate(ID = paste0("W3_",ID)) 
+
+routes_fb <- fb_tpi %>% 
+    filter(ID %in% FB_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange(desc(tpi)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down)
+
+routes_zz <- zz_tpi %>% 
+    filter(ID %in% ZZ_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange(desc(tpi)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+big_output_tpi <- calc_props(big_routes) %>% 
+  mutate("hierarchy" = "Topographic Position Index")
+
+#write_csv(all_tpi, "./hierarchy_analysis_results/tpi.csv")
+```
+```{r topographic-wetness-index}
+routes_w3 <- w3_twi %>% 
+    filter(ID %in% W3_IDs) %>% 
+     mutate(ID = paste0("W3_",ID))
+
+
+routes_fb <- fb_twi %>% 
+    filter(ID %in% FB_IDs) %>% 
+       mutate(ID = paste0("FB_",ID))
+
+
+routes_zz <- zz_twi %>% 
+    filter(ID %in% ZZ_IDs) %>% 
+       mutate(ID = paste0("ZZ_",ID))
+
+ big_routes <- 
+  rbind(routes_w3, routes_fb, routes_zz) %>% 
+  arrange(desc(twi)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+big_output_twi <- calc_props(big_routes) %>% 
+  mutate("hierarchy" = "Topographic Wetness Index") 
+
+#write_csv(all_twi, "./hierarchy_analysis_results/twi.csv")
+```
+```{r slope}
+routes_w3 <- w3_slope %>% 
+    filter(ID %in% W3_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange(slope) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+routes_fb <- fb_slope %>% 
+    filter(ID %in% FB_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange((slope)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down)
+
+routes_zz <- zz_slope %>% 
+    filter(ID %in% ZZ_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange((slope)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+all_slope_combo <- rbind(calc_props(routes_w3, "W3"),
+                 calc_props(routes_fb, "FB"),
+                 calc_props(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "Slope")
+
+#write_csv(all_slope, "./hierarchy_analysis_results/slope.csv")
 ```
 ```{r plot-big-results}
-big_output %>% 
+rbind(big_output_uaa, big_output_pk, big_output_twi) %>% 
   # mutate(timescale = fct_relevel("timescale",
   #                             c("30mins", "hourly", "4hr", "daily"))) 
   ggplot(aes(x = prop, y = after_stat(density))) +
@@ -8104,7 +8236,8 @@ geom_density(aes(fill = timescale, color = timescale), alpha = 0.5
   labs(title = "One watershed, one world",
        subtitle = "What if a hierarchy transcended watershed boundaries?",
        x = "Proportion of time followed",
-       y = "Density")
+       y = "Density")+
+  facet_grid(~hierarchy)
 ```
 
 #Identify individual events, to run my analysis for each event- how hierarchical was each precipitation event?
