@@ -80,6 +80,16 @@ w3_stic_locs_r <- vect(w3_stic_locs_snap)
 w3_net <- vect("./carrieZigZag/w3_network.shp")
 plot(w3_net)
 
+
+ggplot()+
+  geom_spatraster(data = hill)+
+  theme_void()+
+  #theme(legend.position = "")+
+  scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
+    new_scale_fill() +
+  geom_spatraster(data = crop1, alpha = 0.5)+
+     scale_fill_hypso_c(palette = "dem_screen" , limits = c(200, 1000))
+
 test <- ggplot()+
   geom_spatraster(data = hill)+
   theme_void()+
@@ -122,6 +132,39 @@ ggplotly(ggplot()+
     theme_void())
   #ggspatial::annotation_scale(location = 'tr')
 ```
+```{r tmap-version}
+p_load(tmap)
+
+
+test <- ggplot()+
+  geom_spatraster(data = hill)+
+  theme_void()+
+  #theme(legend.position = "")+
+  scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
+    new_scale_fill() +
+  geom_spatraster(data = crop1, alpha = 0.5)+
+  geom_sf(data = w3_outline, fill = NA, color = "black", alpha = 0.3)+
+  geom_sf(data = w3_net, colour = "darkslategray3") +
+  geom_sf(data = w3_stic_locs_r, colour = "midnightblue", pch = 21, size = 5) +
+  geom_sf(data = dd, aes(color = (depth)), pch = 19, size = 3) +
+  scale_color_gradient(low = "black", high = "white")+
+  #geom_sf(data = w3_pour, colour = "black") +
+   scale_fill_hypso_c(palette = "dem_screen" , limits = c(200, 1000))+
+  theme(rect = element_rect(fill = "transparent", color = NA))+
+  ggspatial::annotation_scale(location = 'tr')
+
+
+tmap_mode("view")
+tm_shape(crop1)+
+  tm_raster()+
+tm_shape(hill)+
+  tm_raster(
+  col_alpha = 0.5)
+
+
+
+```
+
 
 ```{r only-8-11}
 ggplot()+
