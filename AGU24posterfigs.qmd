@@ -163,6 +163,8 @@ tmap_mode("view")
 #   col.scale = tm_scale_continuous(values = c("black", "gray9", "gray48","lightgray", "white")))
 
 dd$depth <- as.numeric(dd$depth)
+tm_shape(hill)+
+  tm_raster()+
 tm_shape(w3_outline)+
   tm_borders()+
 tm_shape(w3_net)+
@@ -171,7 +173,9 @@ tm_shape(w3_stic_locs_r)+
   tm_symbols(size = 0.5)+
 tm_shape(dd)+
   tm_symbols(fill = "depth",
-             col.scale = tm_scale_continuous())
+             col.scale = tm_scale_continuous(values = c("black", "white")),
+             group = "Seismic Depths")
+
 
 
 
