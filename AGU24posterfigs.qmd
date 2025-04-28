@@ -153,13 +153,25 @@ test <- ggplot()+
   theme(rect = element_rect(fill = "transparent", color = NA))+
   ggspatial::annotation_scale(location = 'tr')
 
-
+alphe <- tm_const()
 tmap_mode("view")
-tm_shape(crop1)+
-  tm_raster()+
-tm_shape(hill)+
-  tm_raster(
-  col_alpha = 0.5)
+# tm_shape(crop1)+
+#   tm_raster(col = tm_vars(),
+#   col.scale = tm_scale_continuous())+
+# tm_shape(hill)+
+#   tm_raster(col_alpha=0.4,
+#   col.scale = tm_scale_continuous(values = c("black", "gray9", "gray48","lightgray", "white")))
+
+dd$depth <- as.numeric(dd$depth)
+tm_shape(w3_outline)+
+  tm_borders()+
+tm_shape(w3_net)+
+  tm_lines(col = "darkslategray3")+
+tm_shape(w3_stic_locs_r)+
+  tm_symbols(size = 0.5)+
+tm_shape(dd)+
+  tm_symbols(fill = "depth",
+             col.scale = tm_scale_continuous())
 
 
 
