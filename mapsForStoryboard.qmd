@@ -702,7 +702,7 @@ geom_histogram(binwidth = 0.1)+
 
 ```
 
-#VERY IMPORTANT SET UP CHUNK
+#Preparing inputs
 ```{r prepare-inputs}
 #create input that only uses sensors that were deployed during both deployments
 #need to make a list of sensors deployed in both campaigns for each watershed
@@ -2936,7 +2936,7 @@ plot(vect(zz_lcc_path_snap), add = TRUE)
 
 
 
-#add randomly generate hierarchies
+#run any number of random hierarchies, compare to the actual
 Structure of functions:
 - big_iteration(iterations, shed)
   |- for loop- loops through the 4 hierarchies
@@ -3270,9 +3270,7 @@ rbind(W3_topo_dof, FB_topo_dof, ZZ_topo_dof) %>%
        y = "Duration of Flow (days)")
 ```
 
-###ALSO TEST DEPTH TO BEDROCK
-
-#crazy idea
+#test 1000 random hierarchies
 Test every possible combination of pairs of sensors, see which one works the most hierarchically
 ```{r figuring-it-out}
 #maybe best way to do this is make random lists of up and downstream sensors like 1000 times, then run through hierarchical testing algorithm
@@ -3602,7 +3600,7 @@ rbind(random_w3, random_fb, random_zz) %>% group_by(iteration, shed) %>%
        x = "Proportion mean")
 ```
 
-#iterate to find the best combination
+#iterate to find the best hierarchy
 ```{r iterating-smart-W3}
 #pick a sensor randomly, then test every other sensor to see which has the best hierarchical behavior with that one. Proceed down the list without replacement
 # combos <- W3_uaa_ex %>% 
@@ -3950,7 +3948,7 @@ plot_in_space(zz_pairs_topo, "ZZ", "uaa")
 ```
 
 After meeting on 2/6/25, I am going to plot the proportion of time each point follows the hierarchy using a square divided into 4 sections, one for each hierarchy
-#showing all hierarchies on one plot- square plot (pigs in space)
+##showing all hierarchies on one plot- square plot (pigs in space)
 ```{r define-function}
 #change to have 4 inputs, the 4 hierarchies... actually better to format hierarchy before plotting
 format_outputs <- function(dataset, name){
@@ -4148,7 +4146,7 @@ print(goth_pigs_in_space(formatted_input,
                           "ZZ", 9, size = 4), vp=viewport(angle=180))
 ```
 
-#Black and white pigs in space
+##Black and white pigs in space
 ```{r}
 goth_pigs_in_space <- function(results,
                           watershed, offset, size){
@@ -4312,11 +4310,10 @@ data_23 %>%
 bigdata
 ```
 
-#New idea, make network maps where points are connected 
+#NOT DONE make network maps where points are connected 
 ```{r relative-position-UNFINISHED}
 
 ```
-
 ```{r flow-permanenc-w3}
 #map where points are connected by upstream, downstream relationships
 #start with routes from local persistency
@@ -4362,268 +4359,9 @@ scale_color_continuous(type = "viridis")+
 #line connecting 
 ```
 
-Also test what happens if I only do hourly, daily, etc timestep for my earlier loops
-#Determine all alternate scenarios
-##testing to see if there will be differences
-```{r hourly-W3}
-#equivalent to hush 2 from earlier,
-#make a new input for each watershed chunk
-input <- rbind(bind23, bind24) %>%
-  filter(wshed == "W3", mins %in% c(0)) %>%
-  select(datetime, binary, ID) %>%
-  mutate(ID = paste0("r_",ID)) %>% 
-  pivot_wider(names_from = ID, values_from = binary)
-#now make loop to loop through all pairs of sensors
-routes <- read_csv("w3_flowrouting.csv") %>% 
-  rename("up" = drains_from, "down" = drains_to) %>% 
-  select(sensor, down) %>% 
-  filter(down != 100)
-
-for(x in 1:length(routes$sensor)){
-  up <- paste0("r_",routes$sensor[x])
-  down <- paste0("r_",routes$down[x])
-  
-  out <- calc_support(up, down, input)
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
-
-}
-
-alldat$prop <- alldat$points/alldat$total
-w3_hourly <- alldat
-#w3_pairs <- alldat
-#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
-hist(w3_new$prop)
-hist(w3_pairs$prop)
-hist(w3_hourly$prop)
-
-plot(ecdf(w3_hourly$prop))
-plot(ecdf(alldat$prop))
-ggplot()+
-  stat_ecdf(data = w3_pairs, aes(prop))+
-  stat_ecdf(data = w3_new, aes(prop), color = "blue")
-
-#plot them both on a boxplot just to put it in terms that I have been using
-w3_30min_form <- data.frame("prop" = w3_pairs$prop, "type" = "pk", "shed" = "W3", timing = "30mins")
-w3_hourly_form <- data.frame("prop" = w3_hourly$prop, "type" = "pk", "shed" = "W3", timing = "hourly")
-w3_4hr_form <- data.frame("prop" = alldat$prop, "type" = "pk", "shed" = "W3", timing = "4hr")
-w3_daily_form <- data.frame("prop" = alldat$prop, "type" = "pk", "shed" = "W3", timing = "daily")
 
 
 
-sults_so_far <- rbind(w3_30min_form, w3_hourly_form, w3_4hr_form, w3_daily_form)
-
-sults_so_far %>% 
-  ggplot(aes(x = shed, y = prop, color = timing)) +
-  geom_boxplot()+
-  theme_classic()+
-    geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
-  geom_hline(yintercept = 0.5, lty = 2)+
-  labs(x = "Watershed",
-       y = "Proportion",
-       title = "How often do adjacent sensors follow a hierarchy?")+
-  scale_color_manual(
-                     values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
-                     
-                     name = "Organizing Scheme")+
-  facet_wrap(~type)
-```
-```{r 4hrs-W3}
-input <- rbind(bind23, bind24) %>%
-  mutate(hour = hour(datetime)) %>% 
-  filter(wshed == "W3", hour %in% c(0,4,8,12,16,20,24), mins %in% c(0)) %>%
-  select(datetime, binary, ID) %>%
-  mutate(ID = paste0("r_",ID)) %>% 
-  pivot_wider(names_from = ID, values_from = binary)
-#now make loop to loop through all pairs of sensors
-routes <- read_csv("w3_flowrouting.csv") %>% 
-  rename("up" = drains_from, "down" = drains_to) %>% 
-  select(sensor, down) %>% 
-  filter(down != 100)
-
-for(x in 1:length(routes$sensor)){
-  up <- paste0("r_",routes$sensor[x])
-  down <- paste0("r_",routes$down[x])
-  
-  out <- calc_support(up, down, input)
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
-
-}
-
-alldat$prop <- alldat$points/alldat$total
-hist(alldat$prop)
-```
-```{r daily-W3}
-#equivalent to hush 2 from earlier,
-#make a new input for each watershed chunk
-input <- rbind(bind23, bind24) %>%
-  mutate(hour = hour(datetime)) %>% 
-  filter(wshed == "W3", hour %in% c(12), mins %in% c(0)) %>%
-  select(datetime, binary, ID) %>%
-  mutate(ID = paste0("r_",ID)) %>% 
-  pivot_wider(names_from = ID, values_from = binary)
-#now make loop to loop through all pairs of sensors
-routes <- read_csv("w3_flowrouting.csv") %>% 
-  rename("up" = drains_from, "down" = drains_to) %>% 
-  select(sensor, down) %>% 
-  filter(down != 100)
-
-for(x in 1:length(routes$sensor)){
-  up <- paste0("r_",routes$sensor[x])
-  down <- paste0("r_",routes$down[x])
-  
-  out <- calc_support(up, down, input)
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
-
-}
-
-alldat$prop <- alldat$points/alldat$total
-w3_daily <- alldat
-#w3_pairs <- alldat
-#this shows the proportion of time that pairs of upstream/downstream sensors behave according to the hypothesis of wetting up and drying down
-hist(w3_new$prop)
-hist(w3_pairs$prop)
-hist(w3_hourly$prop)
-hist(w3_daily$prop)
-
-
-
-```
-##now trying across all scenarios
-```{r define-fucntion}
-#write function to go through different timescales quickly. 
-#specify routes as an input
-run_scenario <- function(routes, hierarchy, watershed, timescale){
-
-  #if statements to detect timescale, calculate appropriate inputs
-  if(timescale == "30mins"){
-    input <- rbind(bind23, bind24) %>%
-      filter(wshed == watershed, mins %in% c(0, 30)) %>%
-      select(datetime, binary, ID) %>%
-      mutate(ID = paste0("r_", ID)) %>%
-      pivot_wider(names_from = ID, values_from = binary)
-  } 
-  else if(timescale == "hourly"){
-    input <- rbind(bind23, bind24) %>%
-      filter(wshed == watershed, mins %in% c(0)) %>%
-      select(datetime, binary, ID) %>%
-      mutate(ID = paste0("r_", ID)) %>%
-      pivot_wider(names_from = ID, values_from = binary)
-  } 
-  else if(timescale == "4hr"){
-    input <- rbind(bind23, bind24) %>%
-      mutate(hour = hour(datetime)) %>% 
-      filter(wshed == "W3", hour %in% c(0,4,8,12,16,20,24), mins %in% c(0)) %>%
-      select(datetime, binary, ID) %>%
-      mutate(ID = paste0("r_", ID)) %>%
-      pivot_wider(names_from = ID, values_from = binary)
-  } 
-  else if(timescale == "daily"){
-    input <- rbind(bind23, bind24) %>%
-      mutate(hour = hour(datetime)) %>% 
-      filter(wshed == "W3", hour %in% c(12), mins %in% c(0)) %>%
-      select(datetime, binary, ID) %>%
-      mutate(ID = paste0("r_", ID)) %>%
-      pivot_wider(names_from = ID, values_from = binary)
-  } 
-  else {
-    stop("Not a timescale anticipated!")
-  }
-
-#loop through sensors using calc_support function
-for(x in 1:length(routes$up)){
-  up <- paste0("r_",routes$up[x])
-  down <- paste0("r_",routes$down[x])
-  
-  out <- calc_support(up, down, input)
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
-
-}
-
-alldat$prop <- alldat$points/alldat$total
-#format output for boxplot and cdf plotting
-formatted_output <- data.frame("prop" = alldat$prop, 
-                               "type" = hierarchy, 
-                               "shed" = watershed, 
-                               "timing" = timescale)
-
-return(formatted_output)
-}
-#end of function
-#define routes
-routes_w3_position <- read_csv("w3_flowrouting.csv") %>% 
-  rename("up" = drains_from, "down" = drains_to) %>% 
-  select(sensor, down) %>% 
-  filter(down != 100)
-
-routes_w3_pk <- pks_w3 %>% 
-  arrange(desc(pk)) %>% 
-  mutate(down = lag(ID)) %>% 
-  rename("up" = ID) %>% drop_na() %>% 
-  select(up, down)
-#test function
-sults_so_far <- rbind(run_scenario(routes_w3_position, "position", "W3", "30mins"),
-                      run_scenario(routes_w3_position, "position", "W3", "hourly"),
-                      run_scenario(routes_w3_position, "position", "W3", "4hr"),
-                      run_scenario(routes_w3_position, "position", "W3", "daily"),
-                      
-                      run_scenario(routes_w3_pk, "pk", "W3", "30mins"),
-                      run_scenario(routes_w3_pk, "pk", "W3", "hourly"),
-                      run_scenario(routes_w3_pk, "pk", "W3", "4hr"),
-                      run_scenario(routes_w3_pk, "pk", "W3", "daily"))
-
-sults_so_far %>% 
-  mutate(timing = fct_relevel(timing,
-                              c("30mins", "hourly", "4hr", "daily"))) %>% 
-  ggplot(aes(x = timing, y = prop, color = timing)) +
-  geom_boxplot()+
-  theme_classic()+
-    geom_point(position = position_jitterdodge(jitter.width = 0.2), alpha = 0.5)+
-  geom_hline(yintercept = 0.5, lty = 2)+
-  labs(x = "",
-       y = "Proportion",
-       title = "How often do adjacent sensors follow a hierarchy?")+
-  scale_color_manual(
-                     values = c("#397367", "#FFA400", "#93C2F1", "#7E6B8F"),
-                     
-                     name = "Organizing Scheme")+
-  facet_wrap(shed~type)
-
-
-```
-
-```{r}
-input <- rbind(bind23, bind24) %>%
-  filter(wshed == "W3", mins %in% c(0)) %>%
-  select(datetime, binary, ID) %>%
-  mutate(ID = paste0("r_",ID)) %>% 
-  pivot_wider(names_from = ID, values_from = binary)
-#now make loop to loop through all pairs of sensors
-routes <- read_csv("w3_flowrouting.csv") %>% 
-  rename("up" = drains_from, "down" = drains_to) %>% 
-  select(sensor, down) %>% 
-  filter(down != 100)
-
-for(x in 1:length(routes$sensor)){
-  up <- paste0("r_",routes$sensor[x])
-  down <- paste0("r_",routes$down[x])
-  
-  out <- calc_support(up, down, input)
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
-
-}
-
-alldat$prop <- alldat$points/alldat$total
-w3_hourly <- alldat
-```
-
-
-
-Separate chunk for discharge stuff
 #Where on the hydrograph do transitions in states between two sensors occur?
 ```{r hydrograph-analysis}
 #separate function to determine when on hydrograph transitions occur
@@ -4793,19 +4531,18 @@ sults_so_far %>%
   knitr::kable()
 ```
 
-#calculating discharge
+#NOT DONE calculating discharge
 ```{r}
 #source function I wrote in separate script
 source("calcQ.R")
 ```
 
-#plot hypsometric curves for each stream network
-Extract elevation along the streams (might need ARC), then plot versus distance
 
-#Last part of analysis: try to predict the flow permanence based on topographic metrics
+
+#Try to predict the flow permanence based on topographic metrics
 Use sensor locations snapped on ARC computer to extract different topographic metrics; metrics can be calculated here in R using whitebox tools.
 ##multilinear regression
-```{r}
+```{r sensor-locations}
 #get snapped sensor locations from extracted values from arc
 w3_locs <- read_csv("./STIC_uaa/w32.csv")%>% 
   select(ID, POINT_X, POINT_Y)
@@ -4814,7 +4551,6 @@ fb_locs <- read_csv("./STIC_uaa/fb2.csv") %>%
 zz_locs <- read_csv("./STIC_uaa/zz1.csv")%>% 
   select(ID, POINT_X, POINT_Y)
 ```
-
 ```{r extract-topography-W3}
 #flow accumulation/upslope drainage area at 3 m resolution calculated earlier in markdown
 flowacc_output <- "./HB/1m hydro enforced DEM/dem3m_flowacc.tif"
@@ -4890,13 +4626,11 @@ vals_df_w3 <- bind_cols(as_tibble(extract(rast(flowacc_output),
 
 
 ```
-
-```{r}
+```{r figuring-out-model}
 #use reformatted df with sensor flow permanence and topo metrics in a multilinear regression
 model <- lm(pk ~ uaa + slope + twi + tpi, data = vals_df)
 summary(model)
 ```
-
 ##Fixing multilinear regression
 ```{r regression-fb}
 #flow accumulation/upslope drainage area at 3 m resolution calculated earlier in markdown
@@ -5032,7 +4766,6 @@ vals_df_zz <- bind_cols(as_tibble(extract(rast(flowacc_output),
 model_zz <- lm(pk ~ uaa + slope + twi + tpi, data = vals_df_zz)
 summary(model_zz)
 ```
-
 ```{r combine-and-model}
 vals_all <- rbind(vals_df_w3, vals_df_fb, vals_df_zz)
 
@@ -5332,7 +5065,7 @@ un_split <- total_state_changes %>% left_join(hierarchical_changes, by = c("up",
 un_split
 ```
 
-#Running analysis o n wetting versus drying
+##Running analysis on wetting versus drying
 ```{r relative-position-wetANDdry}
 #set routes for all 3 watersheds
 routes_w3 <- read_csv("w3_flowrouting.csv") %>% 
@@ -5826,7 +5559,7 @@ rbind(bind23, bind24) %>%
   filter(wshed == "W3", ID == 2)
 ```
 
-#Run daily analysis again
+#NOT DONE Run daily analysis again
 Alter code to test two scenarios and compare to the original one
 - test every hour for daily observation
 - average state
@@ -8343,4 +8076,5 @@ q_23_plotting %>%
 
 
 ```
-
+#NOT DONE plot hypsometric curves for each stream network
+Extract elevation along the streams (might need ARC), then plot versus distance
