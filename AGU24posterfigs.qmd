@@ -163,17 +163,23 @@ tmap_mode("view")
 #   col.scale = tm_scale_continuous(values = c("black", "gray9", "gray48","lightgray", "white")))
 
 dd$depth <- as.numeric(dd$depth)
+# tm_shape(crop1)+
+#   tm_raster(col.legend = tm_legend_hide(),
+#             col.scale = tm_scale_continuous(values = c(hypso.colors(10, palette = "dem_screen", alpha = 1, rev = FALSE))))+
 tm_shape(hill)+
-  tm_raster()+
+  tm_raster(col.legend = tm_legend_hide(),
+            col_alpha = 0.5)+#,
+            #col.scale = tm_scale_continuous(values = c("black", "white")))+
 tm_shape(w3_outline)+
   tm_borders()+
 tm_shape(w3_net)+
   tm_lines(col = "darkslategray3")+
 tm_shape(w3_stic_locs_r)+
-  tm_symbols(size = 0.5)+
+  tm_symbols(size = 0.25,
+             fill = "black")+
 tm_shape(dd)+
-  tm_symbols(fill = "depth",
-             col.scale = tm_scale_continuous(values = c("black", "white")),
+  tm_symbols(size = 0.5,
+             fill = "depth",
              group = "Seismic Depths")
 
 
