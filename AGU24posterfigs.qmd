@@ -8,8 +8,7 @@ editor_options:
 ```{r setup}
 #loading packages
 library(pacman)
-p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,
-       ggnewscale, sf, rgeoboundaries, elevatr, patchwork, ggspatial, stringr)
+p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,ggnewscale, sf, rgeoboundaries, elevatr, patchwork, ggspatial, stringr, tmap)
 ```
 ```{r read-seismic-data}
 seis <- read_csv("seismic_12_2_24.csv") %>% 
@@ -36,6 +35,7 @@ dd <- terra::project(depths, crs(m1))
 plot(dd)
 
 dd$depth <- as.numeric(dd$depth)
+writeVector(dd, "./seismic_map_exports/depths.shp")
 
 ```
 ```{r depth-measurement-locations-map}
@@ -51,6 +51,7 @@ ybounds <- c(4870350,4871350)
 xbounds <- c(281350, 282150)
 #crop to rectangular area
 crop1 <- crop(m1, ext(c(xbounds, ybounds)))
+writeRaster(crop1, "1mdemw3_cropped.tif")
 
 #watershed boundary
 w3_shed <- "./w3_dems/w3_shed.tif"
@@ -71,13 +72,17 @@ plot(w3_stream_crop)
 w3_stic_locs_snap <- "w3_stic_locs_snap.shp"
 
 w3_stic_locs_r <- vect(w3_stic_locs_snap) %>% 
-  left_join(pks, by = "ID")
+  left_join(pks_w3, by = "ID")
 
 
 
 w3_stic_locs_r <- vect(w3_stic_locs_snap)
+writeVector(w3_stic_locs_r, "./seismic_map_exports/w3_stic_locs_snap.shp")
+
 
 w3_net <- vect("./carrieZigZag/w3_network.shp")
+writeVector(w3_net, "./seismic_map_exports/network.shp")
+
 plot(w3_net)
 
 
@@ -153,7 +158,6 @@ test <- ggplot()+
   theme(rect = element_rect(fill = "transparent", color = NA))+
   ggspatial::annotation_scale(location = 'tr')
 
-alphe <- tm_const()
 tmap_mode("view")
 # tm_shape(crop1)+
 #   tm_raster(col = tm_vars(),
@@ -161,28 +165,42 @@ tmap_mode("view")
 # tm_shape(hill)+
 #   tm_raster(col_alpha=0.4,
 #   col.scale = tm_scale_continuous(values = c("black", "gray9", "gray48","lightgray", "white")))
+p_load(stars)
+crop1 <- st_as_stars(crop1)
+hill <- st_as_stars(hill)
 
 dd$depth <- as.numeric(dd$depth)
-# tm_shape(crop1)+
+
+good_looking <- rast("pansharpened_terra.tif")
+  tm_shape(pansharpened_corr) + 
+  tm_rgb(col = tm_vars(c(1,2,3), multivariate = TRUE),
+         col.scale = tm_scale_rgb(stretch = FALSE, max_color_value = 1)
+)+
+tm_basemap(server = "Esri.WorldGrayCanvas", group = NA, alpha = NA)+
 #   tm_raster(col.legend = tm_legend_hide(),
 #             col.scale = tm_scale_continuous(values = c(hypso.colors(10, palette = "dem_screen", alpha = 1, rev = FALSE))))+
-tm_shape(hill)+
-  tm_raster(col.legend = tm_legend_hide(),
-            col_alpha = 0.5)+#,
-            #col.scale = tm_scale_continuous(values = c("black", "white")))+
+# tm_shape(hill)+
+#   tm_raster(col.legend = tm_legend_hide(),
+#             col_alpha = 0.5,
+#             col.scale = tm_scale_continuous(values = c("black", "white")))+
 tm_shape(w3_outline)+
   tm_borders()+
 tm_shape(w3_net)+
-  tm_lines(col = "darkslategray3")+
+  tm_lines(col = "darkslategray3",
+           lwd = "StrType")+
 tm_shape(w3_stic_locs_r)+
   tm_symbols(size = 0.25,
              fill = "black")+
 tm_shape(dd)+
   tm_symbols(size = 0.5,
              fill = "depth",
-             group = "Seismic Depths")
+             group = "Seismic Depths",
+             fill.scale = tm_scale_continuous(values = "brewer.oranges"),
+  fill.legend = tm_legend(title = expression("Happy Planex/nIndex")))
 
-
+	#tmap_save(test, "World_map.html")
+p_load(cols4all, shinyjs, kableExtra, colorblindcheck)
+c4a_gui()
 
 
 ```
