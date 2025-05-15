@@ -917,7 +917,11 @@ input_zz <- rbind(bind23, bind24) %>%
   filter(wshed == "ZZ") %>% 
   filter(ID %in% ZZ_IDs)
 
-rbind(input_w3, input_fb, input_zz)
+input_all <- rbind(input_w3, input_fb, input_zz)
+write_csv(input_w3, "calc_support_inputs_w3.csv")
+write_csv(input_fb, "calc_support_inputs_fb.csv")
+write_csv(input_zz, "calc_support_inputs_zz.csv")
+
       
 ```
 
@@ -6049,7 +6053,7 @@ routes_w3 <- pks_w3 %>%
   mutate(down = lag(ID)) %>% 
   rename("up" = ID) %>% drop_na() %>% 
   select(up, down)
-
+write_csv(routes_w3, "routes_w3_pk.csv")
 routes_fb <- pks_fb %>%
     filter(ID %in% FB_IDs) %>% 
   filter(pk != 1) %>% 
@@ -6057,6 +6061,7 @@ routes_fb <- pks_fb %>%
   mutate(down = lag(ID)) %>% 
   rename("up" = ID) %>% drop_na() %>% 
   select(up, down)
+write_csv(routes_fb, "routes_fb_pk.csv")
 
 routes_zz <- pks_zz %>%
     filter(ID %in% ZZ_IDs) %>% 
@@ -6065,6 +6070,7 @@ routes_zz <- pks_zz %>%
   mutate(down = lag(ID)) %>% 
   rename("up" = ID) %>% drop_na() %>% 
   select(up, down)
+write_csv(routes_zz, "routes_zz_pk.csv")
 
 all_pk_combo <- rbind(calc_props(routes_w3, "W3"),
                 calc_props(routes_fb, "FB"),
@@ -6483,9 +6489,10 @@ all_combos_routes <- data.frame("up" = rep(combos, zzz),
                                 "down" = all_list)
 #run calc_support for all sheds and timesteps for relative position
 test <- calc_props(all_combos_routes, "W3")
+determined_directions <- test
 ```
 
-```{r}
+```{r making-network-graphs}
 #figure out how to display results of testing all possible combinations
 #output the highest downstream for each upstream
 
@@ -6501,7 +6508,7 @@ test %>%
 test %>% 
   filter(timescale == "30mins") %>% 
   ungroup() %>% 
-  select(up, down, prop) %>% View()
+  select(up, down, prop) %>%
   group_by(up) 
 
 edges <- test %>% 
@@ -6509,7 +6516,7 @@ edges <- test %>%
   filter(timescale == "30mins") %>% 
   reframe(max_prop = max(prop),
     down1 = down[which(prop == max(prop))]) %>% 
-  filter(max_prop != 0, !down1 %in% c("r_12", "r_19", "r_20")) %>% 
+  filter(max_prop != 0) %>% #, !down1 %in% c("r_12", "r_19", "r_20")) %>% 
   select(down1, up)
 
   # create the network object
@@ -6517,7 +6524,7 @@ network <- graph_from_data_frame(d=edges, directed=T)
 
 # plot it
 plot(network,layout = layout_nicely(network), edge.arrow.size = 0.25,
-     vertex.size = 20,
+     vertex.size = 15,
      vertex.label.cex = 1)
 
 #greedy algorithm
@@ -6528,6 +6535,11 @@ mst <- mst(network)
          edge.arrow.size = 0.25,
      vertex.size = 20,
      vertex.label.cex = 1)
+
+components(network, mode = c("weak"))
+components(mst, mode = c("strong"))
+
+
   
 test %>% 
   group_by(up, timescale) %>%
@@ -6538,6 +6550,321 @@ test %>%
   summarise(count = length(down1)) %>% 
   pivot_wider(id_cols = down1, names_from = timescale, values_from = count)
 ```
+What if I make a graph using every connection, and weighted by the prop value, then put it through the greedy algorithm?
+```{r}
+#create full set of edges
+edges2 <- test %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(weight = (1 - labels) + 0.01,
+         labels = round(labels, 2)) %>%  #weight will be opposite prop value
+  select(up, down, weight, labels)
+
+write.csv(edges2, "edges2.csv")
+
+network <- graph_from_data_frame(d=edges2, directed=T) 
+E(network)$weight
+# plot it
+plot(network,layout = layout_nicely(network), edge.arrow.size = 0.25,
+     vertex.size = 15,
+     vertex.label.cex = 1)
+is_weighted(network)
+#greedy algorithm
+mst <- mst(network, weights = edges2$weight)
+
+    # Visualize the MST (optional)
+same.shape <- layout_nicely(mst)
+
+plot(
+  mst,
+  #layout = layout_nicely(mst),
+  layout = layout_as_tree(mst),
+  vertex.label = V(mst)$name,
+  edge.arrow.size = 0.25,
+  vertex.size = 10,
+  vertex.label.cex = 0.75,
+  edge.weight=2,
+  #edge.width=(E(mst)$weight*500),
+  #edge.color = E(mst)$color
+  edge.label = E(mst)$labels,
+  asp = 0.5
+  #margin = c(rep(0.01,4))
+)
+
+p_load(SEMgraph, graph, Rgraphviz, RBGL)
+als.npn <- transformData(alsData$exprs)$data
+
+# graph-based trees
+graph1 <- alsData$graph
+seed <- V(graph1)$name[sample(1:vcount(graph1), 10)]
+tree1 <- SEMtree(network, data = as_data_frame(network), seed=seed, type="CLE", verbose=TRUE)
+tree1 <- SEMtree(graph1, data = als.npn, seed=seed, type="CLE", verbose=TRUE)
+
+V <- colnames(als.npn)[colnames(als.npn) %in% V(graph)$name]
+tree3 <- SEMtree(NULL, als.npn, seed=V, type="CAT", verbose=TRUE)
+tree4 <- SEMtree(NULL, als.npn, seed=V, type="CPDAG", alpha=0.05, verbose=TRUE)
+
+#try implementing on my data
+edges3 <- edges2 %>% 
+  select(!labels) %>% 
+  # mutate(up = substr(up, 3,4),
+  #        down = substr(up, 3,4)) #%>% 
+  pivot_wider(names_from = up, values_from = weight)
+
+V <- edges3$down
+
+tree3 <- SEMtree(network$graph, edges3, seed=V, type="CAT", verbose=TRUE)
+tree3 <- SEMtree(network$graph, edges3, seed=V, type="MST", verbose=TRUE)
+
+plot(tree3, layout = layout_as_tree(tree3))
+
+#explore and understand
+test %>% 
+  filter(timescale == "30mins", up == "r_10") %>% View()
+```
+
+```{r}
+p_load(ggnetwork, intergraph)
+
+ggmst <- fortify(mst, layout = igraph::layout_nicely(mst))
+ggplot(ggnetwork(edges, layout = "target", cell.jitter = 0.75),
+       aes(x = x, y = y, xend = xend, yend = yend))+
+  geom_edges()+
+  geom_nodes()
+
+ggplot(fortify(mst, layout = igraph::nicely()),
+       aes(x = x, y = y, xend = xend, yend = yend))+
+  geom_edges()+
+  geom_nodes()
+
+ggplot(ggmst, aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_edges(color = "grey", arrow = grid::arrow(length = unit(6, "pt"),
+                                                 type = "open")) +
+  geom_nodes(color = "black", size = 8) +
+  geom_nodetext(aes(label = name),
+                fontface = "bold", color = "white", size = 3) +
+  theme_blank()
+
+as_adjacency_matrix(mst)
+
+
+```
+
+Try JP's idea, weight by difference in pk
+```{r}
+up_pks <- pks_w3 %>% 
+  select(ID, pk) %>% 
+  mutate(ID = paste0("r_",ID)) %>% 
+  rename(up = ID,
+         up_pk = pk)
+down_pks <- pks_w3 %>% 
+  select(ID, pk) %>% 
+  mutate(ID = paste0("r_",ID)) %>% 
+  rename(down = ID,
+         down_pk = pk)
+
+edges4 <- 
+  test %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  left_join(up_pks, by = "up") %>% 
+  left_join(down_pks, by = "down") %>% 
+  mutate(diff = abs(down_pk - up_pk)) %>% 
+  rename(weight = diff,
+         label = prop) %>% 
+  select(up, down, weight, label)
+
+network <- graph_from_data_frame(d=edges4, directed=T) 
+E(network)$weight
+# plot it
+plot(network,layout = layout_nicely(network), edge.arrow.size = 0.25,
+     vertex.size = 15,
+     vertex.label.cex = 1)
+is_weighted(network)
+#greedy algorithm
+mst <- mst(network, weights = edges4$weight)
+
+places <- canonical_permutation(mst)$labeling
+sample(places)
+permute(mst, sample(places))
+
+tt <- names(V(mst))
+tt[-which(tt == "r_22")]
+which(tt == "r_13")
+rearranged <- c(tt[1:which(tt == "r_13")-1], "r_22", c(tt[-which(tt == "r_22")][which(tt == "r_13"):25]))
+
+new_arrange <- c(12,19,6,23,10,11,20,18,7,17,27,14,21,5,2,1,24,13,3,9,8,16,22,15,28,29)
+new_arrange <- paste0("r_",new_arrange)
+s <- sort(names(V(mst)))
+mst2 <- permute(mst, match(V(mst)$name, new_arrange))
+
+plot(
+  mst2,
+  #layout = layout_nicely(mst),
+  layout = layout_as_tree(mst2),
+  vertex.label = V(mst2)$name,
+  edge.arrow.size = 0.25,
+  vertex.size = 10,
+  vertex.label.cex = 0.75,
+  edge.weight=2
+  #margin = c(rep(0.01,4))
+)
+
+ggmst <- fortify(mst2, layout = igraph::layout_as_tree(mst2))
+  
+
+ggplot(ggmst, aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_edges(color = "grey", arrow = grid::arrow(length = unit(6, "pt"),
+                                                 type = "open")) +
+  geom_nodes(color = "black", size = 8) +
+  geom_nodetext(aes(label = name),
+                fontface = "bold", color = "white", size = 3) +
+   geom_edgetext(aes(label = round(label,2)), color = "black") +
+
+  theme_blank()
+
+as_adjacency_matrix(mst2)
+
+```
+
+```{r}
+#try optrees
+install.packages("https://cran.r-project.org/src/contrib/Archive/optrees/optrees_1.0.tar.gz")
+library(optrees)
+
+V(network)$name
+as_adjacency_matrix(network)
+
+
+nodes <- 1:4
+arcs <- matrix(c(1,2,2, 1,3,3, 1,4,4, 2,3,3, 2,4,4, 3,2,3,
+                 3,4,1, 4,2,1, 4,3,2),byrow = TRUE, ncol = 3)
+
+edges2 <- test %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(weight = (1 - labels) + 0.01,
+         labels = round(labels, 2)) %>%  #weight will be opposite prop value
+  select(up, down, weight, labels)
+
+arcs <- 
+  test %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  rename(weight = prop) %>% 
+  mutate(up = as.numeric(substr(up, 3,4)),
+         down = as.numeric(substr(down, 3,4)),
+         weight = rescale(weight, to = c(1,5))) %>% 
+  rename(old_nodes = up) %>% 
+  left_join(key, by = "old_nodes") %>% 
+  rename(new_nodes_up = new_nodes,
+         up = old_nodes,
+         old_nodes = down) %>% 
+  left_join(key, by = "old_nodes") %>% 
+  rename(new_nodes_down = new_nodes,
+         down = old_nodes) %>% 
+  select(new_nodes_up, new_nodes_down, weight) %>% 
+  as.matrix() %>% 
+  unname()
+
+nodes <- as.numeric(substr(V(network)$name,3,4))
+length(nodes)
+nodes <- seq(1,26,1)
+
+#need to re-label nodes so that they are a numeric sequence
+key <- data.frame("new_nodes" = seq(1,26,1),
+                  "old_nodes" = as.numeric(substr(V(network)$name,3,4)))
+
+
+
+output <- getMinimumArborescence(nodes, arcs, source.node = 4)
+msArborEdmonds(nodes, arcs)
+output_frame <- as.data.frame(output[2])
+colnames(output_frame) <- c("parent", "child", "weight")
+
+
+
+treez <- graph_from_data_frame(d=output_frame, directed=T) 
+ggtreez <- fortify(treez, layout = igraph::layout_as_tree(treez))
+  
+
+ggplot(ggtreez, aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_edges(color = "grey", arrow = grid::arrow(length = unit(6, "pt"),
+                                                 type = "open")) +
+  geom_nodes(color = "black", size = 8) +
+  geom_nodetext(aes(label = name),
+                fontface = "bold", color = "white", size = 3) +
+  theme_blank()
+
+as_adjacency_matrix(treez)
+
+```
+
+Iterate through this tree method, removing the most connected sensors
+```{r}
+
+nodes <- as.numeric(substr(V(network)$name,3,4))
+which(nodes == 12)
+old_nodes <- nodes[-which(nodes == 12)]
+length(nodes)
+nodes <- seq(1,25,1)
+
+#need to re-label nodes so that they are a numeric sequence
+key <- data.frame("new_nodes" = seq(1,25,1),
+                  "old_nodes" = old_nodes)
+arcs <- 
+  edges2 %>% 
+  filter(up != "r_12", down != "r_12") %>% 
+  filter()
+  mutate(up = as.numeric(substr(up, 3,4)),
+         down = as.numeric(substr(down, 3,4)),
+         weight = rescale(weight, to = c(1,5))) %>% 
+  rename(old_nodes = up) %>% 
+  left_join(key, by = "old_nodes") %>% 
+  rename(new_nodes_up = new_nodes,
+         up = old_nodes,
+         old_nodes = down) %>% 
+  left_join(key, by = "old_nodes") %>% 
+  rename(new_nodes_down = new_nodes,
+         down = old_nodes) %>% 
+  select(new_nodes_up, new_nodes_down, weight) %>% 
+  as.matrix() %>% 
+  unname()
+
+output2 <- getMinimumArborescence(nodes, arcs)
+output_frame2 <- as.data.frame(output2[2])
+colnames(output_frame2) <- c("parent", "child", "weight")
+
+
+
+treez2 <- graph_from_data_frame(d=output_frame2, directed=T) 
+ggtreez2 <- fortify(treez2, layout = igraph::layout_as_tree(treez2))
+  
+
+ggplot(ggtreez2, aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_edges(color = "grey", arrow = grid::arrow(length = unit(6, "pt"),
+                                                 type = "open")) +
+  geom_nodes(color = "black", size = 8) +
+  geom_nodetext(aes(label = name),
+                fontface = "bold", color = "white", size = 3) +
+  theme_blank()
+
+as_adjacency_matrix(treez2)
+
+test %>% 
+  filter(timescale == "30mins", up == "r_28") %>% View()
+n <- 26
+2^(n*(n-1))
+```
+
 
 Try calculating transfer energy
 ```{r experimenting-transfer-energy}
@@ -8177,21 +8504,14 @@ geom_density(aes(fill = timescale, color = timescale), alpha = 0.5
 ```{r figure-out-hydroEvents-pacakge}
 #testing out package that will automatically extract rising and falling limb
 #install.packages("hydroEvents")
-library(hydroEvents)
+p_load(hydroEvents)
 #qdata = WQ_Q$qdata[[1]]
 #BF_res = eventBaseflow(qdata$Q_cumecs)
 #limbs(data = qdata$Q_cumecs, dates = NULL, events = BF_res, main = "with 'eventBaseflow'")
 #Use this plot to manually extract rising and falling limbs
-
-
-
-plot <- justQ %>%  
-  ggplot(aes(x = DATETIME, y = Q_mm_day))+
-  geom_line()+
-  geom_point(aes(color = start))
-
-ggplotly(plot)
-
+q_23_plotting <- q_23_f %>% 
+    filter(DATETIME > start & DATETIME < stop) %>% 
+  rename("datetime" = DATETIME)
 justQ <- q_23_plotting %>% 
   select(datetime, Q_mm_day) %>% 
   arrange(datetime) %>% 
@@ -8199,9 +8519,19 @@ justQ <- q_23_plotting %>%
   drop_na() %>% 
   mutate(lab = as.numeric(row_number()))
 
+
+plot <- justQ %>%  
+  ggplot(aes(x = datetime, y = Q_mm_day))+
+  geom_line()+
+  geom_point(aes(color = start))
+plot
+ggplotly(plot)
+
+
+
 #justQ[5812:5826,]
   
-BF_res <- eventBaseflow(justQ$Q_mm_day, BFI_Th = 0.5, min.diff = 1)
+BF_res <- eventBaseflow(justQ$Q_mm_day, BFI_Th = 0.5)
 limbs(data = justQ$Q_mm_day, 
                dates =justQ$datetime, 
                events = BF_res, 
@@ -8273,6 +8603,19 @@ q_23_plotting %>%
   mutate(lab = as.numeric(row_number())) %>% 
   mutate(group = data.table::rleid(lab, cols = PoT_res$srt))
 
+ranges <- data.frame("starts" = PoT_res$srt) %>% 
+  mutate("stops" = lead(starts)) %>% 
+  mutate(event_ID = row_number(starts))
+
+ranges[26,2] <- 5762
+#trying fuzzy join method?
+p_load(fuzzyjoin)
+id_events <- q_23_plotting %>% 
+  select(datetime, Q_mm_day) %>% 
+  mutate(ID = row_number()) |> fuzzy_left_join(ranges, by = c(ID = "starts", ID = "stops"),
+                              match_fun = list(`>=`, `<=`)) |> 
+   mutate(event_ID = event_ID) |> 
+   select(-starts, -stops)
 
 
 ```
@@ -8522,5 +8865,14 @@ test$group <- cumsum(c(TRUE, diff(test$datetime) != hours(4)))
       pivot_wider(names_from = ID, values_from = binary)
       
 
+      #print('John is stinky')
+
+```
+
+#number them based on order that they turn on, then average that
+Molly idea- for each rising and falling limb, number them
+```{r}
+inner_join(input_w3, id_events, by = "datetime") %>% 
+  
 ```
 

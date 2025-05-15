@@ -628,27 +628,55 @@ compare <- function(x, y, time){
 ```{r fb-stage-prepared}
 #chunk that reads in stage, converts to proper units
 #read in stage, convert to a height
-FB_air <- read_csv("./PressureTransducers_11_14_23/FB_air.csv", skip = 1) %>% 
+FB_air <- 
+  read_csv("./PressureTransducers_11_14_23/FB_air.csv", skip = 1) %>% 
   select(2:3) %>% 
   rename(DATETIME = 1,
          pressure_psi_air = 2) %>% 
-  mutate(DATETIME = mdy_hms(DATETIME))
+  mutate(DATETIME = mdy_hms(DATETIME),
+         pressure_kpa_air = 6.89476 * pressure_psi_air)
 
 FB_water <- read_csv("./PressureTransducers_11_14_23/FB_water.csv", skip = 1) %>% 
   select(2:3) %>% 
   rename(DATETIME = 1,
          pressure_psi_water = 2) %>% 
-  mutate(DATETIME = mdy_hms(DATETIME))
+  mutate(DATETIME = mdy_hms(DATETIME),
+         pressure_kpa_water = 6.89476 * pressure_psi_water)
 
-data_23$mins <- minute(data_23$datetime)
+#HB headquarters barometric air pressure
+headquarters <- read_csv("./HB/HBEF_Barometric_pressure.csv") %>% 
+  rename("DATETIME" = TIMESTAMP,
+         "pressure_kpa_headquarters" = BP1_kPa) #%>% 
+  mutate(pressure_kpa_headquarters = pressure_kpa_headquarters - diff_fb)
+
+#correct headquarters elevation
+head_elev <- 254 * 3.28084#m, converted to ft
+fb_elev <- 551 * 3.28084#m, converted to ft
+zz_elev <- 629 * 3.28084 #m, converted to ft
+
+#decrease pressure by 0.00364 kPa per foot of elevation
+diff_fb <- (fb_elev - head_elev) * 0.00364
+
 
 #Fit a logistic regression to falls brook stage
 #outputs df with stage in cm
-FB_stage <- FB_water %>% 
-  left_join(FB_air, by = "DATETIME") %>% 
+#FB_stage <- 
+  FB_water %>% 
+  left_join(headquarters, by = "DATETIME") %>% 
+    left_join(FB_air, by = "DATETIME") %>% 
+    select(-pressure_psi_water, -pressure_psi_air) %>% 
+    pivot_longer(-DATETIME) %>% 
+  #mutate(diff_kpa = pressure_kpa_water - pressure_kpa_air) %>% 
+    ggplot(aes(x = DATETIME, y = value, color = name))+
+    geom_line()
+ # mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701)
+#FB_stage <- 
+  FB_water %>% 
+    left_join(FB_air, by = "DATETIME") %>%
   mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
-  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701)
-
+ mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
+  ggplot(aes(x = DATETIME, y = stage_cm))+
+  geom_line()
 
 ```
 
@@ -847,26 +875,49 @@ ZZ_twi_ex <- extract(twi2, lcc)
 ```
 
 ```{r zz-stage-prep}
-ZZ_air <- read_csv("./PressureTransducers_11_14_23/ZZ_air.csv", skip = 1) %>% 
+ZZ_air <- 
+  read_csv("./PressureTransducers_11_14_23/ZZ_air.csv", skip = 1) %>% 
   select(2:3) %>% 
   rename(DATETIME = 1,
          pressure_psi_air = 2) %>% 
-  mutate(DATETIME = mdy_hms(DATETIME))
+  #mutate(DATETIME = mdy_hms(DATETIME))%>% 
+  mutate(DATETIME = mdy_hms(DATETIME),
+         pressure_kpa_air = 6.89476 * pressure_psi_air)
 
 ZZ_water <- read_csv("./PressureTransducers_11_14_23/ZZ_water.csv", skip = 1) %>% 
   select(2:3) %>% 
   rename(DATETIME = 1,
          pressure_psi_water = 2) %>% 
-  mutate(DATETIME = mdy_hms(DATETIME))
+  #mutate(DATETIME = mdy_hms(DATETIME))%>% 
+  mutate(DATETIME = mdy_hms(DATETIME),
+         pressure_kpa_water = 6.89476 * pressure_psi_water)
 
 data_23$mins <- minute(data_23$datetime)
 
+ZZ_water %>% 
+  left_join(headquarters, by = "DATETIME") %>% 
+    left_join(ZZ_air, by = "DATETIME") %>% 
+    select(-pressure_psi_water, -pressure_psi_air) %>% 
+  rename("Air at stream" = pressure_kpa_air,
+         "Water" = pressure_kpa_water,
+         "Air at headquarters"= pressure_kpa_headquarters) %>% 
+    pivot_longer(-DATETIME) %>% 
+  #mutate(diff_kpa = pressure_kpa_water - pressure_kpa_air) %>% 
+    ggplot(aes(x = DATETIME, y = value, color = name))+
+    geom_line()+
+  labs(title = "ZZ barometric pressures",
+       x = "",
+       y = "Pressure (kPa)")
+
 #Fit a logistic regression to falls brook stage
 #outputs df with stage in cm
-ZZ_stage <- ZZ_water %>% 
+#ZZ_stage <- 
+  ZZ_water %>% 
   left_join(ZZ_air, by = "DATETIME") %>% 
   mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
-  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701)
+  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
+    ggplot(aes(x = DATETIME, y = stage_cm))+
+  geom_line()
 ```
 
 ```{r zz-model-fitting}
