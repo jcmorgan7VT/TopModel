@@ -5851,7 +5851,7 @@ return(sequence_df)}
 }
 
 #test function
-calc_support_combos("r_23", "r_20", input)
+calc_support_combos("r_13", "r_19", input)
 
 #function to break up groups of continuous measurements, ensure that gaps are not considered
 #contains calc_support function
@@ -5884,7 +5884,7 @@ iterate_groups_combos <- function(up, down, input, timestep){
   return(iterate_groups_alldat)
 }
 
-#iterate_groups("r_23", "r_6", input, hours(1))
+iterate_groups("r_13", "r_19", input, min(30))
 #function to take a list of routes and input dataset
 #contains group iteration function
 #for loop to iterate through full list of combinations of up and downstream locations
@@ -5910,7 +5910,7 @@ calculate_hierarchy_combos <- function(routes, input, timestep){
   return(final_output)
 }
 
-#calculate_hierarchy_combos(routes, input, days(1))
+calculate_hierarchy_combos(routes_w32, input, min(30))
 
 fantastic_four_combos <- function(routes, shed){
   theFour <- c("30mins", "hourly", "4hr", "daily")
@@ -5971,28 +5971,29 @@ routes_w3 <- read_csv("w3_flowrouting.csv") %>%
   select(up, down) %>% 
   filter(down != 100, up != 0)
 
-#test <- fantastic_four_combos(routes_w3, "W3")
+fantastic_four_combos(routes_w3, "W3")
 
 
 #must calculate prop values after and outside of fantastic 4
 calc_props <- function(routes, shed){
   full_combos <- fantastic_four_combos(routes, shed)
-total_state_changes <- full_combos %>% 
+  total_state_changes <- full_combos %>% 
     filter(Sequence != 0011, Sequence != 1100) %>% 
     group_by(up, down, timescale, shed) %>% 
     summarise(totals = sum(Frequency))
-supports <- c("0001","0111","1101", "0100")
+  supports <- c("0001","0111","1101", "0100")
 
-hierarchical_changes <- full_combos %>% 
+  hierarchical_changes <- full_combos %>% 
     filter(Sequence != 0011, Sequence != 1100) %>% 
     filter(Sequence %in% supports) %>% 
     group_by(up, down, timescale, shed) %>%  
     summarise(hierarchical = sum(Frequency)) 
 
-un_split <- total_state_changes %>% 
-  left_join(hierarchical_changes, by = c("up", "down", "shed", "timescale")) %>% 
-  mutate(prop = hierarchical/totals) %>% 
-  mutate_all(~replace(., is.na(.), 0))
+  un_split <- total_state_changes %>% 
+    left_join(hierarchical_changes, by = c("up", "down", "shed", "timescale")) %>% 
+    mutate(prop = hierarchical/totals) %>% 
+    mutate_all(~replace(., is.na(.), 0))
+  
 return(un_split)
 }
 
@@ -6251,14 +6252,16 @@ all_slope_combo <- rbind(calc_props(routes_w3, "W3"),
 ###plot results
 ```{r plot-results}
 sults_so_far <- rbind(all_position_combo,
-                      all_pk_combo,
+                      all_pk_combo
                       #all_nt_combo,
                      # all_uaa_combo,
                       #all_tpi_combo,
-                      all_slope_combo,
+                     # all_slope_combo,
                       #all_twi_combo
                       ) %>% 
   mutate("real_or_random" = "real")
+
+ggmst$label
   mutate(timescale = fct_relevel(timescale,
                               c("30mins", "hourly", "4hr", "daily")),
          hierarchy = as.factor(str_trim(as.character(hierarchy))),
@@ -6439,7 +6442,7 @@ output$points <- sum(sub$Frequency)
 return(sequence_df)}
 }
 
-calc_support_combos("r_23", "r_20", input)
+calc_support_combos("r_13", "r_19", input)
 
 calc_props <- function(routes, shed){
   full_combos <- fantastic_four_combos(routes, shed)
@@ -6729,9 +6732,11 @@ ggplot(ggmst, aes(x = x, y = y, xend = xend, yend = yend)) +
 
 as_adjacency_matrix(mst2)
 
+hist(ggmst$label)
+
 ```
 
-```{r}
+```{r optrees}
 #try optrees
 install.packages("https://cran.r-project.org/src/contrib/Archive/optrees/optrees_1.0.tar.gz")
 library(optrees)
@@ -6865,6 +6870,157 @@ n <- 26
 2^(n*(n-1))
 ```
 
+5/22/25
+After big meeting with JP and Kevin, determine the best chain, and see how that does in analysis
+- simple path- does not visit the same node or vertex twice
+```{r}
+#calculate the shortest, simple path
+all_simple_paths
+shortest_paths
+all_shortest_paths()
+
+shortest_paths(network, 1, 26, weights = network$weight, mode = "out",
+                   algorithm = "dijkstra", inbound.edges = TRUE)
+
+igraph::dfs(network, 2, mode = "total")
+plot(subgraph(network, c(1:10)))
+
+#igraph_widest_path_widths_dijkstra
+
+#igraph_minimum_spanning_tree_prim 
+
+sample_tree <- sample_spanning_tree(network)
+
+plot(subgraph_from_edges(network, sample_tree))
+
+distances(network)
+
+install.packages("TSP")
+library(TSP)
+
+
+edgesT <- 
+  test %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) %>% as.matrix() %>% unname()
+
+# Convert to TSP object
+set.seed(1)
+atsp <- as.ATSP(edgesT)
+
+# Insert a dummy node to get a path instead of a cycle
+#atsp <- insert_dummy(atsp, label = "dummy")
+tsp1 <- reformulate_ATSP_as_TSP(atsp)
+# Solve using nearest_insertion (heuristic that works with ATSPs)
+tour <- solve_TSP(tsp1, method = "cheapest_insertion")
+tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
+#cheapest insertion gives the same answer every time I think, 
+#nearest insertion is non-deterministic
+
+# Extract path, removing dummy node
+path <- as.integer(tour)
+path <- path[labels(tour)[path] != "dummy"]
+
+# Create a chain graph from the path
+edges <- cbind(path[-length(path)], path[-1])
+chain_graph <- graph_from_edgelist(edges, directed = TRUE)
+plot(chain_graph)
+
+#convert my chain back into the sensor ids, run through scoring algorithm, OR just get histogram of the prop values from those combinations
+opt_routes <- as.data.frame(edges) %>% 
+  rename("parent" = V2, "child" = V1) %>% 
+ rename(new_nodes = child) %>% 
+  left_join(key, by = "new_nodes") %>% 
+  rename(child = old_nodes,
+         done = new_nodes,
+         new_nodes = parent) %>% 
+  left_join(key, by = "new_nodes") %>% 
+  rename(done2 = new_nodes,
+         parent = old_nodes) %>% 
+  select(parent, child)
+
+  mutate(across(as.data.frame(edges)), key) 
+
+as.data.frame(edges) |>
+  left_join(key, by = c("new_nodes" = "V1")) |>
+  mutate(V1 = coalesce(new_nodes, V1)) |>
+  select(-new_nodes)
+rew <- as.data.frame(edges)
+ix <- match(rew$V1, key$new_nodes)
+rew$updated_V1 <- ifelse(!is.na(ix), key$old_nodes[ix], rew$V1)
+
+ix <- match(rew$V2, key$new_nodes)
+rew$updated_V2 <- ifelse(!is.na(ix), key$old_nodes[ix], rew$V2)
+
+```
+
+```{r}
+routes_graph <- opt_routes %>% 
+  rename("up" = child,
+         "down" = parent) %>% drop_na()
+
+all_graph_combo <- calc_props(routes_graph, "W3") %>% 
+    mutate("hierarchy" = "Graph chain")
+
+#View(all_graph_combo)
+
+# all_pk_combo <- rbind(calc_props(routes_w3, "W3"),
+#                 calc_props(routes_fb, "FB"),
+#                 calc_props(routes_zz, "ZZ")) %>% 
+#   mutate("hierarchy" = "Flow Permanence")
+
+sults_so_far <- rbind(all_position_combo,
+                      all_pk_combo) %>% 
+  mutate("real_or_random" = "real") %>% 
+  filter(shed == "W3") %>% 
+  rbind(all_graph_combo)
+
+  
+shed_colors <- c("#397367", "#FFD166", "#7E6B8F")
+
+#plots for committee meeting
+sults_so_far %>% 
+  filter(timescale %in% c("30mins", "daily")#, hierarchy == "Flow Permanence"
+         ) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(fill = shed, color = shed), alpha = 0.5)+
+    geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  ylim(c(0, 6.25))+
+  xlim(c(0,1))+
+  labs(title = "Distributions of Proportion of time Sequence Followed",
+       subtitle = "0011 and 1100 removed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  scale_fill_manual(values = shed_colors,
+                     
+                     name = "Watershed")+
+  scale_color_manual(values = shed_colors,
+                     
+                     name = "Watershed")+
+  facet_grid(timescale~hierarchy)
+
+
+all_graph_combo %>% filter(timescale == "30mins") %>% View()
+```
+
+Iterate through all methods to calculate a chain
+```{r}
+methods <- c("identity", "random", "nearest_insertion",
+  "cheapest_insertion", "farthest_insertion", "arbitrary_insertion",
+  "nn", "repetitive_nn", "two_opt")
+
+tours <- lapply(methods, FUN = function(m) solve_TSP(tsp1, method = m))
+names(tours) <- methods
+```
 
 Try calculating transfer energy
 ```{r experimenting-transfer-energy}
