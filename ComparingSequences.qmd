@@ -18,7 +18,7 @@ Not sure if I should include the dummy or not; FB is a lot better with a dummy, 
 ```{r setup}
 #loading packages
 library(pacman)
-p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,ggnewscale, sf, rgeoboundaries, elevatr, patchwork, ggspatial, zoo, igraph, TSP)
+p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,ggnewscale, sf, rgeoboundaries, elevatr, patchwork, ggspatial, zoo, igraph, TSP, ggnetwork, intergraph)
 #whitebox::install_whitebox()
 
 #reading in final format data for summer 23
@@ -346,12 +346,6 @@ FB_all_combos <- calc_props(all_combos_routes, "FB")
 
 ```{r ZZ}
 #set routes for all 3 watersheds
-routes_zz <- pks_zz %>% 
-    filter(ID %in% ZZ_IDs) %>% 
-  arrange(desc(pk)) %>% 
-  mutate(down = lag(ID)) %>% 
-  rename("up" = ID) %>% drop_na() %>% 
-  select(up, down)
 
 input <- rbind(bind23, bind24) %>%
   filter(wshed == "ZZ", mins %in% c(0, 30)) %>%
@@ -359,7 +353,7 @@ input <- rbind(bind23, bind24) %>%
   #mutate(ID = paste0("r_",ID)) %>% 
   pivot_wider(names_from = ID, values_from = binary)
 
-combos <- unique(c(routes_zz$up, routes_zz$down))
+combos <- ZZ_IDs
 zzz <- length(combos)
 rep(combos, zzz)
 all_list <- c()
@@ -617,12 +611,11 @@ for(i in 1:length(methods)){
 atsp <- as.ATSP(edges_ZZ)
   
   atsp <- insert_dummy(atsp, label = "dummy")
-  tour <- solve_TSP(atsp, method = methods[i])#, two_opt = TRUE)
+  tour <- solve_TSP(atsp, method = methods[i], start = length(ZZ_IDs) + 1)#, start = 25)#, two_opt = TRUE)
   #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
 
   # Extract path, removing dummy node
-  path <- as.integer(tour)
-  path <- path[labels(tour)[path] != "dummy"]
+   path <- unname(cut_tour(tour, "dummy"))
   #convert edges to format 
   edges <- cbind(path[-length(path)], path[-1])
   
@@ -670,6 +663,156 @@ geom_density(aes(color = method), alpha = 0.5)+
        y = "Density")+
   facet_grid(~timescale)
 
+
+atsp <- as.ATSP(edges_ZZ)
+  
+  atsp <- insert_dummy(atsp, label = "dummy")
+  tour <- solve_TSP(atsp, method = methods[4], start = length(ZZ_IDs) + 1)#, two_opt = TRUE)
+  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
+
+  # Extract path, removing dummy node
+  #path <- as.integer(tour)
+  path <- unname(cut_tour(tour, "dummy"))
+  #convert edges to format 
+  edges <- cbind(path[-length(path)], path[-1])
+
+
+
+# Create a chain graph from the path
+edges <- cbind(path[-length(path)], path[-1])
+chain_graph <- graph_from_edgelist(edges, directed = TRUE)
+plot(chain_graph,
+       layout = layout_nicely(chain_graph),
+     edge.arrow.size = 0.25,
+  vertex.size = 10,
+  vertex.label.cex = 0.75)
+
+ggnet <- fortify(chain_graph, layout = igraph::layout_nicely(chain_graph))
+ggplot(ggnet, aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_edges(color = "grey", arrow = grid::arrow(length = unit(6, "pt"),
+                                                 type = "open")) +
+  geom_nodes(color = "black", size = 8) +
+  # geom_nodetext(aes(label =LETTERS[ path ]),
+  #               fontface = "bold", color = "white", size = 3) +
+  theme_blank()
 ```
 
 For final plots for tomorrow, keep arbitrary insertion and cheapest insertion
+```{r generalized-function}
+#define all possible methods
+#removed 3 methods
+methods = c("nearest_insertion", "random",
+  "cheapest_insertion", "farthest_insertion", "arbitrary_insertion",
+  "nn", "repetitive_nn")
+#methods <- c("random", "cheapest_insertion")
+
+general_graph <- function(combos, shed, methods = c("random", "cheapest_insertion")){
+#combos <- ZZ_IDs
+zzz <- length(combos)
+rep(combos, zzz)
+all_list <- c()
+for(z in 1:zzz){
+  all_list <- c(all_list, rep(combos[z], zzz))
+}
+
+all_combos_routes <- data.frame("up" = rep(combos, zzz),
+                                "down" = all_list)
+#run calc_support for all sheds and timesteps for relative position
+allcombosIn <- calc_props(all_combos_routes, shed)
+
+#methods <- c("random", "cheapest_insertion")
+keyz <- 
+  allcombosIn %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) #%>% as.matrix() %>% unname()
+#create an accurate key, old one is WRONG!!!
+key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
+                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
+#set up edges and distance matrix, convert to TSP object
+
+#IF there are NAs, replace them with 1; results from when there is a node that flowed the whole time it was deployed along with another, and not deployed for part of the other one's deployment; happened most in FB
+edgesIn <- 
+  allcombosIn %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>% #%>% #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    mutate(
+    across(everything(), ~replace_na(.x, 1))
+  ) %>%
+    select(-up) %>% as.matrix() %>% unname()
+
+
+
+# reformat from atsp to tsp
+#tsp1 <- reformulate_ATSP_as_TSP(atsp)
+
+#FOR LOOP TO ITERATE THROUGH METHODS
+for(i in 1:length(methods)){
+  # Convert to TSP object
+atsp <- as.ATSP(edgesIn)
+  
+  atsp <- insert_dummy(atsp, label = "dummy")
+  tour <- solve_TSP(atsp, method = methods[i], start = length(combos) + 1, two_opt = TRUE)
+  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
+
+  # Extract path, removing dummy node
+   path <- unname(cut_tour(tour, "dummy"))
+  #convert edges to format 
+  edges <- cbind(path[-length(path)], path[-1])
+  
+  #apply key to convert nodes to sensor IDs for algorithm
+opt_routes <- 
+  as.data.frame(edges) %>% 
+  rename("parent" = V2, "child" = V1) %>% 
+ rename(node_ID = child) %>% 
+  left_join(key2, by = "node_ID") %>% 
+  rename(child = sensor_ID,
+         done = node_ID,
+         node_ID = parent) %>% 
+  left_join(key2, by = "node_ID") %>% 
+  rename(done2 = node_ID,
+         parent = sensor_ID) %>% 
+  select(parent, child)
+
+#prepare routes for algorithm
+routes_graph <- opt_routes %>% 
+  rename("up" = child,
+         "down" = parent) %>% drop_na()
+
+chain_output <- calc_props(routes_graph, shed) %>% 
+    mutate("method" = methods[i])
+
+    if(i == 1) ZZ_chain_outputs <- chain_output
+    if(i > 1) ZZ_chain_outputs <- rbind(ZZ_chain_outputs, chain_output)
+}
+return(ZZ_chain_outputs)
+}
+
+ZZ_graph_solution <- general_graph(ZZ_IDs, "ZZ")
+
+ZZ_graph_solution %>% 
+  filter(timescale %in% c("30mins", "daily")#, hierarchy == "Flow Permanence"
+         ) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(color = method), alpha = 0.5)+
+    geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  ylim(c(0, 6.25))+
+  xlim(c(0,1))+
+  labs(title = "Distributions of Proportion of time Sequence Followed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  facet_grid(~timescale)
+```
+
