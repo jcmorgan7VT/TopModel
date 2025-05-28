@@ -5851,7 +5851,7 @@ return(sequence_df)}
 }
 
 #test function
-calc_support_combos("r_13", "r_19", input)
+#calc_support_combos("r_13", "r_19", input)
 
 #function to break up groups of continuous measurements, ensure that gaps are not considered
 #contains calc_support function
@@ -5884,7 +5884,7 @@ iterate_groups_combos <- function(up, down, input, timestep){
   return(iterate_groups_alldat)
 }
 
-iterate_groups("r_13", "r_19", input, min(30))
+#iterate_groups("r_13", "r_19", input, min(30))
 #function to take a list of routes and input dataset
 #contains group iteration function
 #for loop to iterate through full list of combinations of up and downstream locations
@@ -5910,7 +5910,7 @@ calculate_hierarchy_combos <- function(routes, input, timestep){
   return(final_output)
 }
 
-calculate_hierarchy_combos(routes_w32, input, min(30))
+#calculate_hierarchy_combos(routes_w32, input, min(30))
 
 fantastic_four_combos <- function(routes, shed){
   theFour <- c("30mins", "hourly", "4hr", "daily")
@@ -6442,7 +6442,7 @@ output$points <- sum(sub$Frequency)
 return(sequence_df)}
 }
 
-calc_support_combos("r_13", "r_19", input)
+#calc_support_combos("r_13", "r_19", input)
 
 calc_props <- function(routes, shed){
   full_combos <- fantastic_four_combos(routes, shed)
@@ -6495,7 +6495,7 @@ test <- calc_props(all_combos_routes, "W3")
 determined_directions <- test
 ```
 
-```{r making-network-graphs}
+```{r making-my-first-graph!}
 #figure out how to display results of testing all possible combinations
 #output the highest downstream for each upstream
 
@@ -6554,7 +6554,7 @@ test %>%
   pivot_wider(id_cols = down1, names_from = timescale, values_from = count)
 ```
 What if I make a graph using every connection, and weighted by the prop value, then put it through the greedy algorithm?
-```{r}
+```{r full-graph-W3}
 #create full set of edges
 edges2 <- test %>% 
   filter(timescale == "30mins") %>% 
@@ -6629,7 +6629,7 @@ test %>%
   filter(timescale == "30mins", up == "r_10") %>% View()
 ```
 
-```{r}
+```{r figuring-out-ggplot-for-graphs}
 p_load(ggnetwork, intergraph)
 
 ggmst <- fortify(mst, layout = igraph::layout_nicely(mst))
@@ -6657,7 +6657,7 @@ as_adjacency_matrix(mst)
 ```
 
 Try JP's idea, weight by difference in pk
-```{r}
+```{r weighted-by-differences}
 up_pks <- pks_w3 %>% 
   select(ID, pk) %>% 
   mutate(ID = paste0("r_",ID)) %>% 
@@ -6814,7 +6814,7 @@ as_adjacency_matrix(treez)
 ```
 
 Iterate through this tree method, removing the most connected sensors
-```{r}
+```{r unfinished-pruning-based-on-optrees}
 
 nodes <- as.numeric(substr(V(network)$name,3,4))
 which(nodes == 12)
@@ -6873,7 +6873,7 @@ n <- 26
 5/22/25
 After big meeting with JP and Kevin, determine the best chain, and see how that does in analysis
 - simple path- does not visit the same node or vertex twice
-```{r}
+```{r construction-the-perfect-chain}
 #calculate the shortest, simple path
 all_simple_paths
 shortest_paths
@@ -6898,6 +6898,20 @@ distances(network)
 install.packages("TSP")
 library(TSP)
 
+keyz <- 
+  test %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) #%>% as.matrix() %>% unname()
+#create an accurate key, old one is WRONG!!!
+key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
+                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
+
+
 
 edgesT <- 
   test %>% 
@@ -6916,11 +6930,15 @@ set.seed(1)
 atsp <- as.ATSP(edgesT)
 
 # Insert a dummy node to get a path instead of a cycle
-#atsp <- insert_dummy(atsp, label = "dummy")
+atsp <- insert_dummy(atsp, label = "dummy")
 tsp1 <- reformulate_ATSP_as_TSP(atsp)
+
+#how to view the distance matrix
+as.dist(tsp1)
 # Solve using nearest_insertion (heuristic that works with ATSPs)
-tour <- solve_TSP(tsp1, method = "cheapest_insertion")
+tour <- solve_TSP(tsp1, method = "nn")
 tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
+as.integer(tour)
 #cheapest insertion gives the same answer every time I think, 
 #nearest insertion is non-deterministic
 
@@ -6933,17 +6951,20 @@ edges <- cbind(path[-length(path)], path[-1])
 chain_graph <- graph_from_edgelist(edges, directed = TRUE)
 plot(chain_graph)
 
+#parent -> child
+
 #convert my chain back into the sensor ids, run through scoring algorithm, OR just get histogram of the prop values from those combinations
-opt_routes <- as.data.frame(edges) %>% 
+opt_routes <- 
+  as.data.frame(edges) %>% 
   rename("parent" = V2, "child" = V1) %>% 
- rename(new_nodes = child) %>% 
-  left_join(key, by = "new_nodes") %>% 
-  rename(child = old_nodes,
-         done = new_nodes,
-         new_nodes = parent) %>% 
-  left_join(key, by = "new_nodes") %>% 
-  rename(done2 = new_nodes,
-         parent = old_nodes) %>% 
+ rename(node_ID = child) %>% 
+  left_join(key2, by = "node_ID") %>% 
+  rename(child = sensor_ID,
+         done = node_ID,
+         node_ID = parent) %>% 
+  left_join(key2, by = "node_ID") %>% 
+  rename(done2 = node_ID,
+         parent = sensor_ID) %>% 
   select(parent, child)
 
   mutate(across(as.data.frame(edges)), key) 
@@ -6969,7 +6990,15 @@ routes_graph <- opt_routes %>%
 all_graph_combo <- calc_props(routes_graph, "W3") %>% 
     mutate("hierarchy" = "Graph chain")
 
-#View(all_graph_combo)
+all_graph_combo %>% 
+  filter(timescale == "30mins") %>% 
+  group_by(timescale) %>% 
+  summarise(sum(prop))
+
+all_pk_combo %>% 
+  filter(timescale == "30mins", shed == "W3") %>% 
+  group_by(timescale) %>% 
+  summarise(sum(prop))
 
 # all_pk_combo <- rbind(calc_props(routes_w3, "W3"),
 #                 calc_props(routes_fb, "FB"),
@@ -7013,14 +7042,151 @@ all_graph_combo %>% filter(timescale == "30mins") %>% View()
 ```
 
 Iterate through all methods to calculate a chain
-```{r}
+```{r all-methods-from-docs}
 methods <- c("identity", "random", "nearest_insertion",
   "cheapest_insertion", "farthest_insertion", "arbitrary_insertion",
   "nn", "repetitive_nn", "two_opt")
 
-tours <- lapply(methods, FUN = function(m) solve_TSP(tsp1, method = m))
+tours <- lapply(methods, FUN = function(m) filter_ATSP_as_TSP_dummies(solve_TSP(tsp1, method = m), atsp))
+tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
+
 names(tours) <- methods
 ```
+
+5/25/25: Figured out that the key was wrong! My chains are actually being optimized correctly; make a chunk to test every method, and plot the results so I can use the best
+```{r finding-best-method}
+#define all possible methods
+#removed 3 methods
+methods <- c("nearest_insertion", "random",
+  "cheapest_insertion", "farthest_insertion", "arbitrary_insertion",
+  "nn", "repetitive_nn")
+
+methods <- c("random",
+  "cheapest_insertion")
+
+#set up edges and distance matrix, convert to TSP object
+edgesT <- 
+  test %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) %>% as.matrix() %>% unname()
+
+# Convert to TSP object
+atsp <- as.ATSP(edgesT)
+
+# reformat from atsp to tsp
+tsp1 <- reformulate_ATSP_as_TSP(atsp)
+
+#FOR LOOP TO ITERATE THROUGH METHODS
+for(i in 1:length(methods)){
+  tour <- solve_TSP(atsp, method = methods[i])
+  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
+
+  # Extract path, removing dummy node
+  path <- as.integer(tour)
+  path <- path[labels(tour)[path] != "dummy"]
+  #convert edges to format 
+  edges <- cbind(path[-length(path)], path[-1])
+  
+  #apply key to convert nodes to sensor IDs for algorithm
+opt_routes <- 
+  as.data.frame(edges) %>% 
+  rename("parent" = V2, "child" = V1) %>% 
+ rename(node_ID = child) %>% 
+  left_join(key2, by = "node_ID") %>% 
+  rename(child = sensor_ID,
+         done = node_ID,
+         node_ID = parent) %>% 
+  left_join(key2, by = "node_ID") %>% 
+  rename(done2 = node_ID,
+         parent = sensor_ID) %>% 
+  select(parent, child)
+
+#prepare routes for algorithm
+routes_graph <- opt_routes %>% 
+  rename("up" = child,
+         "down" = parent) %>% drop_na()
+
+chain_output <- calc_props(routes_graph, "W3") %>% 
+    mutate("method" = methods[i])
+
+    if(i == 1) all_chain_outputs <- chain_output
+    if(i > 1) all_chain_outputs <- rbind(all_chain_outputs, chain_output)
+}
+
+#PLOT THE OUTPUT OF LOOP
+shed_colors <- c("#397367", "#FFD166", "#7E6B8F")
+
+#plots for committee meeting
+all_chain_outputs %>% 
+  filter(timescale %in% c("30mins", "daily")#, hierarchy == "Flow Permanence"
+         ) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(color = method), alpha = 0.5)+
+    geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  ylim(c(0, 6.25))+
+  xlim(c(0,1))+
+  labs(title = "Distributions of Proportion of time Sequence Followed",
+       subtitle = "0011 and 1100 removed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  facet_grid(~timescale)
+
+```
+
+```{r}
+reference <- rbind(all_position_combo,all_pk_combo) %>% 
+  filter(shed == "W3", timescale %in% c("30mins", "daily")) %>% 
+  rename("method" = hierarchy)
+
+
+all_chain_outputs %>% 
+  filter(timescale %in% c("30mins", "daily")) %>%
+  rbind(reference) %>% 
+  filter(method != "Relative Position") %>%  
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(color = method), alpha = 0.5)+
+    #geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  #ylim(c(0, 6.25))+
+  xlim(c(0,1))+
+  labs(title = "Distributions of Proportion of time Sequence Followed",
+       subtitle = "0011 and 1100 removed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  facet_grid(~timescale)
+
+#plot ecdf 
+#Kevin thought that ecdf might look good!
+all_chain_outputs %>% 
+  filter(timescale %in% c("30mins", "daily")) %>%
+  rbind(reference) %>% 
+  filter(method != "Relative Position") %>% 
+  #filter(timescale == "30mins") %>% 
+  ggplot(aes(prop, color = method)) +
+  geom_hline(yintercept = 0.5, alpha = 0.5, color = "grey", lwd = 1)+
+    geom_vline(xintercept = 0.5, alpha = 0.5, color = "grey", lwd = 1)+
+  stat_ecdf(geom = "step")+
+  theme_minimal()+
+  labs(x = "Prop",
+       y = "Percentage of values less than or equal",
+       title = "How often do adjacent sensors follow a hierarchy?")+
+  # scale_color_manual(values = real_colors,
+  #                    name = "Organizing Scheme")+
+  facet_grid(~timescale)#+
+  lims(x = c(0.5,1),
+       y = c(0.5, 1))
+```
+
 
 Try calculating transfer energy
 ```{r experimenting-transfer-energy}
@@ -7740,8 +7906,6 @@ just2 %>%
     geom_vline(xintercept = 0.5, alpha = 0.5, color = "grey", lwd = 1)+
   stat_ecdf(geom = "line")+
   theme_minimal()+
-  
-
   labs(x = "Prop",
        y = "Percentage of values less than or equal",
        title = "How often do adjacent sensors follow a hierarchy?")+
