@@ -93,7 +93,7 @@ write_csv(input_zz, "calc_support_inputs_zz.csv")
       
 ```
 
-```{r}
+```{r define-functions}
 calc_support_combos <- function(up, down, input){
 #inputs to function- comment out in final version
 # i <- 4
@@ -298,45 +298,31 @@ return(un_split)
 }
 ```
 
-
-```{r}
-#set routes for all 3 watersheds
-routes_w3 <- pks_w3 %>% 
-    filter(ID %in% W3_IDs) %>% 
-  arrange(desc(pk)) %>% 
-  mutate(down = lag(ID)) %>% 
-  rename("up" = ID) %>% drop_na() %>% 
-  select(up, down)
-
+#Set up for analysis
+```{r W3}
 input <- rbind(bind23, bind24) %>%
   filter(wshed == "W3", mins %in% c(0, 30)) %>%
   select(datetime, binary, ID) %>%
   #mutate(ID = paste0("r_",ID)) %>% 
   pivot_wider(names_from = ID, values_from = binary)
 
-combos <- unique(c(routes_w3$up, routes_w3$down))
+combos <- W3_IDs
+
+#create empty list to hold repeated node IDs
 zzz <- length(combos)
-rep(combos, zzz)
 all_list <- c()
 for(z in 1:zzz){
   all_list <- c(all_list, rep(combos[z], zzz))
 }
-
-all_combos_routes <- data.frame("up" = rep(combos, zzz),
+#create data frame with all possible combinations
+W3_combos_routes <- data.frame("up" = rep(combos, zzz),
                                 "down" = all_list)
-#run calc_support for all sheds and timesteps for relative position
-W3_all_combos <- calc_props(all_combos_routes, "W3")
+#Run suite of functions to determine proportion of time that state changes follow the parent -> child relationship
+W3_all_combos <- calc_props(W3_combos_routes, "W3")
 ```
 
 ```{r FB}
 #set routes for all 3 watersheds
-routes_fb <- pks_fb %>% 
-    filter(ID %in% FB_IDs) %>% 
-  arrange(desc(pk)) %>% 
-  mutate(down = lag(ID)) %>% 
-  rename("up" = ID) %>% drop_na() %>% 
-  select(up, down)
-
 input <- rbind(bind23, bind24) %>%
   filter(wshed == "FB", mins %in% c(0, 30)) %>%
   select(datetime, binary, ID) %>%
@@ -395,11 +381,11 @@ methods <- c("nearest_insertion", "random",
   "cheapest_insertion", "farthest_insertion", "arbitrary_insertion",
   "nn", "repetitive_nn")
 
-methods <- c("random",
-  "cheapest_insertion")
+# methods <- c("random",
+#   "cheapest_insertion")
 
 #set up edges and distance matrix, convert to TSP object
-edgesT <- 
+edges_W3 <- 
   W3_all_combos %>% 
   filter(timescale == "30mins") %>% 
   ungroup() %>% 
@@ -425,11 +411,12 @@ key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
                    node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
 
 # Convert to TSP object
-atsp <- as.ATSP(edgesT)
 
 #FOR LOOP TO ITERATE THROUGH METHODS
 for(i in 1:length(methods)){
-    #atsp <- insert_dummy(atsp, label = "dummy")
+  atsp <- as.ATSP(edges_W3)
+
+    atsp <- insert_dummy(atsp, label = "dummy")
   tour <- solve_TSP(atsp, method = methods[i], two_opt = TRUE)
     #tour <- solve_TSP(tour, method = "two_opt")
 
@@ -467,10 +454,6 @@ chain_output <- calc_props(routes_graph, "W3") %>%
     if(i > 1) all_chain_outputs <- rbind(all_chain_outputs, chain_output)
 }
 
-#PLOT THE OUTPUT OF LOOP
-shed_colors <- c("#397367", "#FFD166", "#7E6B8F")
-
-#plots for committee meeting
 all_chain_outputs %>% 
   filter(timescale %in% c("30mins", "daily")#, hierarchy == "Flow Permanence"
          ) %>% 
@@ -512,7 +495,7 @@ key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
 #set up edges and distance matrix, convert to TSP object
 
 #IF there are NAs, replace them with 1; results from when there is a node that flowed the whole time it was deployed along with another, and not deployed for part of the other one's deployment; happened most in FB
-edgesT <- 
+edges_FB <- 
   FB_all_combos %>% 
   filter(timescale == "30mins") %>% 
   ungroup() %>% 
@@ -527,16 +510,11 @@ edgesT <-
   ) %>%
     select(-up) %>% as.matrix() %>% unname()
 
-# Convert to TSP object
-atsp <- as.ATSP(edgesT)
-
-# reformat from atsp to tsp
-#tsp1 <- reformulate_ATSP_as_TSP(atsp)
-
 #FOR LOOP TO ITERATE THROUGH METHODS
 for(i in 1:length(methods)){
-  #atsp <- insert_dummy(atsp, label = "dummy")
-  tour <- solve_TSP(atsp, method = methods[i], two_opt = TRUE)
+  atsp <- as.ATSP(edges_FB)
+  atsp <- insert_dummy(atsp, label = "dummy")
+  tour <- solve_TSP(atsp, method = methods[i])#, two_opt = TRUE)
   #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
 
   # Extract path, removing dummy node
@@ -584,7 +562,6 @@ geom_density(aes(color = method), alpha = 0.5)+
   ylim(c(0, 6.25))+
   xlim(c(0,1))+
   labs(title = "Distributions of Proportion of time Sequence Followed",
-       subtitle = "0011 and 1100 removed",
        x = "Proportion of time followed",
        y = "Density")+
   facet_grid(~timescale)
@@ -614,7 +591,7 @@ key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
 #set up edges and distance matrix, convert to TSP object
 
 #IF there are NAs, replace them with 1; results from when there is a node that flowed the whole time it was deployed along with another, and not deployed for part of the other one's deployment; happened most in FB
-edgesT <- 
+edges_ZZ <- 
   ZZ_all_combos %>% 
   filter(timescale == "30mins") %>% 
   ungroup() %>% 
@@ -629,15 +606,15 @@ edgesT <-
   ) %>%
     select(-up) %>% as.matrix() %>% unname()
 
-# Convert to TSP object
-atsp <- as.ATSP(edgesT)
+
 
 # reformat from atsp to tsp
 #tsp1 <- reformulate_ATSP_as_TSP(atsp)
 
 #FOR LOOP TO ITERATE THROUGH METHODS
-rm(ZZ_chain_outputs)
 for(i in 1:length(methods)){
+  # Convert to TSP object
+atsp <- as.ATSP(edges_ZZ)
   
   atsp <- insert_dummy(atsp, label = "dummy")
   tour <- solve_TSP(atsp, method = methods[i])#, two_opt = TRUE)
