@@ -18,7 +18,7 @@ Not sure if I should include the dummy or not; FB is a lot better with a dummy, 
 ```{r setup}
 #loading packages
 library(pacman)
-p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,ggnewscale, sf, rgeoboundaries, elevatr, patchwork, ggspatial, zoo, igraph, TSP, ggnetwork, intergraph)
+p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,ggnewscale, sf, elevatr, patchwork, ggspatial, zoo, igraph, TSP, ggnetwork, intergraph, ggpubr)
 #whitebox::install_whitebox()
 
 #reading in final format data for summer 23
@@ -1351,8 +1351,9 @@ four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
 fixed_combined %>% 
   ggplot(aes(x = prop, y = after_stat(density))) +
 geom_density(aes(color = method, fill = method), alpha = 0.5)+
+    stat_central_tendency(aes(color = method), type = "median", linetype = "dashed")+
     #geom_density(alpha = 0.5, lty = 3)+
-      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+     # geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
     theme_bw()+
   #ylim(c(0, 6.25))+
   xlim(c(0,1))+
@@ -1392,5 +1393,70 @@ ggplot(ggmst, aes(x = x, y = y, xend = xend, yend = yend)) +
   geom_nodetext(aes(label = name),
                 fontface = "bold", color = "white", size = 1) +
   theme_blank()
+```
+
+#How well different sequences work through time and along the hydrograph
+```{r calculate-how-many-follow-sequence}
+sequential <- input_w3 %>% 
+  left_join(pks_w3, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed.x, wshed.y, mins, datetime)) %>% 
+  arrange(desc(pk)) %>% 
+  mutate("downstream" = lag(binary),
+         "following" = downstream - binary) %>% 
+  filter(following != -1) %>% 
+    summarise(count_non = length(following))
+
+total <- input_w3 %>% 
+  left_join(pks_w3, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed.x, wshed.y, mins, datetime)) %>% 
+  arrange(desc(pk)) %>% 
+  mutate("downstream" = lag(binary),
+         "following" = downstream - binary) %>% 
+    summarise(count_all = length(following))
+
+final <- left_join(sequential, total, by = "datetime") %>% 
+  mutate(prop = count_non/count_all)
+
+
+#create a reference dataframe with the sensor ID, then the number in the sequence
+```
+```{r plot-along-discharge}
+ggplot(q_23_f, aes(x  = DATETIME, y = Q_mm_day))+
+  geom_line()+
+  labs(title = "Discharge from W3, July to Nov 2023",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()
+
+ggplot(q_24_f, aes(x  = datetime, y = Q_mmperday))+
+  geom_line()+
+  labs(title = "Discharge from W3, May to July 2024",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()
+
+q_23_bind <- 
+  q_23_f %>% 
+  select(DATETIME, Q_mm_day) %>% 
+  rename("datetime" = DATETIME
+         )
+
+q_24_bind <- 
+  q_24_f %>% 
+  select(datetime, Q_mmperday) %>% 
+  rename("Q_mm_day" = Q_mmperday)
+
+q_24_bind %>% 
+  inner_join(final, by = "datetime") %>% 
+  ggplot(aes(x  = datetime, y = Q_mm_day))+
+  geom_line(aes(color = prop))+
+  labs(title = "Discharge from W3, 2024",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()+
+  scale_color_continuous(type = "viridis")+
+                       theme(rect = element_rect(fill = "transparent", color = NA))
 ```
 
