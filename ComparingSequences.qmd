@@ -223,8 +223,9 @@ calculate_hierarchy_combos <- function(routes, input, timestep){
   return(final_output)
 }
 
+#fantastic four function has been modified, to do average daily state. Removed hourly and 4 hr time blocks
 fantastic_four_combos <- function(routes, shed){
-  theFour <- c("30mins", "hourly", "4hr", "daily")
+  theFour <- c("30mins", "daily")
   
   for(q in 1:length(theFour)){
     #if statements to detect timescale, calculate appropriate inputs
@@ -237,29 +238,22 @@ fantastic_four_combos <- function(routes, shed){
       pivot_wider(names_from = ID, values_from = binary)
     timestep <- minutes(30)
   } 
-  else if(timescale == "hourly"){
-    input <- rbind(input_w3, input_fb, input_zz) %>%
-      filter(wshed == shed, mins %in% c(0)) %>%
-      select(datetime, binary, ID) %>%
-      mutate(ID = paste0("r_", ID)) %>%
-      pivot_wider(names_from = ID, values_from = binary)
-    timestep <- hours(1)
-  } 
-  else if(timescale == "4hr"){
-    input <- rbind(input_w3, input_fb, input_zz) %>%
-      mutate(hour = hour(datetime)) %>% 
-      filter(wshed == shed, hour %in% c(0,4,8,12,16,20,24), mins %in% c(0)) %>%
-      select(datetime, binary, ID) %>%
-      mutate(ID = paste0("r_", ID)) %>%
-      pivot_wider(names_from = ID, values_from = binary)
-    timestep <- hours(4)
-  } 
   else if(timescale == "daily"){
     input <- rbind(input_w3, input_fb, input_zz) %>%
-      mutate(hour = hour(datetime)) %>% 
-      filter(wshed == shed, hour %in% c(12), mins %in% c(0)) %>%
+      filter(wshed == shed) %>% 
+      mutate(
+             "day" = day(datetime),
+             "month" = month(datetime),
+             "year" = year(datetime)) %>% 
+      group_by(day, month, year, ID) %>%
+      summarise(avg_state = mean(binary)) %>% 
+      ungroup() %>% 
+      mutate(avg_state = round(avg_state)) %>% 
+      rename("binary" = avg_state) %>% 
+      mutate("datetime" = ymd_hms(paste0(year,"-",month,"-",day," ","00:00:00"))) %>% 
       select(datetime, binary, ID) %>%
       mutate(ID = paste0("r_", ID)) %>%
+          arrange(datetime) %>% 
       pivot_wider(names_from = ID, values_from = binary)
     timestep <- days(1)
   } 
@@ -701,12 +695,126 @@ For final plots for tomorrow, keep arbitrary insertion and cheapest insertion
 ```{r generalized-function}
 #define all possible methods
 #removed 3 methods
-methods = c("nearest_insertion", "random",
+all_methods = c("nearest_insertion", "random",
   "cheapest_insertion", "farthest_insertion", "arbitrary_insertion",
   "nn", "repetitive_nn")
 #methods <- c("random", "cheapest_insertion")
 
-general_graph <- function(combos, shed, methods = c("random", "cheapest_insertion")){
+general_graph <- function(combos, 
+                          shed, 
+                          methods = c("random", "cheapest_insertion"),
+                          two_opt = TRUE){
+#combos <- ZZ_IDs
+zzz <- length(combos)
+rep(combos, zzz)
+all_list <- c()
+for(z in 1:zzz){
+  all_list <- c(all_list, rep(combos[z], zzz))
+}
+
+all_combos_routes <- data.frame("up" = rep(combos, zzz),
+                                "down" = all_list)
+#run calc_support for all sheds and timesteps for relative position
+allcombosIn <- calc_props(all_combos_routes, shed)
+
+#methods <- c("random", "cheapest_insertion")
+keyz <- 
+  allcombosIn %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) #%>% as.matrix() %>% unname()
+#create an accurate key, old one is WRONG!!!
+key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
+                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
+#set up edges and distance matrix, convert to TSP object
+
+#IF there are NAs, replace them with 1; results from when there is a node that flowed the whole time it was deployed along with another, and not deployed for part of the other one's deployment; happened most in FB
+edgesIn <- 
+  allcombosIn %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>% #%>% #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    mutate(
+    across(everything(), ~replace_na(.x, 1))
+  ) %>%
+    select(-up) %>% as.matrix() %>% unname()
+
+
+
+# reformat from atsp to tsp
+#tsp1 <- reformulate_ATSP_as_TSP(atsp)
+
+#FOR LOOP TO ITERATE THROUGH METHODS
+for(i in 1:length(methods)){
+  # Convert to TSP object
+atsp <- as.ATSP(edgesIn)
+  
+  atsp <- insert_dummy(atsp, label = "dummy")
+  tour <- solve_TSP(atsp, method = methods[i], 
+                    start = length(combos) + 1, two_opt = two_opt)
+  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
+
+  # Extract path, removing dummy node
+   path <- unname(cut_tour(tour, "dummy"))
+  #convert edges to format 
+  edges <- cbind(path[-length(path)], path[-1])
+  
+  #apply key to convert nodes to sensor IDs for algorithm
+opt_routes <- 
+  as.data.frame(edges) %>% 
+  rename("parent" = V2, "child" = V1) %>% 
+ rename(node_ID = child) %>% 
+  left_join(key2, by = "node_ID") %>% 
+  rename(child = sensor_ID,
+         done = node_ID,
+         node_ID = parent) %>% 
+  left_join(key2, by = "node_ID") %>% 
+  rename(done2 = node_ID,
+         parent = sensor_ID) %>% 
+  select(parent, child)
+
+#prepare routes for algorithm
+routes_graph <- opt_routes %>% 
+  rename("up" = child,
+         "down" = parent) %>% drop_na()
+
+chain_output <- calc_props(routes_graph, shed) %>% 
+    mutate("method" = methods[i])
+
+    if(i == 1) ZZ_chain_outputs <- chain_output
+    if(i > 1) ZZ_chain_outputs <- rbind(ZZ_chain_outputs, chain_output)
+}
+return(ZZ_chain_outputs)
+}
+
+ZZ_graph_solution <- general_graph(ZZ_IDs, "ZZ")
+
+ZZ_graph_solution %>% 
+  filter(timescale %in% c("30mins", "daily")#, hierarchy == "Flow Permanence"
+         ) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(color = method), alpha = 0.5)+
+    geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  ylim(c(0, 6.25))+
+  xlim(c(0,1))+
+  labs(title = "Distributions of Proportion of time Sequence Followed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  facet_grid(~timescale)
+
+#separate function to output the path?
+chain_solution <- function(combos, shed, methods = c("random", "cheapest_insertion")){
 #combos <- ZZ_IDs
 zzz <- length(combos)
 rep(combos, zzz)
@@ -768,51 +876,521 @@ atsp <- as.ATSP(edgesIn)
   # Extract path, removing dummy node
    path <- unname(cut_tour(tour, "dummy"))
   #convert edges to format 
-  edges <- cbind(path[-length(path)], path[-1])
+  #edges <- cbind(path[-length(path)], path[-1])
+   output <- data.frame("node_ID" = path) %>% 
+     left_join(key2, by = "node_ID") %>% 
+     mutate(method = methods[i])
   
-  #apply key to convert nodes to sensor IDs for algorithm
-opt_routes <- 
-  as.data.frame(edges) %>% 
-  rename("parent" = V2, "child" = V1) %>% 
- rename(node_ID = child) %>% 
-  left_join(key2, by = "node_ID") %>% 
-  rename(child = sensor_ID,
-         done = node_ID,
-         node_ID = parent) %>% 
-  left_join(key2, by = "node_ID") %>% 
-  rename(done2 = node_ID,
-         parent = sensor_ID) %>% 
-  select(parent, child)
-
-#prepare routes for algorithm
-routes_graph <- opt_routes %>% 
-  rename("up" = child,
-         "down" = parent) %>% drop_na()
-
-chain_output <- calc_props(routes_graph, shed) %>% 
-    mutate("method" = methods[i])
-
-    if(i == 1) ZZ_chain_outputs <- chain_output
-    if(i > 1) ZZ_chain_outputs <- rbind(ZZ_chain_outputs, chain_output)
+    if(i == 1) ZZ_chain_outputs <- output
+    if(i > 1) ZZ_chain_outputs <- rbind(ZZ_chain_outputs, output)
 }
 return(ZZ_chain_outputs)
 }
 
-ZZ_graph_solution <- general_graph(ZZ_IDs, "ZZ")
+chains <- chain_solution(ZZ_IDs, "ZZ")
 
-ZZ_graph_solution %>% 
-  filter(timescale %in% c("30mins", "daily")#, hierarchy == "Flow Permanence"
-         ) %>% 
+chains_test <- chains %>% filter(method == "cheapest_insertion")
+edges <- cbind(chains_test$node_ID[-length(chains_test$node_ID)], chains_test$node_ID[-1])
+
+chain_graph <- graph_from_edgelist(edges, directed = TRUE)
+
+V(chain_graph)$labels <- chains_test$sensor_ID
+
+ggmst <- fortify(chain_graph, layout = igraph::layout_as_tree(chain_graph))
+ggplot(ggmst, aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_edges(color = "grey", arrow = grid::arrow(length = unit(6, "pt"),
+                                                 type = "open")) +
+  geom_nodes(color = "black", size = 3) +
+  geom_nodetext(aes(label = labels),
+                fontface = "bold", color = "white", size = 1) +
+  theme_blank()
+
+order <- ggmst %>% 
+  arrange(desc(y))
+
+unique(order$labels)
+```
+
+#graph theory
+```{r}
+all_graph_solutions <- rbind(general_graph(W3_IDs, "W3"),
+                             general_graph(FB_IDs, "FB"),
+                             general_graph(ZZ_IDs, "ZZ"))
+
+showcase <- rbind(general_graph(W3_IDs, "W3", all_methods),
+                             general_graph(FB_IDs, "FB", all_methods),
+                             general_graph(ZZ_IDs, "ZZ", all_methods))
+
+showcase %>% 
   ggplot(aes(x = prop, y = after_stat(density))) +
-geom_density(aes(color = method), alpha = 0.5)+
-    geom_density(alpha = 0.5, lty = 3)+
+geom_density(aes(color = method, fill = method), alpha = 0.5)+
+    #geom_density(alpha = 0.5, lty = 3)+
       geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
     theme_bw()+
-  ylim(c(0, 6.25))+
+  #ylim(c(0, 6.25))+
   xlim(c(0,1))+
   labs(title = "Distributions of Proportion of time Sequence Followed",
        x = "Proportion of time followed",
        y = "Density")+
-  facet_grid(~timescale)
+  facet_grid(shed~timescale)
+```
+
+
+My big graph theory solution provides the random hierarhcy and graph theory solution. All I need is the proportion of time flowing and maybe one based on topography... maybe drainage area or TWI?
+#proportion of time flowing
+```{r flow-permanence-W3}
+#just summer 2023
+data_23$binary <- 1
+data_23$binary[data_23$wetdry == "dry"] <- 0
+#make binary column
+data_24$binary <- 1
+data_24$binary[data_24$wetdry == "dry"] <- 0
+
+pks_23 <- data_23 %>% 
+    mutate(mins = minute(datetime)) %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, lat, long, binary) %>% 
+    group_by(ID) %>% 
+    #slice_sample(prop = 0.8) %>% 
+  rename("DATETIME" = datetime) %>% 
+  #left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  summarise(pk = sum(binary)/length(binary)) %>% 
+  select(ID, pk) %>% 
+  ungroup()
+#just summer 2024
+pks_24 <- data_24 %>% 
+    mutate(mins = minute(datetime)) %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, number, lat, long, binary) %>% 
+    group_by(number) %>% 
+  rename("DATETIME" = datetime, "ID" = number) %>% 
+  #left_join(select(q_23_f, c(DATETIME, Q_mm_day)), by = "DATETIME") %>% 
+  summarise(pk = sum(binary)/length(binary)) %>% 
+  select(ID, pk) %>% 
+  ungroup()
+
+both <- inner_join(pks_23, pks_24, by = "ID")
+ggplot()+
+  geom_point(data = both,aes(x = pk.x, y = pk.y))+
+  labs(title = "Change in pk from '23 to '24, W3",
+       x = "2023",
+       y = "2024")+
+  geom_abline(slope=1, intercept=0)+
+  theme_classic()
+
+#both summers
+#just rbind summers 23 and 24
+precalc_24 <- data_24 %>% 
+    mutate(mins = minute(datetime)) %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, number, lat, long, binary) %>% 
+    group_by(number) %>% 
+  rename("DATETIME" = datetime, "ID" = number)
+  
+pks_w3 <- data_23 %>% 
+    mutate(mins = minute(datetime)) %>% 
+  filter(wshed == "W3", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, lat, long, binary) %>% 
+    group_by(ID) %>% 
+    #slice_sample(prop = 0.8) %>% 
+  rename("DATETIME" = datetime) %>%
+  rbind(precalc_24) %>% 
+  summarise(pk = sum(binary)/length(binary)) %>% 
+  select(ID, pk) %>% 
+  ungroup() %>% 
+  mutate(wshed = "W3")
+```
+```{r flow-permanence-FB}
+#both summers
+#just rbind summers 23 and 24
+precalc_24 <- data_24 %>% 
+    mutate(mins = minute(datetime)) %>% 
+  filter(wshed == "FB", mins %in% c(0, 30)) %>% 
+  select(datetime, number, lat, long, binary) %>% 
+    group_by(number) %>% 
+  rename("DATETIME" = datetime, "ID" = number)
+  
+pks_fb <- data_23 %>% 
+    mutate(mins = minute(datetime)) %>% 
+  filter(wshed == "FB", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, lat, long, binary) %>% 
+    group_by(ID) %>% 
+    #slice_sample(prop = 0.8) %>% 
+  rename("DATETIME" = datetime) %>%
+  rbind(precalc_24) %>% 
+  summarise(pk = sum(binary)/length(binary)) %>% 
+  select(ID, pk) %>% 
+  ungroup() %>% 
+  mutate(wshed = "FB")
+```
+```{r flow-permanence-ZZ}
+precalc_24 <- data_24 %>% 
+    mutate(mins = minute(datetime)) %>% 
+  filter(wshed == "ZZ", mins %in% c(0, 30)) %>% 
+  select(datetime, number, lat, long, binary) %>% 
+    group_by(number) %>% 
+  rename("DATETIME" = datetime, "ID" = number)
+  
+pks_zz <- data_23 %>% 
+    mutate(mins = minute(datetime)) %>% 
+  filter(wshed == "ZZ", mins %in% c(0, 30)) %>% 
+  select(datetime, ID, lat, long, binary) %>% 
+    group_by(ID) %>% 
+    #slice_sample(prop = 0.8) %>% 
+  rename("DATETIME" = datetime) %>%
+  rbind(precalc_24) %>% 
+  summarise(pk = sum(binary)/length(binary)) %>% 
+  select(ID, pk) %>% 
+  ungroup() %>% 
+  mutate(wshed = "ZZ")
+```
+```{r proportion-of-time-flowing-analysis}
+routes_w3 <- pks_w3 %>% 
+    filter(ID %in% W3_IDs) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+routes_fb <- pks_fb %>%
+    filter(ID %in% FB_IDs) %>% 
+  filter(pk != 1) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+routes_zz <- pks_zz %>%
+    filter(ID %in% ZZ_IDs) %>% 
+  filter(pk != 1) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+all_pk <- rbind(calc_props(routes_w3, "W3"),
+                calc_props(routes_fb, "FB"),
+                calc_props(routes_zz, "ZZ")) %>% 
+  mutate("method" = "Flow Permanence")
+```
+
+#TWI
+```{r locs-from-arc}
+#get snapped sensor locations from extracted values from arc
+w3_locs <- read_csv("./STIC_uaa/w32.csv")%>% 
+  select(ID, POINT_X, POINT_Y)
+fb_locs <- read_csv("./STIC_uaa/fb2.csv") %>% 
+  select(ID, POINT_X, POINT_Y)
+zz_locs <- read_csv("./STIC_uaa/zz1.csv")%>% 
+  select(ID, POINT_X, POINT_Y)
+```
+```{r tpi-W3}
+#flow accumulation/upslope drainage area at 3 m resolution calculated earlier in markdown
+flowacc_output <- "./HB/1m hydro enforced DEM/dem3m_flowacc.tif"
+
+#convert STIC data to a SpatVector data format
+locs_shape <- vect(w3_locs, 
+                   geom=c("POINT_X", "POINT_Y"), 
+                   crs = crs(rast(flowacc_output))) #set crs to NAD 83
+
+#calculate 10m DEM, then breach and fill
+dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
+m1 <- rast(dem)
+m10 <- aggregate(m1, 10)
+#save raster, because whitebox wants it is a files location instead of an object in R
+writeRaster(m10, "./w3_dems/10mdem.tif", overwrite = TRUE)
+
+
+breach_output <- "./w3_dems/10mdem_breach.tif"
+wbt_breach_depressions_least_cost(
+  dem = "./w3_dems/10mdem.tif",
+  output = breach_output,
+  dist = 10,
+  fill = TRUE)
+
+fill_output <- "./w3_dems/10mdem_fill.tif"
+wbt_fill_depressions_wang_and_liu(
+  dem = breach_output,
+  output = fill_output
+)
+
+#flow accumulation/drainage area
+flowacc_output <- "./w3_dems/10mdem_flowacc.tif"
+wbt_d_inf_flow_accumulation(input = fill_output,
+                            output = flowacc_output,
+                            out_type = "Specific Contributing Area")
+#Slope
+slope_output <- "./w3_dems/10mdem_slope.tif"
+wbt_slope(dem = fill_output,
+          output = slope_output,
+          units = "degrees")
+#calculate TPI
+tpi_output <- "./w3_dems/10mdem_tpi.tif"
+wbt_relative_topographic_position(
+    dem = fill_output, 
+    output = tpi_output, 
+    filterx=11, 
+    filtery=11)
+#TWI
+twi_output <- "./w3_dems/10mdem_twi.tif"
+wbt_wetness_index(sca = flowacc_output, #flow accumulation
+                  slope = slope_output,
+                  output = twi_output)
+
+w3_tpi <- extract(rast(tpi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+  rename("tpi" = `X10mdem_tpi`) %>% 
+  as_tibble()
+
+w3_twi <- extract(rast(twi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+  rename("twi" = `X10mdem_twi`) %>% 
+  as_tibble()
+
+w3_slope <- extract(rast(slope_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+  rename("slope" = `X10mdem_slope`) %>% 
+  as_tibble()
+
+```
+```{r tpi-fb}
+#flow accumulation/upslope drainage area at 3 m resolution calculated earlier in markdown
+flowacc_output <- "./HB/1m hydro enforced DEM/dem3m_flowacc.tif"
+
+#convert STIC data to a SpatVector data format
+locs_shape <- vect(fb_locs, 
+                   geom=c("POINT_X", "POINT_Y"), 
+                   crs = crs(rast(flowacc_output))) #set crs to NAD 83
+
+#calculate 10m DEM, then breach and fill
+dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
+m1 <- rast(dem)
+m10 <- aggregate(m1, 10)
+#save raster, because whitebox wants it is a files location instead of an object in R
+writeRaster(m10, "./w3_dems/10mdem.tif", overwrite = TRUE)
+
+
+breach_output <- "./w3_dems/10mdem_breach.tif"
+wbt_breach_depressions_least_cost(
+  dem = "./w3_dems/10mdem.tif",
+  output = breach_output,
+  dist = 10,
+  fill = TRUE)
+
+fill_output <- "./w3_dems/10mdem_fill.tif"
+wbt_fill_depressions_wang_and_liu(
+  dem = breach_output,
+  output = fill_output
+)
+
+#flow accumulation/drainage area
+flowacc_output <- "./w3_dems/10mdem_flowacc.tif"
+wbt_d_inf_flow_accumulation(input = fill_output,
+                            output = flowacc_output,
+                            out_type = "Specific Contributing Area")
+#Slope
+slope_output <- "./w3_dems/10mdem_slope.tif"
+wbt_slope(dem = fill_output,
+          output = slope_output,
+          units = "degrees")
+#calculate TPI
+tpi_output <- "./w3_dems/10mdem_tpi.tif"
+wbt_relative_topographic_position(
+    dem = fill_output, 
+    output = tpi_output, 
+    filterx=11, 
+    filtery=11)
+#TWI
+twi_output <- "./w3_dems/10mdem_twi.tif"
+wbt_wetness_index(sca = flowacc_output, #flow accumulation
+                  slope = slope_output,
+                  output = twi_output)
+
+fb_tpi <- extract(rast(tpi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+  rename("tpi" = `X10mdem_tpi`) %>% 
+  as_tibble()
+
+fb_twi <- extract(rast(twi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+  rename("twi" = `X10mdem_twi`) %>% 
+  as_tibble()
+
+fb_slope <- extract(rast(slope_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+  rename("slope" = `X10mdem_slope`) %>% 
+  as_tibble()
+```
+```{r tpi-zz}
+#flow accumulation/upslope drainage area at 3 m resolution calculated earlier in markdown
+flowacc_output <- "./HB/1m hydro enforced DEM/dem3m_flowacc.tif"
+
+#convert STIC data to a SpatVector data format
+locs_shape <- vect(zz_locs, 
+                   geom=c("POINT_X", "POINT_Y"), 
+                   crs = crs(rast(flowacc_output))) #set crs to NAD 83
+
+#calculate 10m DEM, then breach and fill
+dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
+m1 <- rast(dem)
+m10 <- aggregate(m1, 10)
+#save raster, because whitebox wants it is a files location instead of an object in R
+writeRaster(m10, "./w3_dems/10mdem.tif", overwrite = TRUE)
+
+
+breach_output <- "./w3_dems/10mdem_breach.tif"
+wbt_breach_depressions_least_cost(
+  dem = "./w3_dems/10mdem.tif",
+  output = breach_output,
+  dist = 10,
+  fill = TRUE)
+
+fill_output <- "./w3_dems/10mdem_fill.tif"
+wbt_fill_depressions_wang_and_liu(
+  dem = breach_output,
+  output = fill_output
+)
+
+#flow accumulation/drainage area
+flowacc_output <- "./w3_dems/10mdem_flowacc.tif"
+wbt_d_inf_flow_accumulation(input = fill_output,
+                            output = flowacc_output,
+                            out_type = "Specific Contributing Area")
+#Slope
+slope_output <- "./w3_dems/10mdem_slope.tif"
+wbt_slope(dem = fill_output,
+          output = slope_output,
+          units = "degrees")
+#calculate TPI
+tpi_output <- "./w3_dems/10mdem_tpi.tif"
+wbt_relative_topographic_position(
+    dem = fill_output, 
+    output = tpi_output, 
+    filterx=11, 
+    filtery=11)
+#TWI
+twi_output <- "./w3_dems/10mdem_twi.tif"
+wbt_wetness_index(sca = flowacc_output, #flow accumulation
+                  slope = slope_output,
+                  output = twi_output)
+
+zz_tpi <- extract(rast(tpi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+  rename("tpi" = `X10mdem_tpi`) %>% 
+  as_tibble()
+
+zz_twi <- extract(rast(twi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+  rename("twi" = `X10mdem_twi`) %>% 
+  as_tibble()
+
+zz_slope <- extract(rast(slope_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+  rename("slope" = `X10mdem_slope`) %>% 
+  as_tibble()
+```
+```{r topographic-wetness-index}
+routes_w3 <- w3_twi %>% 
+    filter(ID %in% W3_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange(desc(twi)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+routes_fb <- fb_twi %>% 
+    filter(ID %in% FB_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange(desc(twi)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down)
+
+routes_zz <- zz_twi %>% 
+    filter(ID %in% ZZ_IDs) %>% 
+  rename("up" = ID) %>%
+  arrange(desc(twi)) %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+all_twi <- rbind(calc_props(routes_w3, "W3"),
+                 calc_props(routes_fb, "FB"),
+                 calc_props(routes_zz, "ZZ")) %>% 
+  mutate("method" = "Topographic Wetness Index")
+
+```
+
+```{r combine-and-plot}
+four_colors <- c("#231f20", "#bb4430", "#7ebdc2", "#f3dfa2")
+
+rbind(all_graph_solutions,
+      all_pk,
+      all_twi) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(color = method, fill = method), alpha = 0.5)+
+    #geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  #ylim(c(0, 6.25))+
+  xlim(c(0,1))+
+  labs(title = "Distributions of Proportion of time Sequence Followed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  scale_fill_manual(values = four_colors,
+                     name = "Method")+
+  scale_color_manual(values = four_colors,
+                     name = "Method")+
+  facet_grid(shed~timescale)
+```
+```{r combine-and-plot-two}
+#fixing randomly generated sequence
+fixed_combined <- 
+rbind(general_graph(W3_IDs, "W3", methods = c("random"), two_opt = FALSE),
+      general_graph(W3_IDs, "W3", methods = c("cheapest_insertion"), two_opt = TRUE),
+      general_graph(FB_IDs, "FB", methods = c("random"), two_opt = FALSE),
+      general_graph(FB_IDs, "FB", methods = c("cheapest_insertion"), two_opt = TRUE),
+      general_graph(ZZ_IDs, "ZZ", methods = c("random"), two_opt = FALSE),
+      general_graph(ZZ_IDs, "ZZ", methods = c("cheapest_insertion"), two_opt = TRUE),
+      all_pk,
+      all_twi) 
+
+four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
+
+fixed_combined %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(color = method, fill = method), alpha = 0.5)+
+    #geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  #ylim(c(0, 6.25))+
+  xlim(c(0,1))+
+  labs(title = "Distributions of Proportion of time Sequence Followed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  scale_fill_manual(values = four_colors,
+                     name = "Method")+
+  scale_color_manual(values = four_colors,
+                     name = "Method")+
+  facet_grid(shed~timescale)
+```
+
+
+#explanation tile plot
+```{r}
+#all I need is the graph theory chain
+all_graph_solutions
+```
+
+#maps of where sequences work in space
+
+#map showing the sequence in space
+```{r}
+edges2 <- all_graph_solutions %>% 
+  filter(shed == "W3", method == "random", timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down) %>% as.matrix()
+chain_graph <- graph_from_edgelist(edges2, directed = TRUE)
+plot(chain_graph)
+
+ggmst <- fortify(chain_graph, layout = igraph::layout_as_tree(chain_graph))
+ggplot(ggmst, aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_edges(color = "grey", arrow = grid::arrow(length = unit(6, "pt"),
+                                                 type = "open")) +
+  geom_nodes(color = "black", size = 3) +
+  geom_nodetext(aes(label = name),
+                fontface = "bold", color = "white", size = 1) +
+  theme_blank()
 ```
 
