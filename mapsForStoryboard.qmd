@@ -8913,7 +8913,12 @@ PoT_res = eventPOT(q_23_plotting$Q_mm_day - bf$bf, threshold = 1, min.diff = 1)
 #plot the events
 plotEvents(data = q_23_plotting$Q_mm_day, events = PoT_res, xlab = "Index", ylab = "Flow (ML/day)", colpnt = "#E41A1C", colline = "#377EB8", main = "eventPOT")
 
-#now, extract just the start column, then get each window and run through scoring algorithm
+
+
+limbs(data = q_23_plotting$Q_mm_day, 
+               dates =NULL, 
+               events = PoT_res, 
+               to.plot = FALSE)#now, extract just the start column, then get each window and run through scoring algorithm
 PoT_res$srt
 
 q_23_plotting %>% 
@@ -8936,6 +8941,10 @@ id_events <- q_23_plotting %>%
                               match_fun = list(`>=`, `<=`)) |> 
    mutate(event_ID = event_ID) |> 
    select(-starts, -stops)
+
+id_events %>% 
+  ggplot()+
+  geom_line(aes(x = datetime, y = Q_mm_day, color = event_ID))
 
 
 ```
