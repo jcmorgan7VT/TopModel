@@ -15,6 +15,7 @@ Explanation of graph theory stuff: finding the best path using the traveling sal
 
 Not sure if I should include the dummy or not; FB is a lot better with a dummy, but W3 and ZZ are a lot better without dummies at the end.
 
+# Setup and Preparing inputs
 ```{r setup}
 #loading packages
 library(pacman)
@@ -41,7 +42,7 @@ bind24 <- data_24 %>%
   select(datetime, number, wshed, binary, mins) %>% 
   rename("ID" = number)
 ```
-#Preparing inputs
+
 Preparing the STIC dataset as inputs for everything I am doing.  
 ```{r prepare-inputs}
 #create input that only uses sensors that were deployed during both deployments
@@ -93,6 +94,7 @@ write_csv(input_zz, "calc_support_inputs_zz.csv")
 
       
 ```
+
 Define functions that calculate proportion of time that nodes wet and dry sequentially.  
 ```{r define-functions}
 calc_support_combos <- function(up, down, input){
@@ -293,7 +295,8 @@ return(un_split)
 }
 ```
 
-#Set up for analysis- construct full graphs of networks
+# Graph theory sequences
+## Determine all possible combinations, or the full graph
 Determine all possible combinations
 ```{r W3}
 input <- rbind(bind23, bind24) %>%
@@ -316,7 +319,6 @@ W3_combos_routes <- data.frame("up" = rep(combos, zzz),
 #Run suite of functions to determine proportion of time that state changes follow the parent -> child relationship
 W3_all_combos <- calc_props(W3_combos_routes, "W3")
 ```
-
 ```{r FB}
 #set routes for all 3 watersheds
 input <- rbind(bind23, bind24) %>%
@@ -339,7 +341,6 @@ all_combos_routes <- data.frame("up" = rep(combos, zzz),
 #run calc_support for all sheds and timesteps for relative position
 FB_all_combos <- calc_props(all_combos_routes, "FB")
 ```
-
 ```{r ZZ}
 #set routes for all 3 watersheds
 
@@ -363,6 +364,7 @@ all_combos_routes <- data.frame("up" = rep(combos, zzz),
 ZZ_all_combos <- calc_props(all_combos_routes, "ZZ")
 ```
 
+## Find a path through the full graph using the TSP
 For each watershed, find the best chain using solutions to traveling salesman problem.  
 ```{r W3}
 #define all possible methods
@@ -461,7 +463,6 @@ geom_density(aes(color = method), alpha = 0.5)+
   facet_grid(~timescale)
 
 ```
-
 ```{r FB-analysis}
 #define all possible methods
 #removed 3 methods
@@ -557,7 +558,6 @@ geom_density(aes(color = method), alpha = 0.5)+
   facet_grid(~timescale)
 
 ```
-
 ```{r ZZ-analysis}
 #define all possible methods
 #removed 3 methods
@@ -693,6 +693,7 @@ ggplot(ggnet, aes(x = x, y = y, xend = xend, yend = yend)) +
   theme_blank()
 ```
 
+## Defining genearlized function
 For final plots for tomorrow, keep arbitrary insertion and cheapest insertion
 ```{r generalized-function}
 #define all possible methods
@@ -1041,8 +1042,8 @@ return(chains_output)
 }
 ```
 
-#graph theory
-```{r}
+## Comparing all solutions to the TSP for every watershed
+```{r compare-graph-theory-solutions}
 all_graph_solutions <- rbind(general_graph(W3_IDs, "W3"),
                              general_graph(FB_IDs, "FB"),
                              general_graph(ZZ_IDs, "ZZ"))
@@ -1066,8 +1067,9 @@ geom_density(aes(color = method, fill = method), alpha = 0.5)+
 ```
 
 
+
+# proportion of time flowing sequences
 My big graph theory solution provides the random hierarhcy and graph theory solution. All I need is the proportion of time flowing and maybe one based on topography... maybe drainage area or TWI?
-#proportion of time flowing
 ```{r flow-permanence-W3}
 #just summer 2023
 data_23$binary <- 1
@@ -1204,7 +1206,7 @@ all_pk <- rbind(calc_props(routes_w3, "W3"),
   mutate("method" = "Flow Permanence")
 ```
 
-#TWI
+# TWI sequences
 ```{r locs-from-arc}
 #get snapped sensor locations from extracted values from arc
 w3_locs <- read_csv("./STIC_uaa/w32.csv")%>% 
@@ -1214,7 +1216,7 @@ fb_locs <- read_csv("./STIC_uaa/fb2.csv") %>%
 zz_locs <- read_csv("./STIC_uaa/zz1.csv")%>% 
   select(ID, POINT_X, POINT_Y)
 ```
-```{r tpi-W3}
+```{r calculate-w3-topo}
 #flow accumulation/upslope drainage area at 3 m resolution calculated earlier in markdown
 flowacc_output <- "./HB/1m hydro enforced DEM/dem3m_flowacc.tif"
 
@@ -1280,7 +1282,7 @@ w3_slope <- extract(rast(slope_output), locs_shape, ID = FALSE, bind = TRUE) %>%
   as_tibble()
 
 ```
-```{r tpi-fb}
+```{r calculate-fb-topo}
 #flow accumulation/upslope drainage area at 3 m resolution calculated earlier in markdown
 flowacc_output <- "./HB/1m hydro enforced DEM/dem3m_flowacc.tif"
 
@@ -1345,7 +1347,7 @@ fb_slope <- extract(rast(slope_output), locs_shape, ID = FALSE, bind = TRUE) %>%
   rename("slope" = `X10mdem_slope`) %>% 
   as_tibble()
 ```
-```{r tpi-zz}
+```{r calculate-zz-topo}
 #flow accumulation/upslope drainage area at 3 m resolution calculated earlier in markdown
 flowacc_output <- "./HB/1m hydro enforced DEM/dem3m_flowacc.tif"
 
@@ -1441,7 +1443,196 @@ all_twi <- rbind(calc_props(routes_w3, "W3"),
   mutate("method" = "Topographic Wetness Index")
 
 ```
-#Figure 7: Final distributions of proportion of transitions that follow a sequence
+
+# Paper Figures
+## Figure 2: Vignettes of network wetting and drying
+Chunk below copied from mapsForStoryboard.qmd, from section where I was determining times when the network went from fully dry to fully wet.
+```{r W3-flowing-states}
+ # Function factory for secondary axis transforms
+train_sec <- function(primary, secondary, na.rm = TRUE) {
+  # Thanks Henry Holm for including the na.rm argument!
+  from <- range(secondary, na.rm = na.rm)
+  to   <- range(primary, na.rm = na.rm)
+  # Forward transform for the data
+  forward <- function(x) {
+    rescale(x, from = from, to = to)
+  }
+  # Reverse transform for the secondary axis
+  reverse <- function(x) {
+    rescale(x, from = to, to = from)
+  }
+  list(fwd = forward, rev = reverse)
+}
+
+start <- ymd_hms("2023-10-20 00:00:00")
+# stop <- ymd_hms("2023-10-22 00:00:00")
+stop <- ymd_hms("2023-10-24 00:00:00")
+
+#add precipitation
+#add hydrograph to plot
+q_23_plotting <- q_23_f %>% 
+    filter(DATETIME > start & DATETIME < stop) %>% 
+  rename("datetime" = DATETIME)
+q_23_plotting %>% 
+ggplot(aes(x  = datetime, y = Q_mm_day))+
+  geom_line()+
+  labs(title = "Discharge from W3, July to Nov 2023",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()
+
+    
+
+
+
+#precip <- 
+  read_csv("./HB/dailyWatershedPrecip1956-2024.csv") %>% 
+    filter(watershed == "W3") %>% 
+        filter(DATE >= start & DATE <= stop) %>% 
+    ggplot()+
+    geom_bar(aes(x = DATE, y = Precip), stat = "identity")
+
+precip1 <- read_csv("./HB/HBEF_W3precipitation_15min.csv") %>% 
+    filter(DateTime >= start & DateTime <= stop) %>% 
+    mutate(day = day(DateTime),
+           hour = hour(DateTime)) %>% 
+    group_by(day, hour) %>% 
+    reframe(hourly_precip = sum(precip), across()) %>% 
+    mutate(mins = minute(DateTime)) %>% 
+    filter(mins == 0) %>%
+  rename("datetime" = DateTime) %>% 
+    left_join(q_23_plotting, by = "datetime") %>% 
+  select(datetime, day, hour, hourly_precip, Q_mm_day)
+
+
+sec3 <- with(precip1, train_sec(hourly_precip, Q_mm_day))
+
+
+water <- precip1 %>% 
+    ggplot(aes(x = datetime))+
+    geom_col(aes(y = hourly_precip))+
+    geom_line(aes(y = sec3$fwd(Q_mm_day)), colour = "blue") +
+    scale_y_continuous("Hourly Precipitation (mm)",
+                       sec.axis = sec_axis(~sec3$rev(.),
+                       name = "Discharge (mm/day)"))+
+    labs(x = "",
+         y = "Precipitation (mm)")+
+      theme_classic()+
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y = element_text(angle = 0),
+        axis.title.y.right = element_text(angle = 0)
+        )
+
+
+test_IDS <- input_w3 %>% 
+    filter(datetime > start & datetime < stop)
+
+remainder <- test_IDS$ID
+
+pks_ordered <- pks_w3 %>% 
+filter(ID %in% remainder) %>% 
+  arrange(desc(pk)) %>% 
+  rowid_to_column("pk_order")
+
+test <- input_w3 %>% 
+    filter(datetime > start & datetime < stop) %>% 
+  #filter(ID == 17)
+  #filter(ID %in% W3_IDs) %>% 
+  left_join(pks_ordered, by = "ID") #%>% 
+sec2 <- with(test, train_sec(pk_order, pk))
+
+test <- 
+  input_w3 %>% 
+    filter(datetime > start & datetime < stop) %>% 
+    mutate(day = day(datetime),
+           hour = hour(datetime)) %>% 
+  #filter(ID == 17)
+  #filter(ID %in% W3_IDs) %>% 
+  left_join(precip1, by = c("day", "hour")) %>% 
+  left_join(pks_ordered, by = "ID") #%>% 
+  filter(mins.x == 0)
+test2 <- test %>% 
+  select(datetime.x, binary, hourly_precip, pk_order)
+sec2 <- with(test2, train_sec(pk_order, hourly_precip))
+
+binary <- c("#DB995A",
+            "#586BA4"
+  )
+
+
+tiles <- 
+test2 %>% 
+  ggplot(aes(x = datetime.x))+
+  geom_tile(aes(y = pk_order, fill = as.character(binary)))+
+  scale_y_continuous("Supposed Activation Order")+
+  #facet_grid(~name, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                    values = binary,
+                    breaks = c(0, 1),
+                    labels = c("Dry", "Wet"),
+                    name = ""
+                    )+
+  labs(#title = "Very dry to very wet",
+       #subtitle = "W3, 10/20 - 10/22, 2023",
+       x = "")+
+scale_x_continuous(breaks=c(ymd_hms("2023-10-20 00:00:00"),
+                            ymd_hms("2023-10-21 00:00:00"),
+                            ymd_hms("2023-10-22 00:00:00"),
+                            ymd_hms("2023-10-23 00:00:00"),
+                            ymd_hms("2023-10-24 00:00:00")),
+                   labels = c("10/20/23",
+                              "10/21/23",
+                              "10/22/23",
+                              "10/23/23",
+                              "10/24/23"))+
+  theme_classic()+
+    theme(legend.position="right",
+          axis.title.y = element_text(angle = 0))
+
+p_load(patchwork)
+
+(water)/tiles + plot_layout(heights = c(1, 5))
+
+
+test2 %>% 
+  ggplot(aes(x = datetime.x))+
+  geom_tile(aes(y = (pk_order), fill = as.character(binary)))+
+  geom_col(aes(y = sec2$fwd(hourly_precip)))+
+  ylab("Supposed activation order")+
+  scale_y_continuous(sec.axis = sec_axis(~sec2$fwd(.), name = "Instantaneous Q (mm/day)")) +
+  #facet_grid(~name, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c(0, 1),
+                    labels = c("Dry", "Wet"),
+                    name = ""
+                    )+
+  labs(title = "Very dry to very wet",
+       subtitle = "W3, 10/20 - 10/22, 2023",
+       x = "")+
+scale_x_continuous(breaks=c(ymd_hms("2023-10-20 00:00:00"),
+                            ymd_hms("2023-10-21 00:00:00"),
+                            ymd_hms("2023-10-22 00:00:00"),
+                            ymd_hms("2023-10-23 00:00:00"),
+                            ymd_hms("2023-10-24 00:00:00")),
+                   labels = c("10/20/23",
+                              "10/21/23",
+                              "10/22/23",
+                              "10/23/23",
+                              "10/24/23"))+
+  theme_classic()+
+    theme(legend.position="right")
+
+
+```
+```{r W3-map-panels}
+
+```
+
+
+## Figure 7: Distributions of proportion of transitions that follow a sequence
+Distributions of prop values, with dashed lines for median, faceted by timescale and watershed, colored by method for determining sequence
 ```{r combine-and-plot}
 four_colors <- c("#231f20", "#bb4430", "#7ebdc2", "#f3dfa2")
 
@@ -1500,7 +1691,7 @@ geom_density(aes(color = method, fill = method), alpha = 0.5)+
 #maps of where sequences work in space NOT DONE
 
 #map showing the sequence in space
-```{r}
+```{r plot-chain}
 edges2 <- all_graph_solutions %>% 
   filter(shed == "W3", method == "random", timescale == "30mins") %>% 
   ungroup() %>% 
@@ -3142,5 +3333,7 @@ for(i in 1:length(many_cheap)){
 }
 
 many_chains
+many_chains -> many_chains2
+
 ```
 
