@@ -819,6 +819,7 @@ geom_density(aes(color = method), alpha = 0.5)+
 #separate function to output the path, for non-determinstic methods may result in a different chain than other function
 #can take multiple methods
 # True/false whether output includes visualization of the chain
+##works on a single method to develop a chain
 chain_solution <- function(combos, 
                            shed, 
                            methods = "cheapest_insertion", 
@@ -928,6 +929,116 @@ return(chains_output)
 }
 chain_solution(ZZ_IDs, "ZZ", plot = TRUE)
 
+
+#generate chain solution for a series of methods, or the same method many times?
+#NOT FINISHED
+chain_solution_multiple <- function(combos, 
+                           shed, 
+                           methods = "cheapest_insertion", 
+                           plot = FALSE){
+#combos <- ZZ_IDs
+zzz <- length(combos)
+rep(combos, zzz)
+all_list <- c()
+for(z in 1:zzz){
+  all_list <- c(all_list, rep(combos[z], zzz))
+}
+
+all_combos_routes <- data.frame("up" = rep(combos, zzz),
+                                "down" = all_list)
+#run calc_support for all sheds and timesteps for relative position
+allcombosIn <- calc_props(all_combos_routes, shed)
+
+#methods <- c("random", "cheapest_insertion")
+keyz <- 
+  allcombosIn %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) #%>% as.matrix() %>% unname()
+#create an accurate key, old one is WRONG!!!
+key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
+                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
+#set up edges and distance matrix, convert to TSP object
+
+#IF there are NAs, replace them with 1; results from when there is a node that flowed the whole time it was deployed along with another, and not deployed for part of the other one's deployment; happened most in FB
+edgesIn <- 
+  allcombosIn %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>% #%>% #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    mutate(
+    across(everything(), ~replace_na(.x, 1))
+  ) %>%
+    select(-up) %>% as.matrix() %>% unname()
+
+
+
+# reformat from atsp to tsp
+#tsp1 <- reformulate_ATSP_as_TSP(atsp)
+
+#FOR LOOP TO ITERATE THROUGH METHODS
+for(i in 1:length(methods)){
+  # Convert to TSP object
+atsp <- as.ATSP(edgesIn)
+  
+  atsp <- insert_dummy(atsp, label = "dummy")
+  tour <- solve_TSP(atsp, method = methods[i], start = length(combos) + 1, two_opt = TRUE)
+  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
+
+  # Extract path, removing dummy node
+   path <- unname(cut_tour(tour, "dummy"))
+  #convert edges to format 
+  #edges <- cbind(path[-length(path)], path[-1])
+   output <- data.frame("node_ID" = path) %>% 
+     left_join(key2, by = "node_ID") %>% 
+     mutate(method = methods[i])
+  
+    if(i == 1) ZZ_chain_outputs <- output
+    if(i > 1) ZZ_chain_outputs <- rbind(ZZ_chain_outputs, output)
+}
+
+
+
+chains_test <- ZZ_chain_outputs
+edges <- cbind(chains_test$node_ID[-length(chains_test$node_ID)], chains_test$node_ID[-1])
+
+chain_graph <- graph_from_edgelist(edges, directed = TRUE)
+
+V(chain_graph)$labels <- chains_test$sensor_ID
+
+ggmst <- fortify(chain_graph, layout = igraph::layout_as_tree(chain_graph))
+
+# if(plot == TRUE){
+# ggplot(ggmst, aes(x = x, y = y, xend = xend, yend = yend)) +
+#   geom_edges(color = "grey", arrow = grid::arrow(length = unit(6, "pt"),
+#                                                  type = "open")) +
+#   geom_nodes(color = "black", size = 3) +
+#   geom_nodetext(aes(label = labels),
+#                 fontface = "bold", color = "white", size = 1) +
+#   theme_blank()
+# }
+
+order <- ggmst %>% 
+  arrange(desc(y))
+
+#unique(order$labels)
+
+#perfecting chains function to just output a dataframe, with one column for the sequence number, and the other for sensor ID
+chains_output <- data.frame("ID" = unique(order$labels),
+           "sequence" = seq(1, length(unique(order$labels)), 1))
+
+return(chains_output)
+
+}
 ```
 
 #graph theory
@@ -2228,7 +2339,7 @@ ZZ_water %>%
 ```
 
 #Apply Botter model to evaluate sequences in other sheds
-```{r}
+```{r W3}
 cheap_model <- calc_model_result(W3_cheap$ID) %>% rename("cheapest" = pred_binary)
 pk_model <- calc_model_result(W3_pk_seq$ID) %>% rename("pk" = pred_binary)
 random_model <- calc_model_result(W3_random$ID) %>% rename("random" = pred_binary)
@@ -2415,42 +2526,14 @@ comparison_long %>%
 
 
 ```
+```{r accuracy-W3}
+w3_acc <- rbind(produce_metrics(W3_cheap, "W3", "cheapest_insertion"),
+      produce_metrics(W3_pk_seq, "W3", "pk"),
+      produce_metrics(W3_random, "W3", "random"),
+      produce_metrics(w3_twi_sequence, "W3", "twi")
+      )
+kable(w3_acc, digits = 2)
 
-```{r}
-p_load(ggh4x)
-
-df_scales <- data.frame(
-  Panel = c("2023", "2024"),
-  ymin = c(175, 125),
-  ymax = c(330, 205)
-)
-
-df_scales <- split(df_scales, df_scales$Panel)
-
-scales <- lapply(df_scales, function(x) {
-  scale_y_continuous(limits = c(x$ymin, x$ymax), n.breaks = x$n)
-})
-
-ggplot(mpg, aes(displ, cty)) +
-  geom_point() +
-  facet_grid(rows = vars(drv), scales = "free") +
-  ggh4x::facetted_pos_scales(
-    y = scales
-  )
-
-comparison_long %>% 
-  mutate(day_of_year = yday(datetime)
-  ) %>% 
-  #group_by(datetime) %>% 
-  #filter(year == 2024) %>% 
-  mutate(total = as.numeric(length(value))) %>% 
-  ggplot() +
-  geom_histogram(aes(x = day_of_year, fill = value), binwidth = 1, na.rm = TRUE)+
-  #facet_grid()+
-  facet_grid(name~year, scales = "free") +
-  ggh4x::facetted_pos_scales(
-    y = scales
-  )
 ```
 
 Define sequences to test for FB
@@ -2462,7 +2545,7 @@ FB_pk_seq <- pks_fb %>%
   select(ID, sequence)
 ```
 
-```{r}
+```{r FB}
 #chains used in graph theory solutions
 FB_cheap <- chain_solution(FB_IDs, "FB", methods = "cheapest_insertion")
 FB_random <- chain_solution(FB_IDs, "FB", methods = "random")
@@ -2667,7 +2750,15 @@ comparison_long %>%
   geom_histogram(aes(x = day_of_year, fill = value), binwidth = 1, na.rm = TRUE)+
   facet_grid(name~year)
 ```
+```{r accuracy-FB}
+fb_acc <- rbind(produce_metrics(FB_cheap, "FB", "cheapest_insertion"),
+      produce_metrics(FB_pk_seq, "FB", "pk"),
+      produce_metrics(FB_random, "FB", "random"),
+      produce_metrics(fb_twi_sequence, "FB", "twi")
+      )
+kable(fb_acc, digits = 2)
 
+```
 Now do again for ZZ
 ```{r}
 ZZ_cheap <- chain_solution(ZZ_IDs, "ZZ", methods = "cheapest_insertion")
@@ -2826,6 +2917,7 @@ comparison
 
 ```
 
+chunk to calculate accuracy metrics and confusion matrices
 ```{r}
 # Load required packages
 p_load(caret)
@@ -2889,4 +2981,166 @@ twi_plot <- plot_conf_mat(conf_twi,      title = "TWI")
 (cheap_plot + pk_plot) / (random_plot + twi_plot)
 ```
 
+
+```{r}
+W3_cheap <- chain_solution(W3_IDs, "W3", methods = "cheapest_insertion")
+W3_random <- chain_solution(W3_IDs, "W3", methods = "random")
+```
+
+Create a function that will compare a chain output and it's sequential wetting model to the actual observations.
+```{r}
+methods
+#function to determine a chain solution
+ZZ_cheap <- chain_solution(ZZ_IDs, "ZZ", methods = "cheapest_insertion")
+
+#function that will take a chain solution, and calculate accuracy metrics
+produce_metrics <- function(chain, shed, method){
+# chain <- ZZ_cheap
+# shed <- "ZZ"
+# method = "cheapest_insertion"
+# calculate the number of flowing nodes at each timestep
+  if(shed == "W3"){
+    number_activated <-
+      input_w3 %>%
+      group_by(datetime) %>%
+      select(-c(wshed, mins)) %>%
+      filter(binary == 1) %>%
+      summarise(number_flowing = length(binary))
+  } 
+  else if(shed == "FB"){
+    number_activated <-
+      input_fb %>%
+      group_by(datetime) %>%
+      select(-c(wshed, mins)) %>%
+      filter(binary == 1) %>%
+      summarise(number_flowing = length(binary))
+  }
+  else if(shed == "ZZ"){
+    number_activated <-
+      input_zz %>%
+      group_by(datetime) %>%
+      select(-c(wshed, mins)) %>%
+      filter(binary == 1) %>%
+      summarise(number_flowing = length(binary))
+  }
+
+#make a dataframe where each row is a date, with a list of the active or inactive nodes according to a hierarchy
+
+#applying evaluation model using different sequences
+  calc_model_result <- function(input_sequence){
+# 1. Ordered node sequence
+node_sequence <- input_sequence
+
+# 2. Dataframe with timestamps and how many nodes to activate
+#defined previously
+#number_activated
+
+# 3. Build the activation matrix
+activation_matrix <- t(sapply(number_activated$number_flowing, function(n) {
+  active_flags <- rep(0, length(node_sequence))
+  if (n > 0) active_flags[1:n] <- 1
+  active_flags
+}))
+
+# 4. Assign column names and combine with timestamps
+colnames(activation_matrix) <- node_sequence
+activation_df <- cbind(number_activated["datetime"], as.data.frame(activation_matrix))
+
+# View result
+activation_final <- activation_df %>% pivot_longer(-datetime) %>% 
+  rename("ID" = name, "pred_binary" = value) %>% 
+  mutate(ID = as.numeric(ID))
+
+return(activation_final)
+}
+
+  model_result <- calc_model_result(chain$ID)
+
+#combine all model results
+  if(shed == "W3"){
+    comparison <- input_w3 %>%
+      filter(mins %in% c(0, 30)) %>%
+      left_join(model_result, by = c("datetime", "ID")) %>%
+      select(-wshed, -mins) %>%
+      drop_na()
+  } 
+  else if(shed == "FB"){
+    comparison <- input_fb %>%
+      filter(mins %in% c(0, 30)) %>%
+      left_join(model_result, by = c("datetime", "ID")) %>%
+      select(-wshed, -mins) %>%
+      drop_na()
+  }
+  else if(shed == "ZZ"){
+    comparison <- input_zz %>%
+      filter(mins %in% c(0, 30)) %>%
+      left_join(model_result, by = c("datetime", "ID")) %>%
+      select(-wshed, -mins) %>%
+      drop_na()
+  }
+
+
+#chat gpt method to compare them
+get_eval_label <- function(true, pred) {
+  if (true == 1 && pred == 1) return("correct")
+  if (true == 0 && pred == 0) return("correct")
+  if (true == 1 && pred == 0) return("omission")
+  if (true == 0 && pred == 1) return("commission")
+}
+#get_eval_label(0,0)
+#apply get_eval function to each model run
+comparison$pred_eval <- mapply(get_eval_label, 
+                                   comparison$binary, 
+                                   comparison$pred_binary)
+
+# ---- STEP 3: Define helper function to extract performance metrics ----
+get_metrics <- function(pred, true) {
+  cm <- confusionMatrix(factor(pred), factor(true), positive = "1")
+  data.frame(
+    Accuracy = cm$overall["Accuracy"],
+    Kappa = cm$overall["Kappa"],
+    Sensitivity = cm$byClass["Sensitivity"],
+    Specificity = cm$byClass["Specificity"],
+    Precision = cm$byClass["Precision"],
+    F1 = cm$byClass["F1"]
+  )
+}
+
+# ---- STEP 4: Summarize performance for all models ----
+metrics_df <- tibble(get_metrics(comparison$pred_binary, comparison$binary)) %>% 
+  mutate(shed = shed,
+         method = method)
+#output <- list(metrics = metrics_df, sequence = ZZ_cheap)
+#make data long for final plot
+return(metrics_df)
+}
+
+produce_metrics(ZZ_cheap, "ZZ", "cheapest_insertion")
+
+#testing every method
+for(i in 1:length(methods)){
+  chain <- chain_solution(ZZ_IDs, "ZZ", methods = methods[i])
+  
+  output <- produce_metrics(chain, "ZZ", methods[i])
+  
+  if(i == 1) many_chains <- output
+  if(i > 1) many_chains <- rbind(many_chains, output)
+}
+
+all_methods_acc <- many_chains
+```
+What if we test 100 different cheapest_insertions?
+```{r}
+many_cheap <- rep("cheapest_insertion", 10)
+for(i in 1:length(many_cheap)){
+  chain <- chain_solution(ZZ_IDs, "ZZ", methods = many_cheap[i])
+  
+  output <- produce_metrics(chain, "ZZ", many_cheap[i])
+  
+  if(i == 1) many_chains <- output
+  if(i > 1) many_chains <- rbind(many_chains, output)
+}
+
+many_chains
+```
 

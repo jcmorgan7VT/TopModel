@@ -144,7 +144,8 @@ if(cond$time_down[length(cond$time_down)] != cond$time_down[length(cond$time_dow
   Q <- V / (k * DeltaT * sum)
   Q_Ls <- Q * 1000
   return(data.frame("discharge" = Q_Ls,
-                    "k" = k))
+                    "k" = k,
+                    "datetime" = cond$time_down[1]))
 }
 
 #function for no k
@@ -253,7 +254,8 @@ calcQ_noK <- function(path, k){
   Q <- V / (k * DeltaT * sum)
   Q_Ls <- Q * 1000
   return(data.frame("discharge" = Q_Ls,
-                    "k" = k))
+                    "k" = k,
+                    "datetime" = cond$time_down[1]))
 }
 
 #function for no k, only one logger
@@ -310,12 +312,13 @@ calcQ_noK_oneL <- function(path, k){
   Q <- V / (k * DeltaT * sum)
   Q_Ls <- Q * 1000
   return(data.frame("discharge" = Q_Ls,
-                    "k" = k))
+                    "k" = k,
+                    "datetime" = cond$time_down[1]))
 }
 
 
 #maybe also write a function to preview the RC calculations, determine how many to omit
-calcQ("./salt_dilutions/FB/FB_8_1")
+calcQ("./salt_dilutions/FB/FB_8_1") %>% mutate("shed" = "FB")
 calcQ("./salt_dilutions/FB/FB_6_23_fail")
 calcQ("./salt_dilutions/ZZ/ZZ_8_1")
 calcQ("./salt_dilutions/ZZ/ZZ_7_1")
@@ -329,6 +332,25 @@ calcQ_noK("./salt_dilutions/FB/FB_6_23_Success", mean(c(2.621858e-06)))
 #missing FB 8_5, no k and no upstream logger
 # ZZ_8_5, no k and no upstream logger
 calcQ_noK_oneL("./salt_dilutions/FB/FB_8_5", mean(c(0.0001120716, 2.621858e-06)))
-calcQ_noK_oneL("./salt_dilutions/ZZ/ZZ_8_5", mean(c(0.0001120716, 2.621858e-06)))
+calcQ_noK_oneL("./salt_dilutions/ZZ/ZZ_8_5", mean(c(9.453437e-05, 4.017994e-06,
+                                                    3.962093e-05, 9.693616e-05)))
 
+#all combined
+q_combined <- rbind(
+calcQ("./salt_dilutions/FB/FB_8_1") %>% mutate("shed" = "FB"),
+#calcQ("./salt_dilutions/FB/FB_6_23_fail") %>% mutate("shed" = "FB"),
+calcQ("./salt_dilutions/ZZ/ZZ_8_1")%>% mutate("shed" = "ZZ"),
+calcQ("./salt_dilutions/ZZ/ZZ_7_1")%>% mutate("shed" = "ZZ"),
+#calcQ("./salt_dilutions/ZZ/ZZ_6_23") %>% mutate("shed" = "ZZ"),#different timestep, after fixing gave negative number
+calcQ("./salt_dilutions/ZZ/ZZ_6_21")%>% mutate("shed" = "ZZ"),
 
+#no k
+calcQ_noK("./salt_dilutions/FB/FB_7_1", mean(c(0.0001120716, 2.621858e-06))) %>% mutate("shed" = "FB"),
+calcQ_noK("./salt_dilutions/FB/FB_6_23_Success", mean(c(2.621858e-06))) %>% mutate("shed" = "FB"),
+
+#missing FB 8_5, no k and no upstream logger
+# ZZ_8_5, no k and no upstream logger
+calcQ_noK_oneL("./salt_dilutions/FB/FB_8_5", mean(c(0.0001120716, 2.621858e-06))) %>% mutate("shed" = "FB"),
+calcQ_noK_oneL("./salt_dilutions/ZZ/ZZ_8_5", mean(c(9.453437e-05, 4.017994e-06,
+                                                    3.962093e-05, 9.693616e-05)))%>% mutate("shed" = "ZZ")
+)

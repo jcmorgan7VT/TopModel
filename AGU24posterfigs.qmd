@@ -95,7 +95,8 @@ ggplot()+
   geom_spatraster(data = crop1, alpha = 0.5)+
      scale_fill_hypso_c(palette = "dem_screen" , limits = c(200, 1000))
 
-test <- ggplot()+
+#test <- 
+  ggplot()+
   geom_spatraster(data = hill)+
   theme_void()+
   #theme(legend.position = "")+
@@ -105,7 +106,7 @@ test <- ggplot()+
   geom_sf(data = w3_outline, fill = NA, color = "black", alpha = 0.3)+
   geom_sf(data = w3_net, colour = "darkslategray3") +
   geom_sf(data = w3_stic_locs_r, colour = "midnightblue", pch = 21, size = 5) +
-  geom_sf(data = dd, aes(color = (depth)), pch = 19, size = 3) +
+  #geom_sf(data = dd, aes(color = (depth)), pch = 19, size = 3) +
   scale_color_gradient(low = "black", high = "white")+
   #geom_sf(data = w3_pour, colour = "black") +
    scale_fill_hypso_c(palette = "dem_screen" , limits = c(200, 1000))+
