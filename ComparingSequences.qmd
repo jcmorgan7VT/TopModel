@@ -2122,7 +2122,239 @@ geom_density(aes(color = method, fill = method), alpha = 0.5)+
   facet_grid(shed~timescale)
 ```
 
-#maps of where sequences work in space NOT DONE
+## Figure 6: Maps of where sequences work in space, and time to a certain extent
+Set of map panels where symbol color = flowing state, outline color or shape indicating correctly predicted or not
+
+For these plots I need:
+- actual flowing state
+- map template
+- predicted state based on a sequence
+```{r model_predictions}
+cheap_model <- calc_model_result(W3_cheap$ID) %>% rename("cheapest" = pred_binary)
+pk_model <- calc_model_result(W3_pk_seq$ID) %>% rename("pk" = pred_binary)
+random_model <- calc_model_result(W3_random$ID) %>% rename("random" = pred_binary)
+twi_model <- calc_model_result(w3_twi_sequence$ID) %>% rename("twi" = pred_binary)
+
+comparison <- input_w3 %>% 
+  filter(mins %in% c(0, 30)) %>% 
+  left_join(cheap_model, by = c("datetime", "ID")) %>% 
+  left_join(pk_model, by = c("datetime", "ID")) %>% 
+    left_join(random_model, by = c("datetime", "ID")) %>% 
+  left_join(twi_model, by = c("datetime", "ID")) %>% 
+  select(-wshed, -mins) %>% 
+  drop_na()
+
+#chat gpt method to compare them
+get_eval_label <- function(true, pred) {
+  if (true == 1 && pred == 1) return("correct")
+  if (true == 0 && pred == 0) return("correct")
+  if (true == 1 && pred == 0) return("omission")
+  if (true == 0 && pred == 1) return("commission")
+}
+get_eval_label(0,0)
+#apply get_eval function to each model run
+comparison$cheapest_eval <- mapply(get_eval_label, comparison$binary, comparison$cheapest)
+comparison$pk_eval <- mapply(get_eval_label, comparison$binary, comparison$pk)
+comparison$random_eval <- mapply(get_eval_label, comparison$binary, comparison$random)
+comparison$twi_eval <- mapply(get_eval_label, comparison$binary, comparison$twi)
+
+```
+```{r sample-based-on-discharge}
+#select random timesteps evenly distributed along flow duration curve
+q_23_bind <- 
+  q_23_f %>% 
+  select(DATETIME, Q_mm_day) %>% 
+  rename("datetime" = DATETIME
+         )
+
+q_24_bind <- 
+  q_24_f %>% 
+  select(datetime, Q_mmperday) %>% 
+  rename("Q_mm_day" = Q_mmperday)
+
+big_comb <- rbind(q_23_bind, q_24_bind) %>% 
+  inner_join(comparison, by = "datetime")
+```
+
+From earlier, contains map template and actual flowing state
+```{r W3-map-panels}
+#create a template for maps, then plot the flowing state at different timesteps on the template
+#map of watershed 3 with depth to bedrock
+hillshade_out <- "./w3_dems/1mdem_hillshade.tif"
+#hill <- rast(hillshade_out)
+
+#dem
+dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
+m1 <- rast(dem)
+
+ybounds <- c(4870350,4871350)
+xbounds <- c(281350, 282150)
+#crop to rectangular area
+crop1 <- crop(m1, ext(c(xbounds, ybounds)))
+#writeRaster(crop1, "1mdemw3_cropped.tif")
+
+#watershed boundary
+w3_shed <- "./w3_dems/w3_shed.tif"
+w3_outline <- as.polygons(rast(w3_shed), extent=FALSE)
+
+#w3 network- thing I need to change
+#read in shapefile of stream converted in ARC
+vect_stream_path <- "./AGU24posterAnalysis/vector_stream/vector_stream.shp"
+#stream as a vector
+vect_stream <- vect(vect_stream_path)
+#plot(vect_stream)
+#crop to watershed boundary
+w3_stream_crop <- crop(vect_stream, w3_outline)
+#plot(w3_stream_crop)
+#or i could use old classification
+
+#point locations- snapped points from above chunk
+w3_stic_locs_snap <- "w3_stic_locs_snap.shp"
+
+w3_stic_locs_r <- vect(w3_stic_locs_snap) %>% 
+  left_join(pks_w3, by = "ID")
+
+
+
+w3_stic_locs_r <- vect(w3_stic_locs_snap)
+#writeVector(w3_stic_locs_r, "./seismic_map_exports/w3_stic_locs_snap.shp")
+
+
+w3_net <- vect("./carrieZigZag/w3_network.shp")
+#writeVector(w3_net, "./seismic_map_exports/network.shp")
+
+#plot(w3_net)
+
+
+#test <- 
+ggplot()+
+  geom_spatraster(data = hill)+
+  theme_void()+
+  theme(legend.position = "")+
+  scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
+    new_scale_fill() +
+  geom_spatraster(data = crop1, alpha = 0.5)+
+  geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 2)+
+  geom_sf(data = w3_net, colour = "darkslategray3", lwd = 2) +
+  geom_sf(data = w3_stic_locs_r, colour = "midnightblue", size = 2) +
+  #geom_sf(data = dd, aes(color = (depth)), pch = 19, size = 3) +
+  scale_color_gradient(low = "black", high = "white")+
+  #geom_sf(data = w3_pour, colour = "black") +
+   scale_fill_hypso_c(palette = "dem_screen" , limits = c(200, 1000))+
+  theme(rect = element_rect(fill = "transparent", color = NA))+
+  ggspatial::annotation_scale(location = 'tr', pad_x = unit(1, "cm"), 
+                              pad_y = unit(1, "cm"))
+  
+# determine the flowing state
+doi <- c(ymd_hms("2023-10-20 00:00:00"),
+                            ymd_hms("2023-10-21 00:00:00"),
+                            ymd_hms("2023-10-22 00:00:00"),
+                            ymd_hms("2023-10-23 00:00:00"),
+                            ymd_hms("2023-10-24 00:00:00"))
+  
+states <- big_comb %>% 
+    filter(datetime %in% doi[1])
+
+#w3_stic_locs_r %>% left_join(states, by = "ID")
+
+#figure without scale bar and legends
+ggplot()+
+  theme_void()+
+  geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 2)+
+  geom_sf(data = w3_net, colour = "grey", lwd = 1) +
+geom_sf(data = w3_stic_locs_r %>% inner_join(states, by = "ID"), 
+        aes(fill = as.character(binary),
+            color = cheapest_eval), size = 4, pch = 21, stroke = 2) +
+  scale_color_manual(values = c("orange", "black", "limegreen"),
+                     name = "")+
+  scale_fill_manual(values = c("white", "black"),
+                    labels = c("dry", "flowing"),
+                    name = "")+
+  theme(rect = element_rect(fill = "transparent", color = NA),
+        legend.position = "")
+  # ggspatial::annotation_scale(location = 'tr', pad_x = unit(0, "cm"),
+  #                             pad_y = unit(1, "cm"))
+#figure with scale bar and legends
+ggplot()+
+  theme_void()+
+  geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 2)+
+  geom_sf(data = w3_net, colour = "grey", lwd = 1) +
+geom_sf(data = w3_stic_locs_r %>% inner_join(states, by = "ID"), 
+        aes(fill = as.character(binary),
+            color = cheapest_eval), size = 4, pch = 21) +
+  scale_color_manual(values = c("orange", "black", "limegreen"),
+                     name = "")+
+  scale_fill_manual(values = c("white", "black"),
+                    labels = c("dry", "flowing"),
+                    name = "")+
+  theme(rect = element_rect(fill = "transparent", color = NA))+#,
+        #legend.position = "")+
+  ggspatial::annotation_scale(location = 'tr', pad_x = unit(0, "cm"),
+                              pad_y = unit(1, "cm"))
+
+```
+```{r}
+#make the same thing as above, but pivot longer and then plot using facets
+#states <- 
+states <- comparison %>% 
+    filter(datetime %in% doi) %>% 
+  pivot_longer(cols = c(cheapest, pk, random, twi),
+               values_to = "prediction", 
+               names_to = "sequence")
+
+states$eval <- mapply(get_eval_label, states$binary, states$prediction)
+
+ggplot()+
+  theme_void()+
+  geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 1)+
+  geom_sf(data = w3_net, colour = "grey", lwd = 0.8) +
+geom_sf(data = w3_stic_locs_r %>% inner_join(states, by = "ID"), 
+        aes(fill = as.character(prediction),
+            color = eval), size = 2, stroke = 1, pch = 21) +
+  scale_color_manual(values = c("green", "black", "orange"),
+                     name = "")+
+  scale_fill_manual(values = c("white", "black"),
+                    labels = c("dry", "flowing"),
+                    name = "")+
+  theme(rect = element_rect(fill = "transparent", color = NA),
+        legend.position = "")+
+  facet_grid(sequence~datetime)
+
+```
+```{r}
+#make a mini bar plot to show the flowing accuracy at each time step
+maps <- ggplot()+
+  theme_void()+
+  geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 1)+
+  geom_sf(data = w3_net, colour = "grey", lwd = 0.8) +
+geom_sf(data = w3_stic_locs_r %>% inner_join(states, by = "ID"), 
+        aes(fill = as.character(prediction),
+            color = eval), size = 2, stroke = 1, pch = 21) +
+  scale_color_manual(values = c("green", "black", "orange"),
+                     name = "")+
+  scale_fill_manual(values = c("white", "black"),
+                    labels = c("dry", "flowing"),
+                    name = "")+
+  theme(rect = element_rect(fill = "transparent", color = NA),
+        legend.position = "")
+# +
+#   facet_grid(sequence~datetime)
+
+bars <- ggplot(filter(states, datetime == doi[1]), aes(y = datetime, fill = eval)) + 
+  geom_bar()+
+    theme_void()+
+  scale_fill_manual(values = c("green", "black", "orange"))+
+  theme(
+        legend.position = "")
+# +
+#   facet_grid(sequence~datetime)
+
+(maps/(bars)) +
+  plot_layout(widths = c(1, 1), heights = unit(c(12, 1), c('cm', 'null')))
+
+
+```
+
 
 #map showing the sequence in space
 ```{r plot-chain}
@@ -2372,9 +2604,11 @@ calc_time(W3_pk_seq, "W3", "pk")
        x = "",
        y = "Instantaneous Q (mm/day)")+
   theme_classic()+
-  scale_color_continuous(type = "viridis")+
+  scale_color_continuous(type = "viridis",
+                             limits = c(0,1))+
                        theme(rect = element_rect(fill = "transparent", color = NA))+
   facet_grid(seq_label~shed)
+
 ```
 
 ```{r}
@@ -2427,9 +2661,11 @@ number_activated <-
   left_join(W3_cheap, by = "ID") %>%
   group_by(datetime) %>% 
   select(-c(wshed, mins)) %>% 
+  mutate(deployed = length(binary)) %>% 
   #arrange(sequence) %>% 
       filter(binary == 1) %>% 
-    summarise(number_flowing = length(binary))
+    summarise(number_flowing = length(binary),
+            deployed = list(unique(ID))) #%>% View()
 
 
   
@@ -2440,11 +2676,13 @@ number_activated %>% mutate(all_nodes = W3_pk_seq$ID)
 ```
 
 ```{r}
+#original code to run a model of network activation, used to build function below based on a specific sequence
 # 1. Ordered node sequence
-node_sequence <- W3_pk_seq$ID
+node_sequence <- W3_pk_seq$ID[W3_pk_seq$ID %in% unlist(number_activated$deployed[1])]
 
 # 2. Dataframe with timestamps and how many nodes to activate
-number_activated
+number_activated <- number_activated %>% 
+  select(-deployed)
 
 # 3. Build the activation matrix
 activation_matrix <- t(sapply(number_activated$number_flowing, function(n) {
@@ -2481,6 +2719,157 @@ comparison %>%
   ggplot() +
   geom_histogram(aes(x = datetime, y = count, fill = code), stat = "identity")
 ```
+
+```{r}
+#new method, incorporating missing nodes at different timesteps
+number_activated <- 
+  input_w3 %>% 
+  left_join(W3_cheap, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins)) %>% 
+  mutate(deployed = length(binary)) %>% 
+  #arrange(sequence) %>% 
+      #filter(binary == 1) %>% 
+    summarise(number_flowing = length(binary[binary == 1]),
+            deployed = list(unique(ID))) #%>% View()
+
+W3_pk_seq$ID[W3_pk_seq$ID %in% unlist(number_activated$deployed[1])]
+
+# 2. Dataframe with timestamps and how many nodes to activate
+number_activated <- number_activated %>% 
+  select(-deployed)
+# Fixed full node sequence
+full_node_sequence <- W3_pk_seq$ID
+
+# Sample activation schedule
+activation_schedule <- number_activated
+
+# Function to generate a single activation row with NA for missing nodes
+    '%!in%' <- function(x,y)!('%in%'(x,y))
+
+generate_activation_row <- function(datetime, n_active, available_nodes) {
+  #n_active <- activation_schedule$number_flowing[1]
+  #available_nodes <- unlist(activation_schedule$deployed[1])
+  # Order available nodes based on full sequence
+  ordered_available <- full_node_sequence[full_node_sequence %in% available_nodes]
+  
+    #not_deployed <- full_node_sequence[full_node_sequence %!in% (available_nodes)]
+
+
+  
+  # Identify the first `n_active` nodes to activate
+  activated_nodes <- head(ordered_available, n_active)
+  # ordered_available
+  # activated_nodes
+  # full_node_sequence
+  output <- tibble("datetime" = datetime,
+             "ID" = full_node_sequence,
+             "binary" = 0) %>% 
+    #mutate(binary = case_when(ID %in% ordered_available ~ 0)) %>% 
+    mutate(binary = case_when(
+                              ID %in% activated_nodes ~ 1,
+                              ID %!in% ordered_available ~ NA,
+                              TRUE ~ 0))
+  return(output)
+}
+
+generate_activation_row(activation_schedule$datetime[1],
+                        activation_schedule$number_flowing[1],
+                        unlist(activation_schedule$deployed[1]))
+# Apply the function to each row of the activation schedule
+
+model_out <- Map(generate_activation_row, 
+    datetime = activation_schedule$datetime, 
+    n_active = activation_schedule$number_flowing, 
+    available_nodes = activation_schedule$deployed) %>% dplyr::bind_rows() %>% 
+  rename(pk_out = binary)
+
+model_out
+comparison <- input_w3 %>% 
+  filter(mins %in% c(0, 30)) %>% 
+  left_join(model_out, by = c("datetime", "ID")) %>% 
+  select(-wshed, -mins)
+```
+
+Now make a function to calc the model result using this method
+```{r}
+#new method, incorporating missing nodes at different timesteps
+calc_model_result <- function(input_sequence){
+
+number_activated <- 
+  input_w3 %>% 
+  #left_join(W3_cheap, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins)) %>% 
+  mutate(deployed = length(binary)) %>% 
+  #arrange(sequence) %>% 
+      #filter(binary == 1) %>% 
+    summarise(number_flowing = length(binary[binary == 1]),
+            deployed = list(unique(ID))) #%>% View()
+
+#W3_pk_seq$ID[W3_pk_seq$ID %in% unlist(number_activated$deployed[1])]
+
+# 2. Dataframe with timestamps and how many nodes to activate
+
+# Fixed full node sequence
+full_node_sequence <- input_sequence
+
+# Sample activation schedule
+activation_schedule <- number_activated
+
+# Function to generate a single activation row with NA for missing nodes
+    '%!in%' <- function(x,y)!('%in%'(x,y))
+
+generate_activation_row <- function(datetime, n_active, available_nodes) {
+  #n_active <- activation_schedule$number_flowing[1]
+  #available_nodes <- unlist(activation_schedule$deployed[1])
+  # Order available nodes based on full sequence
+  ordered_available <- full_node_sequence[full_node_sequence %in% available_nodes]
+  
+    #not_deployed <- full_node_sequence[full_node_sequence %!in% (available_nodes)]
+
+
+  
+  # Identify the first `n_active` nodes to activate
+  activated_nodes <- head(ordered_available, n_active)
+  # ordered_available
+  # activated_nodes
+  # full_node_sequence
+  output <- tibble("datetime" = datetime,
+             "ID" = full_node_sequence,
+             "binary" = 0) %>% 
+    #mutate(binary = case_when(ID %in% ordered_available ~ 0)) %>% 
+    mutate(binary = case_when(
+                              ID %in% activated_nodes ~ 1,
+                              ID %!in% ordered_available ~ NA,
+                              TRUE ~ 0))
+  return(output)
+}
+
+# Apply the function to each row of the activation schedule
+
+model_out <- Map(generate_activation_row, 
+    datetime = activation_schedule$datetime, 
+    n_active = activation_schedule$number_flowing, 
+    available_nodes = activation_schedule$deployed) %>% dplyr::bind_rows() %>% 
+  rename(pred_out = binary)
+
+return(model_out)
+}
+
+calc_model_result(W3_pk_seq$ID)
+comparison <- input_w3 %>% 
+  filter(mins %in% c(0, 30)) %>% 
+  left_join(model_out, by = c("datetime", "ID")) %>% 
+  select(-wshed, -mins)
+
+cheap_model <- calc_model_result(W3_cheap$ID) %>% rename("cheapest" = pred_out)
+pk_model <- calc_model_result(W3_pk_seq$ID) %>% rename("pk" = pred_out)
+random_model <- calc_model_result(W3_random$ID) %>% rename("random" = pred_out)
+twi_model <- calc_model_result(w3_twi_sequence$ID) %>% rename("twi" = pred_out)
+```
+
+BIG PROBLEM: sequence includes all nodes, but not all nodes are present at every timestep. Sequence needs to be adjusted at each timestep to reflect the nodes that are present dynamically....
 
 Function to calculate the comparison between botter model based on a provided sequence.
 ```{r}
@@ -2615,9 +3004,7 @@ df_long <- df_summary_time %>%
   tidyr::pivot_longer(cols = c(cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy), 
                       names_to = "model", values_to = "accuracy")
 
-ggplot(df_long, aes(x = datetime, y = accuracy, color = model)) +
-  geom_line() +
-  labs(title = "Model Accuracy Over Time", y = "Accuracy", x = "Time")
+
 
 ggplot(df_summary_time, aes(x = datetime, y = diff)) +
   geom_line() +
@@ -2675,7 +3062,78 @@ test %>%
   pivot_wider(names_from = state_change, values_from = count) %>% 
   kable(format = "markdown")
 
+#plot the best at each timestep
+df_long %>% 
+  group_by(datetime) %>% 
+  filter(accuracy == max(accuracy)) %>% 
+  inner_join(big_comb, by = "datetime") %>% 
+  ggplot(aes(x = Q_mm_day, y = accuracy, color = model)) +
+  geom_point(stat = "identity", alpha = 0.2) +
+  labs(title = "Model Accuracy Over Time", y = "Accuracy", x = "Time")+
+    facet_wrap(~model)
 
+
+df_long %>% 
+  filter(datetime > start, datetime < stop) %>% 
+    ggplot(aes(x = datetime, y = accuracy, color = model)) +
+  geom_bar(stat = "identity") +
+  labs(title = "Model Accuracy Over Time", y = "Accuracy", x = "Time")#+
+  facet_wrap(~model)
+  
+  
+
+```
+
+Figuring out weird points that are the same in each plot, when looking at accuracy versus discharge
+```{r}
+df_long %>% 
+  inner_join(discharge_df, by = "datetime") %>% 
+    filter(Q_mm_day >= 45) %>% 
+    ggplot(aes(x = Q_mm_day, y = accuracy, color = model, shape = event_type)) +
+  geom_point(alpha = 0.3, size = 2) +
+    #geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Accuracy (correctly modeled states/total)", y = " ", x = "Discharge (mm/day)")+
+   scale_color_manual(values = four_colors)+
+  labs(color='Hydrograph Component') +
+  theme_classic()+
+  facet_wrap(~model)
+
+#set of timesteps where the accuracy of every model is the same, what does this look like in space?
+big_events <- df_long %>% 
+  inner_join(discharge_df, by = "datetime") %>% 
+    filter(Q_mm_day >= 45)
+
+doi <- big_events$datetime
+
+# states <- big_comb %>% 
+#     filter(datetime %in% doi[3])
+
+#w3_stic_locs_r %>% left_join(states, by = "ID")
+
+#figure without scale bar and legends
+states <- comparison %>% 
+    filter(datetime %in% doi) %>% 
+  pivot_longer(cols = c(cheapest, pk, random, twi),
+               values_to = "prediction", 
+               names_to = "sequence")
+
+states$eval <- mapply(get_eval_label, states$binary, states$prediction)
+
+ggplot()+
+  theme_void()+
+  geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 1)+
+  geom_sf(data = w3_net, colour = "grey", lwd = 0.8) +
+geom_sf(data = w3_stic_locs_r %>% inner_join(states, by = "ID"), 
+        aes(fill = as.character(prediction),
+            color = eval), size = 2, stroke = 1, pch = 21) +
+  scale_color_manual(values = c("green", "black", "orange"),
+                     name = "")+
+  scale_fill_manual(values = c("white", "black"),
+                    labels = c("dry", "flowing"),
+                    name = "")+
+  theme(rect = element_rect(fill = "transparent", color = NA),
+        legend.position = "")+
+  facet_grid(sequence~datetime)
 ```
 
 Chunk straight from mapsForStoryboard, of my current best attempt to extract rising and falling limbs from discharge record for W3. Plan to use to compare how the different methods work during rising, falling, and baseflow.
