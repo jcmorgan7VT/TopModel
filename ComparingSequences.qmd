@@ -2790,6 +2790,78 @@ comparison <- input_w3 %>%
   left_join(model_out, by = c("datetime", "ID")) %>% 
   select(-wshed, -mins)
 ```
+Make sure that the new way to model is working for sequences other than pk
+```{r}
+#new method, incorporating missing nodes at different timesteps
+number_activated <- 
+  input_w3 %>% 
+  left_join(W3_cheap, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins)) %>% 
+  mutate(deployed = length(binary)) %>% 
+  #arrange(sequence) %>% 
+      #filter(binary == 1) %>% 
+    summarise(number_flowing = length(binary[binary == 1]),
+            deployed = list(unique(ID))) #%>% View()
+
+W3_pk_seq$ID[W3_pk_seq$ID %in% unlist(number_activated$deployed[1])]
+
+# 2. Dataframe with timestamps and how many nodes to activate
+number_activated <- number_activated %>% 
+  select(-deployed)
+# Fixed full node sequence
+full_node_sequence <- W3_cheap$ID
+
+# Sample activation schedule
+activation_schedule <- number_activated
+
+# Function to generate a single activation row with NA for missing nodes
+    '%!in%' <- function(x,y)!('%in%'(x,y))
+
+#generate_activation_row <- function(datetime, n_active, available_nodes) {
+  n_active <- activation_schedule$number_flowing[1]
+  available_nodes <- unlist(activation_schedule$deployed[1])
+  datetime <- activation_schedule$datetime[1]
+  # Order available nodes based on full sequence
+  ordered_available <- full_node_sequence[full_node_sequence %in% available_nodes]
+  
+    #not_deployed <- full_node_sequence[full_node_sequence %!in% (available_nodes)]
+
+
+  
+  # Identify the first `n_active` nodes to activate
+  activated_nodes <- head(ordered_available, n_active)
+  ordered_available
+  activated_nodes
+  full_node_sequence
+  output <- tibble("datetime" = datetime,
+             "ID" = full_node_sequence,
+             "binary" = 0) %>% 
+    #mutate(binary = case_when(ID %in% ordered_available ~ 0)) %>% 
+    mutate(binary = case_when(
+                              ID %in% activated_nodes ~ 1,
+                              ID %!in% ordered_available ~ NA,
+                              TRUE ~ 0))
+  return(output)
+}
+
+generate_activation_row(activation_schedule$datetime[1],
+                        activation_schedule$number_flowing[1],
+                        unlist(activation_schedule$deployed[1]))
+# Apply the function to each row of the activation schedule
+
+model_out <- Map(generate_activation_row, 
+    datetime = activation_schedule$datetime, 
+    n_active = activation_schedule$number_flowing, 
+    available_nodes = activation_schedule$deployed) %>% dplyr::bind_rows() #%>% 
+  rename(pk_out = binary)
+
+model_out
+comparison <- input_w3 %>% 
+  filter(mins %in% c(0, 30)) %>% 
+  left_join(model_out, by = c("datetime", "ID")) %>% 
+  select(-wshed, -mins)
+```
 
 Now make a function to calc the model result using this method
 ```{r}
@@ -2867,6 +2939,12 @@ cheap_model <- calc_model_result(W3_cheap$ID) %>% rename("cheapest" = pred_out)
 pk_model <- calc_model_result(W3_pk_seq$ID) %>% rename("pk" = pred_out)
 random_model <- calc_model_result(W3_random$ID) %>% rename("random" = pred_out)
 twi_model <- calc_model_result(w3_twi_sequence$ID) %>% rename("twi" = pred_out)
+
+input_w3 %>% 
+  filter(mins %in% c(0, 30)) %>% 
+  left_join(cheap_model, by = c("datetime", "ID")) %>% 
+  select(-wshed, -mins) %>%
+  filter(datetime == ymd_hms("2023-08-08 04:00:00 UTC")) %>%  View()
 ```
 
 BIG PROBLEM: sequence includes all nodes, but not all nodes are present at every timestep. Sequence needs to be adjusted at each timestep to reflect the nodes that are present dynamically....
@@ -3082,6 +3160,48 @@ df_long %>%
   
   
 
+```
+
+Chunk to find if there is any time when a different sequence is better than pk
+```{r}
+#summarize through time
+df_summary_time <- comparison %>%
+  group_by(datetime) %>%
+  summarize(
+    cheap_correct = sum(cheapest_eval == "correct"),
+    pk_correct = sum(pk_eval == "correct"),
+    random_correct = sum(random_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    total = n(),
+    cheap_accuracy = cheap_correct / total,
+    pk_accuracy = pk_correct / total,
+    random_accuracy = random_correct / total,
+    twi_accuracy = twi_correct / total
+  )
+
+df_summary_time <- df_summary_time %>%
+  mutate(diff = A_accuracy - B_accuracy)
+
+df_long <- df_summary_time %>%
+  select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
+  tidyr::pivot_longer(cols = c(cheap_accuracy, random_accuracy, twi_accuracy), 
+                      names_to = "model", values_to = "accuracy") %>% 
+  mutate(diff = accuracy - pk_accuracy)
+
+#plot the difference in performance versus discharge
+df_long %>% 
+  inner_join(discharge_df, by = "datetime") %>% 
+  #rename("Hydrograph Component", event_type)
+  #group_by(event_type, code) %>% 
+  #summarise(mean = mean(count)) %>% 
+  ggplot(aes(x = Q_mm_day, y = diff, color = event_type)) +
+  geom_point(alpha = 0.5) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Difference in Accuracy (Cheapest - Prop of time flowing)", y = " ", x = "Discharge (mm/day)")+
+   scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1"))+
+  labs(color='Hydrograph Component') +
+  theme_classic()+
+  facet_wrap(~model)
 ```
 
 Figuring out weird points that are the same in each plot, when looking at accuracy versus discharge
@@ -4227,5 +4347,114 @@ for(i in 1:length(many_cheap)){
 many_chains
 many_chains -> many_chains2
 
+many_cheap <- rep("cheapest_insertion", 3)
+for(i in 1:length(many_cheap)){
+  chain <- chain_solution(W3_IDs, "W3", methods = many_cheap[i])
+  
+  output <- produce_metrics(chain, "W3", many_cheap[i])
+  
+  if(i == 1) many_chains <- output
+  if(i > 1) many_chains <- rbind(many_chains, output)
+}
+
+many_chains
+
+```
+
+```{r}
+produce_metrics <- function(chain, shed, method){
+# chain <- ZZ_cheap
+# shed <- "ZZ"
+# method = "cheapest_insertion"
+# calculate the number of flowing nodes at each timestep
+  if(shed == "W3"){
+    number_activated <-
+      input_w3 %>%
+      group_by(datetime) %>%
+      select(-c(wshed, mins)) %>%
+      filter(binary == 1) %>%
+      summarise(number_flowing = length(binary))
+  } 
+  else if(shed == "FB"){
+    number_activated <-
+      input_fb %>%
+      group_by(datetime) %>%
+      select(-c(wshed, mins)) %>%
+      filter(binary == 1) %>%
+      summarise(number_flowing = length(binary))
+  }
+  else if(shed == "ZZ"){
+    number_activated <-
+      input_zz %>%
+      group_by(datetime) %>%
+      select(-c(wshed, mins)) %>%
+      filter(binary == 1) %>%
+      summarise(number_flowing = length(binary))
+  }
+
+#make a dataframe where each row is a date, with a list of the active or inactive nodes according to a hierarchy
+
+  model_result <- calc_model_result(chain$ID)
+
+#combine all model results
+  if(shed == "W3"){
+    comparison <- input_w3 %>%
+      filter(mins %in% c(0, 30)) %>%
+      left_join(model_result, by = c("datetime", "ID")) %>%
+      select(-wshed, -mins) %>%
+      drop_na()
+  } 
+  else if(shed == "FB"){
+    comparison <- input_fb %>%
+      filter(mins %in% c(0, 30)) %>%
+      left_join(model_result, by = c("datetime", "ID")) %>%
+      select(-wshed, -mins) %>%
+      drop_na()
+  }
+  else if(shed == "ZZ"){
+    comparison <- input_zz %>%
+      filter(mins %in% c(0, 30)) %>%
+      left_join(model_result, by = c("datetime", "ID")) %>%
+      select(-wshed, -mins) %>%
+      drop_na()
+  }
+
+
+#chat gpt method to compare them
+get_eval_label <- function(true, pred) {
+  if (true == 1 && pred == 1) return("correct")
+  if (true == 0 && pred == 0) return("correct")
+  if (true == 1 && pred == 0) return("omission")
+  if (true == 0 && pred == 1) return("commission")
+}
+#get_eval_label(0,0)
+#apply get_eval function to each model run
+comparison$pred_eval <- mapply(get_eval_label, 
+                                   comparison$binary, 
+                                   comparison$pred_out)
+
+# ---- STEP 3: Define helper function to extract performance metrics ----
+get_metrics <- function(pred, true) {
+  cm <- confusionMatrix(factor(pred), factor(true), positive = "1")
+  data.frame(
+    Accuracy = cm$overall["Accuracy"],
+    Kappa = cm$overall["Kappa"],
+    Sensitivity = cm$byClass["Sensitivity"],
+    Specificity = cm$byClass["Specificity"],
+    Precision = cm$byClass["Precision"],
+    F1 = cm$byClass["F1"]
+  )
+}
+
+# ---- STEP 4: Summarize performance for all models ----
+metrics_df <- tibble(get_metrics(comparison$pred_out, comparison$binary)) %>% 
+  mutate(shed = shed,
+         method = method)
+#output <- list(metrics = metrics_df, sequence = ZZ_cheap)
+#make data long for final plot
+return(metrics_df)
+}
+
+produce_metrics(W3_cheap, "W3", "cheapest_insertion")
 ```
 
