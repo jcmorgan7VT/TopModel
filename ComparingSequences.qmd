@@ -2122,7 +2122,32 @@ geom_density(aes(color = method, fill = method), alpha = 0.5)+
   facet_grid(shed~timescale)
 ```
 
-## Figure 6: Maps of where sequences work in space, and time to a certain extent
+## Figure 6: Hydrograph, colored by which sequence works the best
+```{r}
+#trying to plot accuracy vs accuracy
+df_long2 <- df_summary_time %>%
+  select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
+  tidyr::pivot_longer(cols = c(cheap_accuracy, random_accuracy, twi_accuracy), 
+                      names_to = "model", values_to = "accuracy") %>% 
+    inner_join(discharge_df, by = "datetime")
+
+four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
+
+df_long2 %>% 
+  ggplot()+
+  geom_point(aes(x = pk_accuracy, 
+                 y = accuracy, 
+                 size = Q_mm_day, shape = event_type, color = model),
+             alpha = 0.5)+
+  scale_color_manual(values = c("#bb4430", "#231f20", "#f3dfa2"))+
+  geom_abline()+
+  theme_minimal()+
+  lims(y = c(0, 1),
+       x = c(0, 1))+
+  facet_grid(event_type~model)
+```
+
+## Figure 8: Maps of where sequences work in space, and time to a certain extent
 Set of map panels where symbol color = flowing state, outline color or shape indicating correctly predicted or not
 
 For these plots I need:
@@ -2353,6 +2378,59 @@ bars <- ggplot(filter(states, datetime == doi[1]), aes(y = datetime, fill = eval
   plot_layout(widths = c(1, 1), heights = unit(c(12, 1), c('cm', 'null')))
 
 
+```
+Map where the points are colored by accuracy, and faceted by hydrograph component and sequence
+```{r W3-map}
+#summarize through time
+ID_acc <- comparison %>%
+    inner_join(discharge_df, by = "datetime") %>% 
+  group_by(ID, event_type) %>%
+  summarize(
+    cheap_correct = sum(cheapest_eval == "correct"),
+    pk_correct = sum(pk_eval == "correct"),
+    random_correct = sum(random_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    total = n(),
+    cheap_accuracy = cheap_correct / total,
+    pk_accuracy = pk_correct / total,
+    random_accuracy = random_correct / total,
+    twi_accuracy = twi_correct / total
+  ) %>%
+  select(ID, event_type, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
+  tidyr::pivot_longer(cols = c(cheap_accuracy,pk_accuracy, random_accuracy, twi_accuracy), 
+                      names_to = "model", values_to = "accuracy")
+
+#figure with scale bar and legends
+ggplot()+
+  theme_void()+
+  geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 2)+
+  geom_sf(data = w3_net, colour = "grey", lwd = 1) +
+geom_sf(data = w3_stic_locs_r %>% inner_join(ID_acc, by = "ID"), 
+        aes(fill = accuracy, shape = event_type), size = 4) +
+  # scale_color_manual(values = c("orange", "black", "limegreen"),
+  #                    name = "")+
+  scale_fill_continuous(type = "viridis",
+                             limits = c(0,1))+
+  scale_shape_manual(values = c(21, 24, 22))+
+  theme(rect = element_rect(fill = "transparent", color = NA))+#,
+        #legend.position = "")+
+  ggspatial::annotation_scale(location = 'tr', pad_x = unit(0, "cm"),
+                              pad_y = unit(1, "cm"))+
+  facet_grid(event_type ~ model)
+
+#another version, where the points maintain their colors from earlier, but accuracy is illustrated using size or alpha
+ggplot()+
+  theme_void()+
+  geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 2)+
+  geom_sf(data = w3_net, colour = "grey", lwd = 1) +
+geom_sf(data = w3_stic_locs_r %>% inner_join(ID_acc, by = "ID"), 
+        aes(alpha = accuracy, shape = event_type, fill = model), size = 4) +
+  scale_fill_manual(values = four_colors,
+                     name = "")+
+  scale_shape_manual(values = c(21, 24, 22))+
+  theme(rect = element_rect(fill = "transparent", color = NA))+#,
+        #legend.position = "")+
+  facet_grid(event_type ~ model)
 ```
 
 
@@ -3144,11 +3222,18 @@ test %>%
 df_long %>% 
   group_by(datetime) %>% 
   filter(accuracy == max(accuracy)) %>% 
-  inner_join(big_comb, by = "datetime") %>% 
-  ggplot(aes(x = Q_mm_day, y = accuracy, color = model)) +
-  geom_point(stat = "identity", alpha = 0.2) +
-  labs(title = "Model Accuracy Over Time", y = "Accuracy", x = "Time")+
-    facet_wrap(~model)
+  mutate(dup = as.character(n() > 1)) %>% ungroup()  %>% 
+  mutate(unique_sol = case_when(dup == TRUE ~ "z_tie",
+                                dup == FALSE ~ model)) %>% 
+inner_join(big_comb, by = "datetime") %>% 
+  ggplot(aes(x = datetime, y = Q_mm_day, color = unique_sol, alpha = accuracy)) +
+  #geom_point() +
+  geom_point(size = 1)+
+  theme_classic()+
+  scale_color_manual(values = c(four_colors, "grey"))+
+  labs(title = "Most accurate model along hydrograph", y = "Discharge (mm/day)", x = "")
+
+
 
 
 df_long %>% 
@@ -3158,6 +3243,27 @@ df_long %>%
   labs(title = "Model Accuracy Over Time", y = "Accuracy", x = "Time")#+
   facet_wrap(~model)
   
+#trying to plot accuracy vs accuracy
+df_long2 <- df_summary_time %>%
+  select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
+  tidyr::pivot_longer(cols = c(cheap_accuracy, random_accuracy, twi_accuracy), 
+                      names_to = "model", values_to = "accuracy") %>% 
+    inner_join(discharge_df, by = "datetime")
+
+four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
+
+df_long2 %>% 
+  ggplot()+
+  geom_point(aes(x = pk_accuracy, 
+                 y = accuracy, 
+                 size = Q_mm_day, shape = event_type, color = model),
+             alpha = 0.5)+
+  scale_color_manual(values = c("#bb4430", "#231f20", "#f3dfa2"))+
+  geom_abline()+
+  theme_minimal()+
+  lims(y = c(0, 1),
+       x = c(0, 1))+
+  facet_grid(event_type~model)
   
 
 ```
