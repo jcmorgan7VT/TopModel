@@ -19,7 +19,7 @@ Not sure if I should include the dummy or not; FB is a lot better with a dummy, 
 ```{r setup}
 #loading packages
 library(pacman)
-p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,ggnewscale, sf, elevatr, patchwork, ggspatial, zoo, igraph, TSP, ggnetwork, intergraph, ggpubr)
+p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,ggnewscale, sf, elevatr, patchwork, ggspatial, zoo, igraph, TSP, ggnetwork, intergraph, ggpubr, knitr)
 #whitebox::install_whitebox()
 
 #reading in final format data for summer 23
@@ -623,6 +623,55 @@ q_combined %>% filter(shed == "FB") %>%
 #BIG PROBLEM
 ```
 
+```{r}
+#chunk that reads in stage, converts to proper units
+#read in stage, convert to a height
+ZZ_air <- read_csv("./PressureTransducers_11_14_23/ZZ_air.csv", skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi_air = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME))
+
+ZZ_water <- read_csv("./PressureTransducers_11_14_23/ZZ_water.csv", skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi_water = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME))
+
+ZZ_water %>% 
+  left_join(ZZ_air, by = "DATETIME") %>% 
+  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
+  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
+  ggplot(aes(x = DATETIME, y = stage_cm))+
+  geom_line()+
+  theme_classic()+
+  labs(title = "ZZ Stage",
+       x = "",
+       y = "Stage (in)")
+```
+### Number of transitions in each component of hydrograph
+```{r W3}
+#make companion plot that shows the number of transitions during each part of hydrograph
+test <- input_w3 %>% 
+  filter(mins %in% c(0, 30)) %>%
+  group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) %>% 
+  filter(transition %in% c(-1, 1))
+
+test$state_change <- "none"
+test$state_change[test$transition == -1] <- "wetting"
+test$state_change[test$transition == 1] <- "drying"
+
+test %>% 
+  inner_join(discharge_df, by = "datetime") %>%
+  group_by(state_change, event_type) %>% 
+  summarise(count = n()) %>% 
+  pivot_wider(names_from = state_change, values_from = count) %>% 
+  kable(format = "markdown")
+
+
+```
 
 # Graph theory sequences
 ## Determine all possible combinations, or the full graph
@@ -1041,8 +1090,7 @@ ggplot(ggmst, aes(x = x, y = y, xend = xend, yend = yend)) +
 
 
 ## Defining genearlized function
-For final plots for tomorrow, keep arbitrary insertion and cheapest insertion
-```{r generalized-function}
+```{r generalized-function-graph-solution}
 #define all possible methods
 #removed 3 methods
 all_methods = c("nearest_insertion", "random",
@@ -1428,7 +1476,7 @@ geom_density(aes(color = method, fill = method), alpha = 0.5)+
 
 
 
-# proportion of time flowing sequences
+# Defining proportion of time flowing sequences
 My big graph theory solution provides the random hierarhcy and graph theory solution. All I need is the proportion of time flowing and maybe one based on topography... maybe drainage area or TWI?
 ```{r flow-permanence-W3}
 #just summer 2023
@@ -1491,6 +1539,12 @@ pks_w3 <- data_23 %>%
   select(ID, pk) %>% 
   ungroup() %>% 
   mutate(wshed = "W3")
+
+#Define sequence by proportion of time flowing
+W3_pk_seq <- pks_w3 %>% 
+  arrange(desc(pk)) %>% 
+  mutate(sequence = seq(1, length(pks_w3$ID), 1)) %>% 
+  select(ID, sequence)
 ```
 ```{r flow-permanence-FB}
 #both summers
@@ -1514,6 +1568,13 @@ pks_fb <- data_23 %>%
   select(ID, pk) %>% 
   ungroup() %>% 
   mutate(wshed = "FB")
+
+#Define proportion of time flowing sequence
+#make a df with ID and the number in the sequence
+FB_pk_seq <- pks_fb %>% 
+  arrange(desc(pk)) %>% 
+  mutate(sequence = seq(1, length(pks_fb$ID), 1)) %>% 
+  select(ID, sequence)
 ```
 ```{r flow-permanence-ZZ}
 precalc_24 <- data_24 %>% 
@@ -1535,6 +1596,12 @@ pks_zz <- data_23 %>%
   select(ID, pk) %>% 
   ungroup() %>% 
   mutate(wshed = "ZZ")
+
+#define proportion of time flowing sequence for ZZ
+ZZ_pk_seq <- pks_zz %>% 
+  arrange(desc(pk)) %>% 
+  mutate(sequence = seq(1, length(pks_zz$ID), 1)) %>% 
+  select(ID, sequence)
 ```
 ```{r proportion-of-time-flowing-analysis}
 routes_w3 <- pks_w3 %>% 
@@ -1566,7 +1633,7 @@ all_pk <- rbind(calc_props(routes_w3, "W3"),
   mutate("method" = "Flow Permanence")
 ```
 
-# TWI sequences
+# Defining TWI sequences
 ```{r locs-from-arc}
 #get snapped sensor locations from extracted values from arc
 w3_locs <- read_csv("./STIC_uaa/w32.csv")%>% 
@@ -1821,6 +1888,798 @@ zz_twi_sequence <- zz_twi %>%
   arrange(desc(twi))
 
 ```
+
+# Testing Sequences, running model
+This section contains all chunks used to test the effectiveness of a given sequence.  
+Model is using same Method as Botter et al. 2021, where the number of active nodes at a given timestep is known. Nodes are activated in order of the sequence until the number activated is reached. The presence or absence of flow based on the model is then compared to the actual values for each node at each timestep.  
+
+```{r figuring-out-how}
+#new method, incorporating missing nodes at different timesteps
+input_w3 %>% 
+  left_join(W3_cheap, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins)) %>% 
+  arrange((sequence)) %>% 
+  # mutate("downstream" = lag(binary),
+  #        "following" = downstream - binary) %>% 
+  #filter(following != -1) %>% 
+  filter(datetime == "2023-07-15 19:00:00") %>% View()
+   # summarise(count_non = length(following)) %>% View()
+
+
+#make a dataframe where each row is a date, with a list of the active or inactive nodes according to a hierarchy
+number_activated %>% mutate(all_nodes = W3_pk_seq$ID)
+
+
+
+number_activated <- 
+  input_w3 %>% 
+  left_join(W3_cheap, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins)) %>% 
+  mutate(deployed = length(binary)) %>% 
+  #arrange(sequence) %>% 
+      #filter(binary == 1) %>% 
+    summarise(number_flowing = length(binary[binary == 1]),
+            deployed = list(unique(ID))) #%>% View()
+
+W3_pk_seq$ID[W3_pk_seq$ID %in% unlist(number_activated$deployed[1])]
+
+# 2. Dataframe with timestamps and how many nodes to activate
+number_activated <- number_activated %>% 
+  select(-deployed)
+# Fixed full node sequence
+full_node_sequence <- W3_pk_seq$ID
+
+# Sample activation schedule
+activation_schedule <- number_activated
+
+# Function to generate a single activation row with NA for missing nodes
+    '%!in%' <- function(x,y)!('%in%'(x,y))
+
+generate_activation_row <- function(datetime, n_active, available_nodes) {
+  #n_active <- activation_schedule$number_flowing[1]
+  #available_nodes <- unlist(activation_schedule$deployed[1])
+  # Order available nodes based on full sequence
+  ordered_available <- full_node_sequence[full_node_sequence %in% available_nodes]
+  
+    #not_deployed <- full_node_sequence[full_node_sequence %!in% (available_nodes)]
+
+
+  
+  # Identify the first `n_active` nodes to activate
+  activated_nodes <- head(ordered_available, n_active)
+  # ordered_available
+  # activated_nodes
+  # full_node_sequence
+  output <- tibble("datetime" = datetime,
+             "ID" = full_node_sequence,
+             "binary" = 0) %>% 
+    #mutate(binary = case_when(ID %in% ordered_available ~ 0)) %>% 
+    mutate(binary = case_when(
+                              ID %in% activated_nodes ~ 1,
+                              ID %!in% ordered_available ~ NA,
+                              TRUE ~ 0))
+  return(output)
+}
+
+generate_activation_row(activation_schedule$datetime[1],
+                        activation_schedule$number_flowing[1],
+                        unlist(activation_schedule$deployed[1]))
+# Apply the function to each row of the activation schedule
+
+model_out <- Map(generate_activation_row, 
+    datetime = activation_schedule$datetime, 
+    n_active = activation_schedule$number_flowing, 
+    available_nodes = activation_schedule$deployed) %>% dplyr::bind_rows() %>% 
+  rename(pk_out = binary)
+
+model_out
+comparison <- input_w3 %>% 
+  filter(mins %in% c(0, 30)) %>% 
+  left_join(model_out, by = c("datetime", "ID")) %>% 
+  select(-wshed, -mins)
+```
+Make sure that the new way to model is working for sequences other than pk
+```{r testing-cases}
+#new method, incorporating missing nodes at different timesteps
+number_activated <- 
+  input_w3 %>% 
+  left_join(W3_cheap, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins)) %>% 
+  mutate(deployed = length(binary)) %>% 
+  #arrange(sequence) %>% 
+      #filter(binary == 1) %>% 
+    summarise(number_flowing = length(binary[binary == 1]),
+            deployed = list(unique(ID))) #%>% View()
+
+W3_pk_seq$ID[W3_pk_seq$ID %in% unlist(number_activated$deployed[1])]
+
+# 2. Dataframe with timestamps and how many nodes to activate
+number_activated <- number_activated %>% 
+  select(-deployed)
+# Fixed full node sequence
+full_node_sequence <- W3_cheap$ID
+
+# Sample activation schedule
+activation_schedule <- number_activated
+
+# Function to generate a single activation row with NA for missing nodes
+    '%!in%' <- function(x,y)!('%in%'(x,y))
+
+#generate_activation_row <- function(datetime, n_active, available_nodes) {
+  n_active <- activation_schedule$number_flowing[1]
+  available_nodes <- unlist(activation_schedule$deployed[1])
+  datetime <- activation_schedule$datetime[1]
+  # Order available nodes based on full sequence
+  ordered_available <- full_node_sequence[full_node_sequence %in% available_nodes]
+  
+    #not_deployed <- full_node_sequence[full_node_sequence %!in% (available_nodes)]
+
+
+  
+  # Identify the first `n_active` nodes to activate
+  activated_nodes <- head(ordered_available, n_active)
+  ordered_available
+  activated_nodes
+  full_node_sequence
+  output <- tibble("datetime" = datetime,
+             "ID" = full_node_sequence,
+             "binary" = 0) %>% 
+    #mutate(binary = case_when(ID %in% ordered_available ~ 0)) %>% 
+    mutate(binary = case_when(
+                              ID %in% activated_nodes ~ 1,
+                              ID %!in% ordered_available ~ NA,
+                              TRUE ~ 0))
+  return(output)
+#}
+
+generate_activation_row(activation_schedule$datetime[1],
+                        activation_schedule$number_flowing[1],
+                        unlist(activation_schedule$deployed[1]))
+# Apply the function to each row of the activation schedule
+
+model_out <- Map(generate_activation_row, 
+    datetime = activation_schedule$datetime, 
+    n_active = activation_schedule$number_flowing, 
+    available_nodes = activation_schedule$deployed) %>% dplyr::bind_rows() #%>% 
+  rename(pk_out = binary)
+
+model_out
+comparison <- input_w3 %>% 
+  filter(mins %in% c(0, 30)) %>% 
+  left_join(model_out, by = c("datetime", "ID")) %>% 
+  select(-wshed, -mins)
+```
+
+Now make a function to calc the model result using this method
+```{r define calc-model-result function}
+#new method, incorporating missing nodes at different timesteps
+calc_model_result <- function(input_sequence){
+
+number_activated <- 
+  input_w3 %>% 
+  #left_join(W3_cheap, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins)) %>% 
+  mutate(deployed = length(binary)) %>% 
+  #arrange(sequence) %>% 
+      #filter(binary == 1) %>% 
+    summarise(number_flowing = length(binary[binary == 1]),
+            deployed = list(unique(ID))) #%>% View()
+
+#W3_pk_seq$ID[W3_pk_seq$ID %in% unlist(number_activated$deployed[1])]
+
+# 2. Dataframe with timestamps and how many nodes to activate
+
+# Fixed full node sequence
+full_node_sequence <- input_sequence
+
+# Sample activation schedule
+activation_schedule <- number_activated
+
+# Function to generate a single activation row with NA for missing nodes
+    '%!in%' <- function(x,y)!('%in%'(x,y))
+
+generate_activation_row <- function(datetime, n_active, available_nodes) {
+  #n_active <- activation_schedule$number_flowing[1]
+  #available_nodes <- unlist(activation_schedule$deployed[1])
+  # Order available nodes based on full sequence
+  ordered_available <- full_node_sequence[full_node_sequence %in% available_nodes]
+  
+    #not_deployed <- full_node_sequence[full_node_sequence %!in% (available_nodes)]
+
+
+  
+  # Identify the first `n_active` nodes to activate
+  activated_nodes <- head(ordered_available, n_active)
+  # ordered_available
+  # activated_nodes
+  # full_node_sequence
+  output <- tibble("datetime" = datetime,
+             "ID" = full_node_sequence,
+             "binary" = 0) %>% 
+    #mutate(binary = case_when(ID %in% ordered_available ~ 0)) %>% 
+    mutate(binary = case_when(
+                              ID %in% activated_nodes ~ 1,
+                              ID %!in% ordered_available ~ NA,
+                              TRUE ~ 0))
+  return(output)
+}
+
+# Apply the function to each row of the activation schedule
+
+model_out <- Map(generate_activation_row, 
+    datetime = activation_schedule$datetime, 
+    n_active = activation_schedule$number_flowing, 
+    available_nodes = activation_schedule$deployed) %>% dplyr::bind_rows() %>% 
+  rename(pred_out = binary)
+
+return(model_out)
+}
+
+calc_model_result(W3_pk_seq$ID)
+comparison <- input_w3 %>% 
+  filter(mins %in% c(0, 30)) %>% 
+  left_join(model_out, by = c("datetime", "ID")) %>% 
+  select(-wshed, -mins)
+
+
+input_w3 %>% 
+  filter(mins %in% c(0, 30)) %>% 
+  left_join(cheap_model, by = c("datetime", "ID")) %>% 
+  select(-wshed, -mins) %>%
+  filter(datetime == ymd_hms("2023-08-08 04:00:00 UTC")) %>%  View()
+```
+Run on W3
+```{r}
+cheap_model <- calc_model_result(W3_cheap$ID) %>% rename("cheapest" = pred_out)
+pk_model <- calc_model_result(W3_pk_seq$ID) %>% rename("pk" = pred_out)
+random_model <- calc_model_result(W3_random$ID) %>% rename("random" = pred_out)
+twi_model <- calc_model_result(w3_twi_sequence$ID) %>% rename("twi" = pred_out)
+
+```
+
+```{r W3}
+
+
+# calculate the number of flowing nodes at each timestep
+number_activated <- 
+  input_w3 %>% 
+  #left_join(ZZ_cheap, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins)) %>% 
+  #arrange(sequence) %>% 
+      filter(binary == 1) %>% 
+    summarise(number_flowing = length(binary))
+#make a dataframe where each row is a date, with a list of the active or inactive nodes according to a hierarchy
+
+#applying evaluation model using different sequences
+calc_model_result <- function(input_sequence){
+# 1. Ordered node sequence
+node_sequence <- input_sequence
+
+# 2. Dataframe with timestamps and how many nodes to activate
+#defined previously
+#number_activated
+
+# 3. Build the activation matrix
+activation_matrix <- t(sapply(number_activated$number_flowing, function(n) {
+  active_flags <- rep(0, length(node_sequence))
+  if (n > 0) active_flags[1:n] <- 1
+  active_flags
+}))
+
+# 4. Assign column names and combine with timestamps
+colnames(activation_matrix) <- node_sequence
+activation_df <- cbind(number_activated["datetime"], as.data.frame(activation_matrix))
+
+# View result
+activation_final <- activation_df %>% pivot_longer(-datetime) %>% 
+  rename("ID" = name, "pred_binary" = value) %>% 
+  mutate(ID = as.numeric(ID))
+
+return(activation_final)
+}
+
+cheap_model <- calc_model_result(W3_cheap$ID) %>% rename("cheapest" = pred_binary)
+pk_model <- calc_model_result(W3_pk_seq$ID) %>% rename("pk" = pred_binary)
+random_model <- calc_model_result(W3_random$ID) %>% rename("random" = pred_binary)
+twi_model <- calc_model_result(w3_twi_sequence$ID) %>% rename("twi" = pred_binary)
+
+comparison <- input_w3 %>% 
+  filter(mins %in% c(0, 30)) %>% 
+  left_join(cheap_model, by = c("datetime", "ID")) %>% 
+  left_join(pk_model, by = c("datetime", "ID")) %>% 
+    left_join(random_model, by = c("datetime", "ID")) %>% 
+  left_join(twi_model, by = c("datetime", "ID")) %>% 
+  select(-wshed, -mins) %>% 
+  drop_na()
+
+#chat gpt method to compare them
+get_eval_label <- function(true, pred) {
+  if (true == 1 && pred == 1) return("correct")
+  if (true == 0 && pred == 0) return("correct")
+  if (true == 1 && pred == 0) return("omission")
+  if (true == 0 && pred == 1) return("commission")
+}
+get_eval_label(0,0)
+#apply get_eval function to each model run
+comparison$cheapest_eval <- mapply(get_eval_label, comparison$binary, comparison$cheapest)
+comparison$pk_eval <- mapply(get_eval_label, comparison$binary, comparison$pk)
+comparison$random_eval <- mapply(get_eval_label, comparison$binary, comparison$random)
+comparison$twi_eval <- mapply(get_eval_label, comparison$binary, comparison$twi)
+
+
+comparison$comparison_cheap <- with(comparison, ifelse(
+  cheapest_eval == pk_eval, "equal",
+  ifelse(cheapest_eval == "correct", "cheap_better",
+         ifelse(pk_eval == "correct", "pk_better", "neither_better"))
+))
+comparison$comparison_random <- with(comparison, ifelse(
+  random_eval == pk_eval, "equal",
+  ifelse(random_eval == "correct", "cheap_better",
+         ifelse(pk_eval == "correct", "pk_better", "neither_better"))
+))
+comparison$comparison_twi <- with(comparison, ifelse(
+  twi == pk_eval, "equal",
+  ifelse(twi == "correct", "cheap_better",
+         ifelse(pk_eval == "correct", "pk_better", "neither_better"))
+))
+
+
+#summarize through time
+df_summary_time <- comparison %>%
+  group_by(datetime) %>%
+  summarize(
+    cheap_correct = sum(cheapest_eval == "correct"),
+    pk_correct = sum(pk_eval == "correct"),
+    random_correct = sum(random_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    total = n(),
+    cheap_accuracy = cheap_correct / total,
+    pk_accuracy = pk_correct / total,
+    random_accuracy = random_correct / total,
+    twi_accuracy = twi_correct / total
+  )
+
+df_summary_time <- df_summary_time %>%
+  select(contains("accuracy"))
+plot(df_summary_time)
+
+summary_by_node <- comparison %>%
+  group_by(ID) %>%
+  summarize(
+    cheap_correct = sum(cheapest_eval == "correct"),
+    pk_correct = sum(pk_eval == "correct"),
+    random_correct = sum(random_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    cheap_omission = sum(cheapest_eval == "omission"),
+    pk_omission = sum(pk_eval == "omission"),
+    random_omission = sum(random_eval == "omission"),
+    twi_omission = sum(twi_eval == "omission"),
+    cheap_commission = sum(cheapest_eval == "commission"),
+    pk_commission = sum(pk_eval == "commission"),
+    random_commission = sum(random_eval == "commission"),
+    twi_commission = sum(twi_eval == "commission")
+    #A_better_count = sum(comparison == "A_better"),
+    #B_better_count = sum(comparison == "B_better"),
+    #Equal_count = sum(comparison == "equal")
+  )
+
+
+
+#make data long for final plot
+comparison_long <- 
+  comparison %>% 
+  select(datetime, ends_with("eval")) %>% 
+    pivot_longer(-datetime) %>% 
+  mutate(year = year(datetime))
+#final plot
+comparison_long %>% 
+  #group_by(datetime) %>% 
+  filter(year == 2023) %>% 
+  mutate(total = as.numeric(length(value))) %>% 
+  ggplot() +
+  geom_histogram(aes(x = datetime, fill = value), bins = 100, na.rm = TRUE)+
+  facet_grid(name~year)+
+  labs(x = "", y = "Count")+
+    ylim(0,1750)+
+  theme(
+  strip.background = element_blank(),
+  strip.text.y = element_blank(),
+  legend.position = "none"
+)
+comparison_long %>% 
+  #group_by(datetime) %>% 
+  filter(year == 2024) %>% 
+  mutate(total = as.numeric(length(value))) %>% 
+  ggplot() +
+  geom_histogram(aes(x = datetime, fill = value), bins = 50, na.rm = TRUE)+
+  facet_grid(name~year)+
+  labs(x = "", y = "Count")+
+  ylim(0,1750)+
+  theme(
+  strip.background = element_blank()#,
+  #strip.text.y = element_blank(),
+  #legend.position = "none"
+)
+
+comparison_long %>% 
+  mutate(day_of_year = yday(datetime)
+  ) %>% 
+  #group_by(datetime) %>% 
+  #filter(year == 2023) %>% 
+  mutate(total = as.numeric(length(value))) %>% 
+  ggplot() +
+  geom_histogram(aes(x = day_of_year, fill = value), binwidth = 1, na.rm = TRUE)+
+  facet_grid(name~year)
+
+
+
+```
+```{r FB}
+#chains used in graph theory solutions
+FB_cheap <- chain_solution(FB_IDs, "FB", methods = "cheapest_insertion")
+FB_random <- chain_solution(FB_IDs, "FB", methods = "random")
+
+ZZ_cheap <- chain_solution(ZZ_IDs, "ZZ", methods = "cheapest_insertion")
+ZZ_random <- chain_solution(ZZ_IDs, "ZZ", methods = "random")
+
+# calculate the number of flowing nodes at each timestep
+number_activated <- 
+  input_fb %>% 
+  left_join(FB_cheap, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins)) %>% 
+  #arrange(sequence) %>% 
+      filter(binary == 1) %>% 
+    summarise(number_flowing = length(binary))
+#make a dataframe where each row is a date, with a list of the active or inactive nodes according to a hierarchy
+
+#applying evaluation model using different sequences
+calc_model_result <- function(input_sequence){
+# 1. Ordered node sequence
+node_sequence <- input_sequence
+
+# 2. Dataframe with timestamps and how many nodes to activate
+#defined previously
+#number_activated
+
+# 3. Build the activation matrix
+activation_matrix <- t(sapply(number_activated$number_flowing, function(n) {
+  active_flags <- rep(0, length(node_sequence))
+  if (n > 0) active_flags[1:n] <- 1
+  active_flags
+}))
+
+# 4. Assign column names and combine with timestamps
+colnames(activation_matrix) <- node_sequence
+activation_df <- cbind(number_activated["datetime"], as.data.frame(activation_matrix))
+
+# View result
+activation_final <- activation_df %>% pivot_longer(-datetime) %>% 
+  rename("ID" = name, "pred_binary" = value) %>% 
+  mutate(ID = as.numeric(ID))
+
+return(activation_final)
+}
+
+cheap_model <- calc_model_result(FB_cheap$ID) %>% rename("cheapest" = pred_binary)
+pk_model <- calc_model_result(FB_pk_seq$ID) %>% rename("pk" = pred_binary)
+random_model <- calc_model_result(FB_random$ID) %>% rename("random" = pred_binary)
+#defined twi sequence earlier
+twi_model <- calc_model_result(fb_twi_sequence$ID) %>% rename("twi" = pred_binary)
+
+comparison <- input_fb %>% 
+  filter(mins %in% c(0, 30)) %>% 
+  left_join(cheap_model, by = c("datetime", "ID")) %>% 
+  left_join(pk_model, by = c("datetime", "ID")) %>% 
+    left_join(random_model, by = c("datetime", "ID")) %>% 
+  left_join(twi_model, by = c("datetime", "ID")) %>% 
+  select(-wshed, -mins) %>% 
+  drop_na()
+
+#chat gpt method to compare them
+get_eval_label <- function(true, pred) {
+  if (true == 1 && pred == 1) return("correct")
+  if (true == 0 && pred == 0) return("correct")
+  if (true == 1 && pred == 0) return("omission")
+  if (true == 0 && pred == 1) return("commission")
+}
+get_eval_label(0,0)
+#apply get_eval function to each model run
+comparison$cheapest_eval <- mapply(get_eval_label, comparison$binary, comparison$cheapest)
+comparison$pk_eval <- mapply(get_eval_label, comparison$binary, comparison$pk)
+comparison$random_eval <- mapply(get_eval_label, comparison$binary, comparison$random)
+comparison$twi_eval <- mapply(get_eval_label, comparison$binary, comparison$twi)
+
+
+comparison$comparison_cheap <- with(comparison, ifelse(
+  cheapest_eval == pk_eval, "equal",
+  ifelse(cheapest_eval == "correct", "cheap_better",
+         ifelse(pk_eval == "correct", "pk_better", "neither_better"))
+))
+comparison$comparison_random <- with(comparison, ifelse(
+  random_eval == pk_eval, "equal",
+  ifelse(random_eval == "correct", "cheap_better",
+         ifelse(pk_eval == "correct", "pk_better", "neither_better"))
+))
+comparison$comparison_twi <- with(comparison, ifelse(
+  twi == pk_eval, "equal",
+  ifelse(twi == "correct", "cheap_better",
+         ifelse(pk_eval == "correct", "pk_better", "neither_better"))
+))
+
+
+summary_by_node <- comparison %>%
+  group_by(ID) %>%
+  summarize(
+    cheap_correct = sum(cheapest_eval == "correct"),
+    pk_correct = sum(pk_eval == "correct"),
+    random_correct = sum(random_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    cheap_omission = sum(cheapest_eval == "omission"),
+    pk_omission = sum(pk_eval == "omission"),
+    random_omission = sum(random_eval == "omission"),
+    twi_omission = sum(twi_eval == "omission"),
+    cheap_commission = sum(cheapest_eval == "commission"),
+    pk_commission = sum(pk_eval == "commission"),
+    random_commission = sum(random_eval == "commission"),
+    twi_commission = sum(twi_eval == "commission")
+    #A_better_count = sum(comparison == "A_better"),
+    #B_better_count = sum(comparison == "B_better"),
+    #Equal_count = sum(comparison == "equal")
+  )
+
+
+ggplot(summary_by_node, aes(x=A_correct, y=B_correct, label=ID)) +
+  geom_point() +
+  geom_abline(slope=1, intercept=0, linetype="dashed", color="red") +
+  geom_text(nudge_y=1.5) +
+  labs(title="Model Comparison per Node", x="Model A Correct Predictions", y="Model B Correct Predictions")
+
+
+
+#summarize through time
+df_summary_time <- comparison %>%
+  group_by(datetime) %>%
+  summarize(
+    cheap_correct = sum(cheapest_eval == "correct"),
+    pk_correct = sum(pk_eval == "correct"),
+    random_correct = sum(random_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    total = n(),
+    cheap_accuracy = cheap_correct / total,
+    pk_accuracy = pk_correct / total,
+    random_accuracy = random_correct / total,
+    twi_accuracy = twi_correct / total
+  )
+
+df_summary_time <- df_summary_time %>%
+  select(contains("accuracy"))
+plot(df_summary_time)
+
+df_long <- df_summary_time %>%
+  select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
+  tidyr::pivot_longer(cols = c(cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy), names_to = "model", values_to = "accuracy")
+
+ggplot(df_long, aes(x = datetime, y = accuracy, color = model)) +
+  geom_line() +
+  labs(title = "Model Accuracy Over Time", y = "Accuracy", x = "Time")
+
+ggplot(df_summary_time, aes(x = datetime, y = diff)) +
+  geom_line() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Difference in Accuracy (A - B)", y = "Accuracy Difference", x = "Time")
+
+#plot the difference in performance versus discharge
+df_summary_time %>% 
+  inner_join(discharge_df, by = "datetime") %>% 
+  #rename("Hydrograph Component", event_type)
+  #group_by(event_type, code) %>% 
+  #summarise(mean = mean(count)) %>% 
+  ggplot(aes(x = Q_mm_day, y = diff, color = event_type)) +
+  geom_point(alpha = 0.5) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Difference in Accuracy (Cheapest - Prop of time flowing)", y = " ", x = "Discharge (mm/day)")+
+   scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1"))+
+  labs(color='Hydrograph Component') +
+  theme_classic()
+
+four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
+
+#plot of the accuracy versus discharge, colored by scheme, shape by hydrograph component
+df_long %>% 
+  inner_join(discharge_df, by = "datetime") %>% 
+  #rename("Hydrograph Component", event_type)
+  #group_by(event_type, code) %>% 
+  #summarise(mean = mean(count)) %>% 
+  ggplot(aes(x = Q_mm_day, y = accuracy, color = model, shape = event_type)) +
+  geom_point(alpha = 0.3, size = 2) +
+    #geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Accuracy (correctly modeled states/total)", y = " ", x = "Discharge (mm/day)")+
+   scale_color_manual(values = four_colors)+
+  labs(color='Hydrograph Component') +
+  theme_classic()+
+  facet_wrap(~model)
+
+
+#original way of comparing- the grid
+comparison_long <- 
+  comparison %>% 
+  select(datetime, ends_with("eval")) %>% 
+    pivot_longer(-datetime) %>% 
+  mutate(year = year(datetime))
+
+# filter(datetime >= ymd_hms("2023-07-24 00:00:00") & datetime <= ymd_hms("2023-08-20 00:00:00")) %>% 
+comparison_long %>% 
+  mutate(day_of_year = yday(datetime)
+  ) %>% 
+  #group_by(datetime) %>% 
+  #filter(year == 2023) %>% 
+  mutate(total = as.numeric(length(value))) %>% 
+  ggplot() +
+  geom_histogram(aes(x = day_of_year, fill = value), binwidth = 1, na.rm = TRUE)+
+  facet_grid(name~year)
+```
+
+Now do again for ZZ
+```{r}
+ZZ_cheap <- chain_solution(ZZ_IDs, "ZZ", methods = "cheapest_insertion")
+ZZ_random <- chain_solution(ZZ_IDs, "ZZ", methods = "random")
+
+
+
+# calculate the number of flowing nodes at each timestep
+number_activated <- 
+  input_zz %>% 
+  #left_join(ZZ_cheap, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins)) %>% 
+  #arrange(sequence) %>% 
+      filter(binary == 1) %>% 
+    summarise(number_flowing = length(binary))
+#make a dataframe where each row is a date, with a list of the active or inactive nodes according to a hierarchy
+
+#applying evaluation model using different sequences
+calc_model_result <- function(input_sequence){
+# 1. Ordered node sequence
+node_sequence <- input_sequence
+
+# 2. Dataframe with timestamps and how many nodes to activate
+#defined previously
+#number_activated
+
+# 3. Build the activation matrix
+activation_matrix <- t(sapply(number_activated$number_flowing, function(n) {
+  active_flags <- rep(0, length(node_sequence))
+  if (n > 0) active_flags[1:n] <- 1
+  active_flags
+}))
+
+# 4. Assign column names and combine with timestamps
+colnames(activation_matrix) <- node_sequence
+activation_df <- cbind(number_activated["datetime"], as.data.frame(activation_matrix))
+
+# View result
+activation_final <- activation_df %>% pivot_longer(-datetime) %>% 
+  rename("ID" = name, "pred_binary" = value) %>% 
+  mutate(ID = as.numeric(ID))
+
+return(activation_final)
+}
+
+cheap_model <- calc_model_result(ZZ_cheap$ID) %>% rename("cheapest" = pred_binary)
+pk_model <- calc_model_result(ZZ_pk_seq$ID) %>% rename("pk" = pred_binary)
+random_model <- calc_model_result(ZZ_random$ID) %>% rename("random" = pred_binary)
+#defined twi sequence earlier
+twi_model <- calc_model_result(zz_twi_sequence$ID) %>% rename("twi" = pred_binary)
+
+comparison <- input_zz %>% 
+  filter(mins %in% c(0, 30)) %>% 
+  left_join(cheap_model, by = c("datetime", "ID")) %>% 
+  left_join(pk_model, by = c("datetime", "ID")) %>% 
+    left_join(random_model, by = c("datetime", "ID")) %>% 
+  left_join(twi_model, by = c("datetime", "ID")) %>% 
+  select(-wshed, -mins) %>% 
+  drop_na()
+
+#chat gpt method to compare them
+get_eval_label <- function(true, pred) {
+  if (true == 1 && pred == 1) return("correct")
+  if (true == 0 && pred == 0) return("correct")
+  if (true == 1 && pred == 0) return("omission")
+  if (true == 0 && pred == 1) return("commission")
+}
+get_eval_label(0,0)
+#apply get_eval function to each model run
+comparison$cheapest_eval <- mapply(get_eval_label, comparison$binary, comparison$cheapest)
+comparison$pk_eval <- mapply(get_eval_label, comparison$binary, comparison$pk)
+comparison$random_eval <- mapply(get_eval_label, comparison$binary, comparison$random)
+comparison$twi_eval <- mapply(get_eval_label, comparison$binary, comparison$twi)
+
+
+comparison$comparison_cheap <- with(comparison, ifelse(
+  cheapest_eval == pk_eval, "equal",
+  ifelse(cheapest_eval == "correct", "cheap_better",
+         ifelse(pk_eval == "correct", "pk_better", "neither_better"))
+))
+comparison$comparison_random <- with(comparison, ifelse(
+  random_eval == pk_eval, "equal",
+  ifelse(random_eval == "correct", "cheap_better",
+         ifelse(pk_eval == "correct", "pk_better", "neither_better"))
+))
+comparison$comparison_twi <- with(comparison, ifelse(
+  twi == pk_eval, "equal",
+  ifelse(twi == "correct", "cheap_better",
+         ifelse(pk_eval == "correct", "pk_better", "neither_better"))
+))
+
+
+#summarize through time
+df_summary_time <- comparison %>%
+  group_by(datetime) %>%
+  summarize(
+    cheap_correct = sum(cheapest_eval == "correct"),
+    pk_correct = sum(pk_eval == "correct"),
+    random_correct = sum(random_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    total = n(),
+    cheap_accuracy = cheap_correct / total,
+    pk_accuracy = pk_correct / total,
+    random_accuracy = random_correct / total,
+    twi_accuracy = twi_correct / total
+  )
+
+df_summary_time <- df_summary_time %>%
+  select(contains("accuracy"))
+plot(df_summary_time)
+
+summary_by_node <- comparison %>%
+  group_by(ID) %>%
+  summarize(
+    cheap_correct = sum(cheapest_eval == "correct"),
+    pk_correct = sum(pk_eval == "correct"),
+    random_correct = sum(random_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    cheap_omission = sum(cheapest_eval == "omission"),
+    pk_omission = sum(pk_eval == "omission"),
+    random_omission = sum(random_eval == "omission"),
+    twi_omission = sum(twi_eval == "omission"),
+    cheap_commission = sum(cheapest_eval == "commission"),
+    pk_commission = sum(pk_eval == "commission"),
+    random_commission = sum(random_eval == "commission"),
+    twi_commission = sum(twi_eval == "commission")
+    #A_better_count = sum(comparison == "A_better"),
+    #B_better_count = sum(comparison == "B_better"),
+    #Equal_count = sum(comparison == "equal")
+  )
+
+
+
+#make data long for final plot
+comparison_long <- 
+  comparison %>% 
+  select(datetime, ends_with("eval")) %>% 
+    pivot_longer(-datetime) %>% 
+  mutate(year = year(datetime))
+#final plot
+comparison_long %>% 
+  mutate(day_of_year = yday(datetime)
+  ) %>% 
+  #group_by(datetime) %>% 
+  #filter(year == 2023) %>% 
+  mutate(total = as.numeric(length(value))) %>% 
+  ggplot() +
+  geom_histogram(aes(x = day_of_year, fill = value), binwidth = 1, na.rm = TRUE)+
+  facet_grid(name~year)
+
+comparison
+
+```
+
 
 # Paper Figures
 ## Figure 1: Maps of watersheds
@@ -2669,6 +3528,24 @@ calc_time(W3_pk_seq, "W3", "pk")
 
 
 ## Figure 6: Hydrograph, colored by which sequence works the best
+NEED TO FIX COLORS
+```{r}
+#plot the best at each timestep
+df_long %>% 
+  group_by(datetime) %>% 
+  filter(accuracy == max(accuracy)) %>% 
+  mutate(dup = as.character(n() > 1)) %>% ungroup()  %>% 
+  mutate(unique_sol = case_when(dup == TRUE ~ "z_tie",
+                                dup == FALSE ~ model)) %>% 
+inner_join(big_comb, by = "datetime") %>% 
+  ggplot(aes(x = datetime, y = Q_mm_day, color = unique_sol, alpha = accuracy)) +
+  #geom_point() +
+  geom_point(size = 1)+
+  theme_classic()+
+  scale_color_manual(values = c(four_colors, "grey"))+
+  labs(title = "Most accurate model along hydrograph", y = "Discharge (mm/day)", x = "")
+
+```
 
 ## Figure 7: Accuracy of all models versus accuracy
 ```{r W3}
@@ -2982,1262 +3859,11 @@ geom_sf(data = w3_stic_locs_r %>% inner_join(ID_acc, by = "ID"),
 
 
 
-
-Use same method as Botter and Durighetto paper, model! Calculate the number of nodes that are active at each time step, and turn nodes following sequence until the same number of flowing nodes are on
-```{r}
-input_w3 %>% 
-  left_join(W3_cheap, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed, mins)) %>% 
-  arrange((sequence)) %>% 
-  # mutate("downstream" = lag(binary),
-  #        "following" = downstream - binary) %>% 
-  #filter(following != -1) %>% 
-  filter(datetime == "2023-07-15 19:00:00") %>% View()
-   # summarise(count_non = length(following)) %>% View()
-
-# calculate the number of flowing nodes at each timestep
-number_activated <- 
-  input_w3 %>% 
-  left_join(W3_cheap, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed, mins)) %>% 
-  mutate(deployed = length(binary)) %>% 
-  #arrange(sequence) %>% 
-      filter(binary == 1) %>% 
-    summarise(number_flowing = length(binary),
-            deployed = list(unique(ID))) #%>% View()
-
-
-  
-#make a dataframe where each row is a date, with a list of the active or inactive nodes according to a hierarchy
-number_activated %>% mutate(all_nodes = W3_pk_seq$ID)
-
-
-```
-
-```{r}
-#original code to run a model of network activation, used to build function below based on a specific sequence
-# 1. Ordered node sequence
-node_sequence <- W3_pk_seq$ID[W3_pk_seq$ID %in% unlist(number_activated$deployed[1])]
-
-# 2. Dataframe with timestamps and how many nodes to activate
-number_activated <- number_activated %>% 
-  select(-deployed)
-
-# 3. Build the activation matrix
-activation_matrix <- t(sapply(number_activated$number_flowing, function(n) {
-  active_flags <- rep(0, length(node_sequence))
-  if (n > 0) active_flags[1:n] <- 1
-  active_flags
-}))
-
-# 4. Assign column names and combine with timestamps
-colnames(activation_matrix) <- node_sequence
-activation_df <- cbind(number_activated["datetime"], as.data.frame(activation_matrix))
-
-# View result
-activation_final <- activation_df %>% pivot_longer(-datetime) %>% 
-  rename("ID" = name, "pred_binary" = value) %>% 
-  mutate(ID = as.numeric(ID))
-
-
-#now compare the result to the actual
-code <- data.frame(diff = c(-1, 0, 1),
-                   code = c("commission", "correct", "ommission"))
-
-comparison <- input_w3 %>% 
-  filter(mins %in% c(0, 30)) %>% left_join(activation_final, by = c("datetime", "ID")) %>% 
-  mutate("diff" = binary - pred_binary) %>%
-  left_join(code, by = "diff") %>% 
-  #filter(diff != 0) %>%
-  #filter(datetime == "2023-07-11 19:00:00") %>% 
-  group_by(code, datetime) %>% 
-   summarise(count = length(code))
-
-comparison %>% 
-  filter(datetime >= ymd_hms("2023-07-24 00:00:00") & datetime <= ymd_hms("2023-08-20 00:00:00")) %>% 
-  ggplot() +
-  geom_histogram(aes(x = datetime, y = count, fill = code), stat = "identity")
-```
-
-```{r}
-#new method, incorporating missing nodes at different timesteps
-number_activated <- 
-  input_w3 %>% 
-  left_join(W3_cheap, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed, mins)) %>% 
-  mutate(deployed = length(binary)) %>% 
-  #arrange(sequence) %>% 
-      #filter(binary == 1) %>% 
-    summarise(number_flowing = length(binary[binary == 1]),
-            deployed = list(unique(ID))) #%>% View()
-
-W3_pk_seq$ID[W3_pk_seq$ID %in% unlist(number_activated$deployed[1])]
-
-# 2. Dataframe with timestamps and how many nodes to activate
-number_activated <- number_activated %>% 
-  select(-deployed)
-# Fixed full node sequence
-full_node_sequence <- W3_pk_seq$ID
-
-# Sample activation schedule
-activation_schedule <- number_activated
-
-# Function to generate a single activation row with NA for missing nodes
-    '%!in%' <- function(x,y)!('%in%'(x,y))
-
-generate_activation_row <- function(datetime, n_active, available_nodes) {
-  #n_active <- activation_schedule$number_flowing[1]
-  #available_nodes <- unlist(activation_schedule$deployed[1])
-  # Order available nodes based on full sequence
-  ordered_available <- full_node_sequence[full_node_sequence %in% available_nodes]
-  
-    #not_deployed <- full_node_sequence[full_node_sequence %!in% (available_nodes)]
-
-
-  
-  # Identify the first `n_active` nodes to activate
-  activated_nodes <- head(ordered_available, n_active)
-  # ordered_available
-  # activated_nodes
-  # full_node_sequence
-  output <- tibble("datetime" = datetime,
-             "ID" = full_node_sequence,
-             "binary" = 0) %>% 
-    #mutate(binary = case_when(ID %in% ordered_available ~ 0)) %>% 
-    mutate(binary = case_when(
-                              ID %in% activated_nodes ~ 1,
-                              ID %!in% ordered_available ~ NA,
-                              TRUE ~ 0))
-  return(output)
-}
-
-generate_activation_row(activation_schedule$datetime[1],
-                        activation_schedule$number_flowing[1],
-                        unlist(activation_schedule$deployed[1]))
-# Apply the function to each row of the activation schedule
-
-model_out <- Map(generate_activation_row, 
-    datetime = activation_schedule$datetime, 
-    n_active = activation_schedule$number_flowing, 
-    available_nodes = activation_schedule$deployed) %>% dplyr::bind_rows() %>% 
-  rename(pk_out = binary)
-
-model_out
-comparison <- input_w3 %>% 
-  filter(mins %in% c(0, 30)) %>% 
-  left_join(model_out, by = c("datetime", "ID")) %>% 
-  select(-wshed, -mins)
-```
-Make sure that the new way to model is working for sequences other than pk
-```{r}
-#new method, incorporating missing nodes at different timesteps
-number_activated <- 
-  input_w3 %>% 
-  left_join(W3_cheap, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed, mins)) %>% 
-  mutate(deployed = length(binary)) %>% 
-  #arrange(sequence) %>% 
-      #filter(binary == 1) %>% 
-    summarise(number_flowing = length(binary[binary == 1]),
-            deployed = list(unique(ID))) #%>% View()
-
-W3_pk_seq$ID[W3_pk_seq$ID %in% unlist(number_activated$deployed[1])]
-
-# 2. Dataframe with timestamps and how many nodes to activate
-number_activated <- number_activated %>% 
-  select(-deployed)
-# Fixed full node sequence
-full_node_sequence <- W3_cheap$ID
-
-# Sample activation schedule
-activation_schedule <- number_activated
-
-# Function to generate a single activation row with NA for missing nodes
-    '%!in%' <- function(x,y)!('%in%'(x,y))
-
-#generate_activation_row <- function(datetime, n_active, available_nodes) {
-  n_active <- activation_schedule$number_flowing[1]
-  available_nodes <- unlist(activation_schedule$deployed[1])
-  datetime <- activation_schedule$datetime[1]
-  # Order available nodes based on full sequence
-  ordered_available <- full_node_sequence[full_node_sequence %in% available_nodes]
-  
-    #not_deployed <- full_node_sequence[full_node_sequence %!in% (available_nodes)]
-
-
-  
-  # Identify the first `n_active` nodes to activate
-  activated_nodes <- head(ordered_available, n_active)
-  ordered_available
-  activated_nodes
-  full_node_sequence
-  output <- tibble("datetime" = datetime,
-             "ID" = full_node_sequence,
-             "binary" = 0) %>% 
-    #mutate(binary = case_when(ID %in% ordered_available ~ 0)) %>% 
-    mutate(binary = case_when(
-                              ID %in% activated_nodes ~ 1,
-                              ID %!in% ordered_available ~ NA,
-                              TRUE ~ 0))
-  return(output)
-}
-
-generate_activation_row(activation_schedule$datetime[1],
-                        activation_schedule$number_flowing[1],
-                        unlist(activation_schedule$deployed[1]))
-# Apply the function to each row of the activation schedule
-
-model_out <- Map(generate_activation_row, 
-    datetime = activation_schedule$datetime, 
-    n_active = activation_schedule$number_flowing, 
-    available_nodes = activation_schedule$deployed) %>% dplyr::bind_rows() #%>% 
-  rename(pk_out = binary)
-
-model_out
-comparison <- input_w3 %>% 
-  filter(mins %in% c(0, 30)) %>% 
-  left_join(model_out, by = c("datetime", "ID")) %>% 
-  select(-wshed, -mins)
-```
-
-Now make a function to calc the model result using this method
-```{r}
-#new method, incorporating missing nodes at different timesteps
-calc_model_result <- function(input_sequence){
-
-number_activated <- 
-  input_w3 %>% 
-  #left_join(W3_cheap, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed, mins)) %>% 
-  mutate(deployed = length(binary)) %>% 
-  #arrange(sequence) %>% 
-      #filter(binary == 1) %>% 
-    summarise(number_flowing = length(binary[binary == 1]),
-            deployed = list(unique(ID))) #%>% View()
-
-#W3_pk_seq$ID[W3_pk_seq$ID %in% unlist(number_activated$deployed[1])]
-
-# 2. Dataframe with timestamps and how many nodes to activate
-
-# Fixed full node sequence
-full_node_sequence <- input_sequence
-
-# Sample activation schedule
-activation_schedule <- number_activated
-
-# Function to generate a single activation row with NA for missing nodes
-    '%!in%' <- function(x,y)!('%in%'(x,y))
-
-generate_activation_row <- function(datetime, n_active, available_nodes) {
-  #n_active <- activation_schedule$number_flowing[1]
-  #available_nodes <- unlist(activation_schedule$deployed[1])
-  # Order available nodes based on full sequence
-  ordered_available <- full_node_sequence[full_node_sequence %in% available_nodes]
-  
-    #not_deployed <- full_node_sequence[full_node_sequence %!in% (available_nodes)]
-
-
-  
-  # Identify the first `n_active` nodes to activate
-  activated_nodes <- head(ordered_available, n_active)
-  # ordered_available
-  # activated_nodes
-  # full_node_sequence
-  output <- tibble("datetime" = datetime,
-             "ID" = full_node_sequence,
-             "binary" = 0) %>% 
-    #mutate(binary = case_when(ID %in% ordered_available ~ 0)) %>% 
-    mutate(binary = case_when(
-                              ID %in% activated_nodes ~ 1,
-                              ID %!in% ordered_available ~ NA,
-                              TRUE ~ 0))
-  return(output)
-}
-
-# Apply the function to each row of the activation schedule
-
-model_out <- Map(generate_activation_row, 
-    datetime = activation_schedule$datetime, 
-    n_active = activation_schedule$number_flowing, 
-    available_nodes = activation_schedule$deployed) %>% dplyr::bind_rows() %>% 
-  rename(pred_out = binary)
-
-return(model_out)
-}
-
-calc_model_result(W3_pk_seq$ID)
-comparison <- input_w3 %>% 
-  filter(mins %in% c(0, 30)) %>% 
-  left_join(model_out, by = c("datetime", "ID")) %>% 
-  select(-wshed, -mins)
-
-cheap_model <- calc_model_result(W3_cheap$ID) %>% rename("cheapest" = pred_out)
-pk_model <- calc_model_result(W3_pk_seq$ID) %>% rename("pk" = pred_out)
-random_model <- calc_model_result(W3_random$ID) %>% rename("random" = pred_out)
-twi_model <- calc_model_result(w3_twi_sequence$ID) %>% rename("twi" = pred_out)
-
-input_w3 %>% 
-  filter(mins %in% c(0, 30)) %>% 
-  left_join(cheap_model, by = c("datetime", "ID")) %>% 
-  select(-wshed, -mins) %>%
-  filter(datetime == ymd_hms("2023-08-08 04:00:00 UTC")) %>%  View()
-```
-
-SOLVED! BIG PROBLEM: sequence includes all nodes, but not all nodes are present at every timestep. Sequence needs to be adjusted at each timestep to reflect the nodes that are present dynamically....
-
-Function to calculate the comparison between botter model based on a provided sequence.
-```{r}
-
-calc_model_result <- function(input_sequence, output_col){
-# 1. Ordered node sequence
-node_sequence <- input_sequence
-
-# 2. Dataframe with timestamps and how many nodes to activate
-number_activated
-
-# 3. Build the activation matrix
-activation_matrix <- t(sapply(number_activated$number_flowing, function(n) {
-  active_flags <- rep(0, length(node_sequence))
-  if (n > 0) active_flags[1:n] <- 1
-  active_flags
-}))
-
-# 4. Assign column names and combine with timestamps
-colnames(activation_matrix) <- node_sequence
-activation_df <- cbind(number_activated["datetime"], as.data.frame(activation_matrix))
-
-# View result
-activation_final <- activation_df %>% pivot_longer(-datetime) %>% 
-  rename("ID" = name, "pred_binary" = value) %>% 
-  mutate(ID = as.numeric(ID))
-
-
-#now compare the result to the actual
-# code <- data.frame(diff = c(-1, 0, 1),
-#                    code = c("commission", "correct", "ommission"))
-# 
-# comparison <- input_w3 %>% 
-#   filter(mins %in% c(0, 30)) %>% left_join(activation_final, by = c("datetime", "ID")) #%>% 
-#   # mutate("diff" = binary - pred_binary) %>%
-#   # left_join(code, by = "diff") %>% 
-#   # #filter(diff != 0) %>%
-#   # #filter(datetime == "2023-07-11 19:00:00") %>% 
-#   # group_by(code, datetime) %>% 
-#   #  summarise(count = length(code))
-
-return(activation_final)
-}
-
-
-
-
-comparison <- input_w3 %>% 
-  filter(mins %in% c(0, 30)) %>% 
-  left_join(cheap_model, by = c("datetime", "ID")) %>% 
-  left_join(pk_model, by = c("datetime", "ID")) %>% 
-    left_join(random_model, by = c("datetime", "ID")) %>% 
-  left_join(twi_model, by = c("datetime", "ID")) %>% 
-  select(-wshed, -mins) %>% 
-  drop_na()
-
-#chat gpt method to compare them
-get_eval_label <- function(true, pred) {
-  if (true == 1 && pred == 1) return("correct")
-  if (true == 0 && pred == 0) return("correct")
-  if (true == 1 && pred == 0) return("omission")
-  if (true == 0 && pred == 1) return("commission")
-}
-get_eval_label(0,0)
-#apply get_eval function to each model run
-comparison$cheapest_eval <- mapply(get_eval_label, comparison$binary, comparison$cheapest)
-comparison$pk_eval <- mapply(get_eval_label, comparison$binary, comparison$pk)
-comparison$random_eval <- mapply(get_eval_label, comparison$binary, comparison$random)
-comparison$twi_eval <- mapply(get_eval_label, comparison$binary, comparison$twi)
-
-
-comparison$comparison <- with(comparison, ifelse(
-  cheapest_eval == pk_eval, "equal",
-  ifelse(cheapest_eval == "correct", "cheap_better",
-         ifelse(pk_eval == "correct", "pk_better", "neither_better"))
-))
-
-library(dplyr)
-
-summary_by_node <- comparison %>%
-  group_by(ID) %>%
-  summarize(
-    cheap_correct = sum(cheapest_eval == "correct"),
-    pk_correct = sum(pk_eval == "correct"),
-    random_correct = sum(random_eval == "correct"),
-    twi_correct = sum(twi_eval == "correct"),
-    cheap_omission = sum(cheapest_eval == "omission"),
-    pk_omission = sum(pk_eval == "omission"),
-    random_omission = sum(random_eval == "omission"),
-    twi_omission = sum(twi_eval == "omission"),
-    cheap_commission = sum(cheapest_eval == "commission"),
-    pk_commission = sum(pk_eval == "commission"),
-    random_commission = sum(random_eval == "commission"),
-    twi_commission = sum(twi_eval == "commission")
-    #A_better_count = sum(comparison == "A_better"),
-    #B_better_count = sum(comparison == "B_better"),
-    #Equal_count = sum(comparison == "equal")
-  )
-
-
-ggplot(summary_by_node, aes(x=A_correct, y=B_correct, label=ID)) +
-  geom_point() +
-  geom_abline(slope=1, intercept=0, linetype="dashed", color="red") +
-  geom_text(nudge_y=1.5) +
-  labs(title="Model Comparison per Node", x="Model A Correct Predictions", y="Model B Correct Predictions")
-
-ggplot(summary_by_node, aes(x=A_better_count, y=B_better_count)) +
-  geom_point() +
-  geom_abline(slope=1, intercept=0, linetype="dashed") +
-  labs(x="Times Model A was better", y="Times Model B was better")
-
-#summarize through time
-df_summary_time <- comparison %>%
-  group_by(datetime) %>%
-  summarize(
-    cheap_correct = sum(cheapest_eval == "correct"),
-    pk_correct = sum(pk_eval == "correct"),
-    random_correct = sum(random_eval == "correct"),
-    twi_correct = sum(twi_eval == "correct"),
-    total = n(),
-    cheap_accuracy = cheap_correct / total,
-    pk_accuracy = pk_correct / total,
-    random_accuracy = random_correct / total,
-    twi_accuracy = twi_correct / total
-  )
-
-df_summary_time <- df_summary_time %>%
-  mutate(diff = A_accuracy - B_accuracy)
-
-df_long <- df_summary_time %>%
-  select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
-  tidyr::pivot_longer(cols = c(cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy), 
-                      names_to = "model", values_to = "accuracy")
-
-
-
-ggplot(df_summary_time, aes(x = datetime, y = diff)) +
-  geom_line() +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  labs(title = "Difference in Accuracy (A - B)", y = "Accuracy Difference", x = "Time")
-
-#plot the difference in performance versus discharge
-df_summary_time %>% 
-  inner_join(discharge_df, by = "datetime") %>% 
-  #rename("Hydrograph Component", event_type)
-  #group_by(event_type, code) %>% 
-  #summarise(mean = mean(count)) %>% 
-  ggplot(aes(x = Q_mm_day, y = diff, color = event_type)) +
-  geom_point(alpha = 0.5) +
-    geom_hline(yintercept = 0, linetype = "dashed") +
-  labs(title = "Difference in Accuracy (Cheapest - Prop of time flowing)", y = " ", x = "Discharge (mm/day)")+
-   scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1"))+
-  labs(color='Hydrograph Component') +
-  theme_classic()
-
-four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
-
-#plot of the accuracy versus discharge, colored by scheme, shape by hydrograph component
-df_long %>% 
-  inner_join(discharge_df, by = "datetime") %>% 
-  #rename("Hydrograph Component", event_type)
-  #group_by(event_type, code) %>% 
-  #summarise(mean = mean(count)) %>% 
-  ggplot(aes(x = Q_mm_day, y = accuracy, color = model, shape = event_type)) +
-  geom_point(alpha = 0.3, size = 2) +
-    #geom_hline(yintercept = 0, linetype = "dashed") +
-  labs(title = "Accuracy (correctly modeled states/total)", y = " ", x = "Discharge (mm/day)")+
-   scale_color_manual(values = four_colors)+
-  labs(color='Hydrograph Component') +
-  theme_classic()+
-  facet_wrap(~model)
-
-#make companion plot that shows the number of transitions during each part of hydrograph
-test <- input_w3 %>% 
-  filter(mins %in% c(0, 30)) %>%
-  group_by(ID) %>% 
-  mutate(lagged = lag(binary),
-         transition = (binary - lagged)) %>% 
-  filter(transition %in% c(-1, 1))
-
-test$state_change <- "none"
-test$state_change[test$transition == -1] <- "wetting"
-test$state_change[test$transition == 1] <- "drying"
-
-library(knitr)
-test %>% 
-  inner_join(discharge_df, by = "datetime") %>%
-  group_by(state_change, event_type) %>% 
-  summarise(count = n()) %>% 
-  pivot_wider(names_from = state_change, values_from = count) %>% 
-  kable(format = "markdown")
-
-#plot the best at each timestep
-df_long %>% 
-  group_by(datetime) %>% 
-  filter(accuracy == max(accuracy)) %>% 
-  mutate(dup = as.character(n() > 1)) %>% ungroup()  %>% 
-  mutate(unique_sol = case_when(dup == TRUE ~ "z_tie",
-                                dup == FALSE ~ model)) %>% 
-inner_join(big_comb, by = "datetime") %>% 
-  ggplot(aes(x = datetime, y = Q_mm_day, color = unique_sol, alpha = accuracy)) +
-  #geom_point() +
-  geom_point(size = 1)+
-  theme_classic()+
-  scale_color_manual(values = c(four_colors, "grey"))+
-  labs(title = "Most accurate model along hydrograph", y = "Discharge (mm/day)", x = "")
-
-
-
-
-df_long %>% 
-  filter(datetime > start, datetime < stop) %>% 
-    ggplot(aes(x = datetime, y = accuracy, color = model)) +
-  geom_bar(stat = "identity") +
-  labs(title = "Model Accuracy Over Time", y = "Accuracy", x = "Time")#+
-  facet_wrap(~model)
-  
-#trying to plot accuracy vs accuracy
-df_long2 <- df_summary_time %>%
-  select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
-  tidyr::pivot_longer(cols = c(cheap_accuracy, random_accuracy, twi_accuracy), 
-                      names_to = "model", values_to = "accuracy") %>% 
-    inner_join(discharge_df, by = "datetime")
-
-four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
-
-df_long2 %>% 
-  ggplot()+
-  geom_point(aes(x = pk_accuracy, 
-                 y = accuracy, 
-                 size = Q_mm_day, shape = event_type, color = model),
-             alpha = 0.5)+
-  scale_color_manual(values = c("#bb4430", "#231f20", "#f3dfa2"))+
-  geom_abline()+
-  theme_minimal()+
-  lims(y = c(0, 1),
-       x = c(0, 1))+
-  facet_grid(event_type~model)
-  
-
-```
-
-Chunk to find if there is any time when a different sequence is better than pk
-```{r}
-#summarize through time
-df_summary_time <- comparison %>%
-  group_by(datetime) %>%
-  summarize(
-    cheap_correct = sum(cheapest_eval == "correct"),
-    pk_correct = sum(pk_eval == "correct"),
-    random_correct = sum(random_eval == "correct"),
-    twi_correct = sum(twi_eval == "correct"),
-    total = n(),
-    cheap_accuracy = cheap_correct / total,
-    pk_accuracy = pk_correct / total,
-    random_accuracy = random_correct / total,
-    twi_accuracy = twi_correct / total
-  )
-
-df_summary_time <- df_summary_time %>%
-  mutate(diff = A_accuracy - B_accuracy)
-
-df_long <- df_summary_time %>%
-  select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
-  tidyr::pivot_longer(cols = c(cheap_accuracy, random_accuracy, twi_accuracy), 
-                      names_to = "model", values_to = "accuracy") %>% 
-  mutate(diff = accuracy - pk_accuracy)
-
-#plot the difference in performance versus discharge
-df_long %>% 
-  inner_join(discharge_df, by = "datetime") %>% 
-  #rename("Hydrograph Component", event_type)
-  #group_by(event_type, code) %>% 
-  #summarise(mean = mean(count)) %>% 
-  ggplot(aes(x = Q_mm_day, y = diff, color = event_type)) +
-  geom_point(alpha = 0.5) +
-    geom_hline(yintercept = 0, linetype = "dashed") +
-  labs(title = "Difference in Accuracy (Cheapest - Prop of time flowing)", y = " ", x = "Discharge (mm/day)")+
-   scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1"))+
-  labs(color='Hydrograph Component') +
-  theme_classic()+
-  facet_wrap(~model)
-```
-
-Figuring out weird points that are the same in each plot, when looking at accuracy versus discharge
-```{r}
-df_long %>% 
-  inner_join(discharge_df, by = "datetime") %>% 
-    filter(Q_mm_day >= 45) %>% 
-    ggplot(aes(x = Q_mm_day, y = accuracy, color = model, shape = event_type)) +
-  geom_point(alpha = 0.3, size = 2) +
-    #geom_hline(yintercept = 0, linetype = "dashed") +
-  labs(title = "Accuracy (correctly modeled states/total)", y = " ", x = "Discharge (mm/day)")+
-   scale_color_manual(values = four_colors)+
-  labs(color='Hydrograph Component') +
-  theme_classic()+
-  facet_wrap(~model)
-
-#set of timesteps where the accuracy of every model is the same, what does this look like in space?
-big_events <- df_long %>% 
-  inner_join(discharge_df, by = "datetime") %>% 
-    filter(Q_mm_day >= 45)
-
-doi <- big_events$datetime
-
-# states <- big_comb %>% 
-#     filter(datetime %in% doi[3])
-
-#w3_stic_locs_r %>% left_join(states, by = "ID")
-
-#figure without scale bar and legends
-states <- comparison %>% 
-    filter(datetime %in% doi) %>% 
-  pivot_longer(cols = c(cheapest, pk, random, twi),
-               values_to = "prediction", 
-               names_to = "sequence")
-
-states$eval <- mapply(get_eval_label, states$binary, states$prediction)
-
-ggplot()+
-  theme_void()+
-  geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 1)+
-  geom_sf(data = w3_net, colour = "grey", lwd = 0.8) +
-geom_sf(data = w3_stic_locs_r %>% inner_join(states, by = "ID"), 
-        aes(fill = as.character(prediction),
-            color = eval), size = 2, stroke = 1, pch = 21) +
-  scale_color_manual(values = c("green", "black", "orange"),
-                     name = "")+
-  scale_fill_manual(values = c("white", "black"),
-                    labels = c("dry", "flowing"),
-                    name = "")+
-  theme(rect = element_rect(fill = "transparent", color = NA),
-        legend.position = "")+
-  facet_grid(sequence~datetime)
-```
-
-
-
-
-Big problem- I do not have stage measurements from the dilutions that Logan did in August... the pressure transducers are still in the streams, I can download them in July if they are still logging.
-
-```{r}
-#chunk that reads in stage, converts to proper units
-#read in stage, convert to a height
-ZZ_air <- read_csv("./PressureTransducers_11_14_23/ZZ_air.csv", skip = 1) %>% 
-  select(2:3) %>% 
-  rename(DATETIME = 1,
-         pressure_psi_air = 2) %>% 
-  mutate(DATETIME = mdy_hms(DATETIME))
-
-ZZ_water <- read_csv("./PressureTransducers_11_14_23/ZZ_water.csv", skip = 1) %>% 
-  select(2:3) %>% 
-  rename(DATETIME = 1,
-         pressure_psi_water = 2) %>% 
-  mutate(DATETIME = mdy_hms(DATETIME))
-
-ZZ_water %>% 
-  left_join(ZZ_air, by = "DATETIME") %>% 
-  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
-  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
-  ggplot(aes(x = DATETIME, y = stage_cm))+
-  geom_line()+
-  theme_classic()+
-  labs(title = "ZZ Stage",
-       x = "",
-       y = "Stage (in)")
-```
-
-#Apply Botter model to evaluate sequences in other sheds
-```{r W3}
-cheap_model <- calc_model_result(W3_cheap$ID) %>% rename("cheapest" = pred_binary)
-pk_model <- calc_model_result(W3_pk_seq$ID) %>% rename("pk" = pred_binary)
-random_model <- calc_model_result(W3_random$ID) %>% rename("random" = pred_binary)
-twi_model <- calc_model_result(w3_twi_sequence$ID) %>% rename("twi" = pred_binary)
-
-
-W3_pk_seq <- pks_w3 %>% 
-  arrange(desc(pk)) %>% 
-  mutate(sequence = seq(1, length(pks_w3$ID), 1)) %>% 
-  select(ID, sequence)
-
-# calculate the number of flowing nodes at each timestep
-number_activated <- 
-  input_w3 %>% 
-  #left_join(ZZ_cheap, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed, mins)) %>% 
-  #arrange(sequence) %>% 
-      filter(binary == 1) %>% 
-    summarise(number_flowing = length(binary))
-#make a dataframe where each row is a date, with a list of the active or inactive nodes according to a hierarchy
-
-#applying evaluation model using different sequences
-calc_model_result <- function(input_sequence){
-# 1. Ordered node sequence
-node_sequence <- input_sequence
-
-# 2. Dataframe with timestamps and how many nodes to activate
-#defined previously
-#number_activated
-
-# 3. Build the activation matrix
-activation_matrix <- t(sapply(number_activated$number_flowing, function(n) {
-  active_flags <- rep(0, length(node_sequence))
-  if (n > 0) active_flags[1:n] <- 1
-  active_flags
-}))
-
-# 4. Assign column names and combine with timestamps
-colnames(activation_matrix) <- node_sequence
-activation_df <- cbind(number_activated["datetime"], as.data.frame(activation_matrix))
-
-# View result
-activation_final <- activation_df %>% pivot_longer(-datetime) %>% 
-  rename("ID" = name, "pred_binary" = value) %>% 
-  mutate(ID = as.numeric(ID))
-
-return(activation_final)
-}
-
-cheap_model <- calc_model_result(W3_cheap$ID) %>% rename("cheapest" = pred_binary)
-pk_model <- calc_model_result(W3_pk_seq$ID) %>% rename("pk" = pred_binary)
-random_model <- calc_model_result(W3_random$ID) %>% rename("random" = pred_binary)
-twi_model <- calc_model_result(w3_twi_sequence$ID) %>% rename("twi" = pred_binary)
-
-comparison <- input_w3 %>% 
-  filter(mins %in% c(0, 30)) %>% 
-  left_join(cheap_model, by = c("datetime", "ID")) %>% 
-  left_join(pk_model, by = c("datetime", "ID")) %>% 
-    left_join(random_model, by = c("datetime", "ID")) %>% 
-  left_join(twi_model, by = c("datetime", "ID")) %>% 
-  select(-wshed, -mins) %>% 
-  drop_na()
-
-#chat gpt method to compare them
-get_eval_label <- function(true, pred) {
-  if (true == 1 && pred == 1) return("correct")
-  if (true == 0 && pred == 0) return("correct")
-  if (true == 1 && pred == 0) return("omission")
-  if (true == 0 && pred == 1) return("commission")
-}
-get_eval_label(0,0)
-#apply get_eval function to each model run
-comparison$cheapest_eval <- mapply(get_eval_label, comparison$binary, comparison$cheapest)
-comparison$pk_eval <- mapply(get_eval_label, comparison$binary, comparison$pk)
-comparison$random_eval <- mapply(get_eval_label, comparison$binary, comparison$random)
-comparison$twi_eval <- mapply(get_eval_label, comparison$binary, comparison$twi)
-
-
-comparison$comparison_cheap <- with(comparison, ifelse(
-  cheapest_eval == pk_eval, "equal",
-  ifelse(cheapest_eval == "correct", "cheap_better",
-         ifelse(pk_eval == "correct", "pk_better", "neither_better"))
-))
-comparison$comparison_random <- with(comparison, ifelse(
-  random_eval == pk_eval, "equal",
-  ifelse(random_eval == "correct", "cheap_better",
-         ifelse(pk_eval == "correct", "pk_better", "neither_better"))
-))
-comparison$comparison_twi <- with(comparison, ifelse(
-  twi == pk_eval, "equal",
-  ifelse(twi == "correct", "cheap_better",
-         ifelse(pk_eval == "correct", "pk_better", "neither_better"))
-))
-
-
-#summarize through time
-df_summary_time <- comparison %>%
-  group_by(datetime) %>%
-  summarize(
-    cheap_correct = sum(cheapest_eval == "correct"),
-    pk_correct = sum(pk_eval == "correct"),
-    random_correct = sum(random_eval == "correct"),
-    twi_correct = sum(twi_eval == "correct"),
-    total = n(),
-    cheap_accuracy = cheap_correct / total,
-    pk_accuracy = pk_correct / total,
-    random_accuracy = random_correct / total,
-    twi_accuracy = twi_correct / total
-  )
-
-df_summary_time <- df_summary_time %>%
-  select(contains("accuracy"))
-plot(df_summary_time)
-
-summary_by_node <- comparison %>%
-  group_by(ID) %>%
-  summarize(
-    cheap_correct = sum(cheapest_eval == "correct"),
-    pk_correct = sum(pk_eval == "correct"),
-    random_correct = sum(random_eval == "correct"),
-    twi_correct = sum(twi_eval == "correct"),
-    cheap_omission = sum(cheapest_eval == "omission"),
-    pk_omission = sum(pk_eval == "omission"),
-    random_omission = sum(random_eval == "omission"),
-    twi_omission = sum(twi_eval == "omission"),
-    cheap_commission = sum(cheapest_eval == "commission"),
-    pk_commission = sum(pk_eval == "commission"),
-    random_commission = sum(random_eval == "commission"),
-    twi_commission = sum(twi_eval == "commission")
-    #A_better_count = sum(comparison == "A_better"),
-    #B_better_count = sum(comparison == "B_better"),
-    #Equal_count = sum(comparison == "equal")
-  )
-
-
-
-#make data long for final plot
-comparison_long <- 
-  comparison %>% 
-  select(datetime, ends_with("eval")) %>% 
-    pivot_longer(-datetime) %>% 
-  mutate(year = year(datetime))
-#final plot
-comparison_long %>% 
-  #group_by(datetime) %>% 
-  filter(year == 2023) %>% 
-  mutate(total = as.numeric(length(value))) %>% 
-  ggplot() +
-  geom_histogram(aes(x = datetime, fill = value), bins = 100, na.rm = TRUE)+
-  facet_grid(name~year)+
-  labs(x = "", y = "Count")+
-    ylim(0,1750)+
-  theme(
-  strip.background = element_blank(),
-  strip.text.y = element_blank(),
-  legend.position = "none"
-)
-comparison_long %>% 
-  #group_by(datetime) %>% 
-  filter(year == 2024) %>% 
-  mutate(total = as.numeric(length(value))) %>% 
-  ggplot() +
-  geom_histogram(aes(x = datetime, fill = value), bins = 50, na.rm = TRUE)+
-  facet_grid(name~year)+
-  labs(x = "", y = "Count")+
-  ylim(0,1750)+
-  theme(
-  strip.background = element_blank()#,
-  #strip.text.y = element_blank(),
-  #legend.position = "none"
-)
-
-comparison_long %>% 
-  mutate(day_of_year = yday(datetime)
-  ) %>% 
-  #group_by(datetime) %>% 
-  #filter(year == 2023) %>% 
-  mutate(total = as.numeric(length(value))) %>% 
-  ggplot() +
-  geom_histogram(aes(x = day_of_year, fill = value), binwidth = 1, na.rm = TRUE)+
-  facet_grid(name~year)
-
-
-
-```
-```{r accuracy-W3}
-w3_acc <- rbind(produce_metrics(W3_cheap, "W3", "cheapest_insertion"),
-      produce_metrics(W3_pk_seq, "W3", "pk"),
-      produce_metrics(W3_random, "W3", "random"),
-      produce_metrics(w3_twi_sequence, "W3", "twi")
-      )
-kable(w3_acc, digits = 2)
-
-```
-
-Define sequences to test for FB
-```{r}
-#make a df with ID and the number in the sequence
-FB_pk_seq <- pks_fb %>% 
-  arrange(desc(pk)) %>% 
-  mutate(sequence = seq(1, length(pks_fb$ID), 1)) %>% 
-  select(ID, sequence)
-```
-
-```{r FB}
-#chains used in graph theory solutions
-FB_cheap <- chain_solution(FB_IDs, "FB", methods = "cheapest_insertion")
-FB_random <- chain_solution(FB_IDs, "FB", methods = "random")
-
-ZZ_cheap <- chain_solution(ZZ_IDs, "ZZ", methods = "cheapest_insertion")
-ZZ_random <- chain_solution(ZZ_IDs, "ZZ", methods = "random")
-
-# calculate the number of flowing nodes at each timestep
-number_activated <- 
-  input_fb %>% 
-  left_join(FB_cheap, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed, mins)) %>% 
-  #arrange(sequence) %>% 
-      filter(binary == 1) %>% 
-    summarise(number_flowing = length(binary))
-#make a dataframe where each row is a date, with a list of the active or inactive nodes according to a hierarchy
-
-#applying evaluation model using different sequences
-calc_model_result <- function(input_sequence){
-# 1. Ordered node sequence
-node_sequence <- input_sequence
-
-# 2. Dataframe with timestamps and how many nodes to activate
-#defined previously
-#number_activated
-
-# 3. Build the activation matrix
-activation_matrix <- t(sapply(number_activated$number_flowing, function(n) {
-  active_flags <- rep(0, length(node_sequence))
-  if (n > 0) active_flags[1:n] <- 1
-  active_flags
-}))
-
-# 4. Assign column names and combine with timestamps
-colnames(activation_matrix) <- node_sequence
-activation_df <- cbind(number_activated["datetime"], as.data.frame(activation_matrix))
-
-# View result
-activation_final <- activation_df %>% pivot_longer(-datetime) %>% 
-  rename("ID" = name, "pred_binary" = value) %>% 
-  mutate(ID = as.numeric(ID))
-
-return(activation_final)
-}
-
-cheap_model <- calc_model_result(FB_cheap$ID) %>% rename("cheapest" = pred_binary)
-pk_model <- calc_model_result(FB_pk_seq$ID) %>% rename("pk" = pred_binary)
-random_model <- calc_model_result(FB_random$ID) %>% rename("random" = pred_binary)
-#defined twi sequence earlier
-twi_model <- calc_model_result(fb_twi_sequence$ID) %>% rename("twi" = pred_binary)
-
-comparison <- input_fb %>% 
-  filter(mins %in% c(0, 30)) %>% 
-  left_join(cheap_model, by = c("datetime", "ID")) %>% 
-  left_join(pk_model, by = c("datetime", "ID")) %>% 
-    left_join(random_model, by = c("datetime", "ID")) %>% 
-  left_join(twi_model, by = c("datetime", "ID")) %>% 
-  select(-wshed, -mins) %>% 
-  drop_na()
-
-#chat gpt method to compare them
-get_eval_label <- function(true, pred) {
-  if (true == 1 && pred == 1) return("correct")
-  if (true == 0 && pred == 0) return("correct")
-  if (true == 1 && pred == 0) return("omission")
-  if (true == 0 && pred == 1) return("commission")
-}
-get_eval_label(0,0)
-#apply get_eval function to each model run
-comparison$cheapest_eval <- mapply(get_eval_label, comparison$binary, comparison$cheapest)
-comparison$pk_eval <- mapply(get_eval_label, comparison$binary, comparison$pk)
-comparison$random_eval <- mapply(get_eval_label, comparison$binary, comparison$random)
-comparison$twi_eval <- mapply(get_eval_label, comparison$binary, comparison$twi)
-
-
-comparison$comparison_cheap <- with(comparison, ifelse(
-  cheapest_eval == pk_eval, "equal",
-  ifelse(cheapest_eval == "correct", "cheap_better",
-         ifelse(pk_eval == "correct", "pk_better", "neither_better"))
-))
-comparison$comparison_random <- with(comparison, ifelse(
-  random_eval == pk_eval, "equal",
-  ifelse(random_eval == "correct", "cheap_better",
-         ifelse(pk_eval == "correct", "pk_better", "neither_better"))
-))
-comparison$comparison_twi <- with(comparison, ifelse(
-  twi == pk_eval, "equal",
-  ifelse(twi == "correct", "cheap_better",
-         ifelse(pk_eval == "correct", "pk_better", "neither_better"))
-))
-
-
-summary_by_node <- comparison %>%
-  group_by(ID) %>%
-  summarize(
-    cheap_correct = sum(cheapest_eval == "correct"),
-    pk_correct = sum(pk_eval == "correct"),
-    random_correct = sum(random_eval == "correct"),
-    twi_correct = sum(twi_eval == "correct"),
-    cheap_omission = sum(cheapest_eval == "omission"),
-    pk_omission = sum(pk_eval == "omission"),
-    random_omission = sum(random_eval == "omission"),
-    twi_omission = sum(twi_eval == "omission"),
-    cheap_commission = sum(cheapest_eval == "commission"),
-    pk_commission = sum(pk_eval == "commission"),
-    random_commission = sum(random_eval == "commission"),
-    twi_commission = sum(twi_eval == "commission")
-    #A_better_count = sum(comparison == "A_better"),
-    #B_better_count = sum(comparison == "B_better"),
-    #Equal_count = sum(comparison == "equal")
-  )
-
-
-ggplot(summary_by_node, aes(x=A_correct, y=B_correct, label=ID)) +
-  geom_point() +
-  geom_abline(slope=1, intercept=0, linetype="dashed", color="red") +
-  geom_text(nudge_y=1.5) +
-  labs(title="Model Comparison per Node", x="Model A Correct Predictions", y="Model B Correct Predictions")
-
-
-
-#summarize through time
-df_summary_time <- comparison %>%
-  group_by(datetime) %>%
-  summarize(
-    cheap_correct = sum(cheapest_eval == "correct"),
-    pk_correct = sum(pk_eval == "correct"),
-    random_correct = sum(random_eval == "correct"),
-    twi_correct = sum(twi_eval == "correct"),
-    total = n(),
-    cheap_accuracy = cheap_correct / total,
-    pk_accuracy = pk_correct / total,
-    random_accuracy = random_correct / total,
-    twi_accuracy = twi_correct / total
-  )
-
-df_summary_time <- df_summary_time %>%
-  select(contains("accuracy"))
-plot(df_summary_time)
-
-df_long <- df_summary_time %>%
-  select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
-  tidyr::pivot_longer(cols = c(cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy), names_to = "model", values_to = "accuracy")
-
-ggplot(df_long, aes(x = datetime, y = accuracy, color = model)) +
-  geom_line() +
-  labs(title = "Model Accuracy Over Time", y = "Accuracy", x = "Time")
-
-ggplot(df_summary_time, aes(x = datetime, y = diff)) +
-  geom_line() +
-  geom_hline(yintercept = 0, linetype = "dashed") +
-  labs(title = "Difference in Accuracy (A - B)", y = "Accuracy Difference", x = "Time")
-
-#plot the difference in performance versus discharge
-df_summary_time %>% 
-  inner_join(discharge_df, by = "datetime") %>% 
-  #rename("Hydrograph Component", event_type)
-  #group_by(event_type, code) %>% 
-  #summarise(mean = mean(count)) %>% 
-  ggplot(aes(x = Q_mm_day, y = diff, color = event_type)) +
-  geom_point(alpha = 0.5) +
-    geom_hline(yintercept = 0, linetype = "dashed") +
-  labs(title = "Difference in Accuracy (Cheapest - Prop of time flowing)", y = " ", x = "Discharge (mm/day)")+
-   scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1"))+
-  labs(color='Hydrograph Component') +
-  theme_classic()
-
-four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
-
-#plot of the accuracy versus discharge, colored by scheme, shape by hydrograph component
-df_long %>% 
-  inner_join(discharge_df, by = "datetime") %>% 
-  #rename("Hydrograph Component", event_type)
-  #group_by(event_type, code) %>% 
-  #summarise(mean = mean(count)) %>% 
-  ggplot(aes(x = Q_mm_day, y = accuracy, color = model, shape = event_type)) +
-  geom_point(alpha = 0.3, size = 2) +
-    #geom_hline(yintercept = 0, linetype = "dashed") +
-  labs(title = "Accuracy (correctly modeled states/total)", y = " ", x = "Discharge (mm/day)")+
-   scale_color_manual(values = four_colors)+
-  labs(color='Hydrograph Component') +
-  theme_classic()+
-  facet_wrap(~model)
-
-
-#original way of comparing- the grid
-comparison_long <- 
-  comparison %>% 
-  select(datetime, ends_with("eval")) %>% 
-    pivot_longer(-datetime) %>% 
-  mutate(year = year(datetime))
-
-# filter(datetime >= ymd_hms("2023-07-24 00:00:00") & datetime <= ymd_hms("2023-08-20 00:00:00")) %>% 
-comparison_long %>% 
-  mutate(day_of_year = yday(datetime)
-  ) %>% 
-  #group_by(datetime) %>% 
-  #filter(year == 2023) %>% 
-  mutate(total = as.numeric(length(value))) %>% 
-  ggplot() +
-  geom_histogram(aes(x = day_of_year, fill = value), binwidth = 1, na.rm = TRUE)+
-  facet_grid(name~year)
-```
-```{r accuracy-FB}
-fb_acc <- rbind(produce_metrics(FB_cheap, "FB", "cheapest_insertion"),
-      produce_metrics(FB_pk_seq, "FB", "pk"),
-      produce_metrics(FB_random, "FB", "random"),
-      produce_metrics(fb_twi_sequence, "FB", "twi")
-      )
-kable(fb_acc, digits = 2)
-
-```
-Now do again for ZZ
-```{r}
-ZZ_cheap <- chain_solution(ZZ_IDs, "ZZ", methods = "cheapest_insertion")
-ZZ_random <- chain_solution(ZZ_IDs, "ZZ", methods = "random")
-
-ZZ_pk_seq <- pks_zz %>% 
-  arrange(desc(pk)) %>% 
-  mutate(sequence = seq(1, length(pks_zz$ID), 1)) %>% 
-  select(ID, sequence)
-
-# calculate the number of flowing nodes at each timestep
-number_activated <- 
-  input_zz %>% 
-  #left_join(ZZ_cheap, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed, mins)) %>% 
-  #arrange(sequence) %>% 
-      filter(binary == 1) %>% 
-    summarise(number_flowing = length(binary))
-#make a dataframe where each row is a date, with a list of the active or inactive nodes according to a hierarchy
-
-#applying evaluation model using different sequences
-calc_model_result <- function(input_sequence){
-# 1. Ordered node sequence
-node_sequence <- input_sequence
-
-# 2. Dataframe with timestamps and how many nodes to activate
-#defined previously
-#number_activated
-
-# 3. Build the activation matrix
-activation_matrix <- t(sapply(number_activated$number_flowing, function(n) {
-  active_flags <- rep(0, length(node_sequence))
-  if (n > 0) active_flags[1:n] <- 1
-  active_flags
-}))
-
-# 4. Assign column names and combine with timestamps
-colnames(activation_matrix) <- node_sequence
-activation_df <- cbind(number_activated["datetime"], as.data.frame(activation_matrix))
-
-# View result
-activation_final <- activation_df %>% pivot_longer(-datetime) %>% 
-  rename("ID" = name, "pred_binary" = value) %>% 
-  mutate(ID = as.numeric(ID))
-
-return(activation_final)
-}
-
-cheap_model <- calc_model_result(ZZ_cheap$ID) %>% rename("cheapest" = pred_binary)
-pk_model <- calc_model_result(ZZ_pk_seq$ID) %>% rename("pk" = pred_binary)
-random_model <- calc_model_result(ZZ_random$ID) %>% rename("random" = pred_binary)
-#defined twi sequence earlier
-twi_model <- calc_model_result(zz_twi_sequence$ID) %>% rename("twi" = pred_binary)
-
-comparison <- input_zz %>% 
-  filter(mins %in% c(0, 30)) %>% 
-  left_join(cheap_model, by = c("datetime", "ID")) %>% 
-  left_join(pk_model, by = c("datetime", "ID")) %>% 
-    left_join(random_model, by = c("datetime", "ID")) %>% 
-  left_join(twi_model, by = c("datetime", "ID")) %>% 
-  select(-wshed, -mins) %>% 
-  drop_na()
-
-#chat gpt method to compare them
-get_eval_label <- function(true, pred) {
-  if (true == 1 && pred == 1) return("correct")
-  if (true == 0 && pred == 0) return("correct")
-  if (true == 1 && pred == 0) return("omission")
-  if (true == 0 && pred == 1) return("commission")
-}
-get_eval_label(0,0)
-#apply get_eval function to each model run
-comparison$cheapest_eval <- mapply(get_eval_label, comparison$binary, comparison$cheapest)
-comparison$pk_eval <- mapply(get_eval_label, comparison$binary, comparison$pk)
-comparison$random_eval <- mapply(get_eval_label, comparison$binary, comparison$random)
-comparison$twi_eval <- mapply(get_eval_label, comparison$binary, comparison$twi)
-
-
-comparison$comparison_cheap <- with(comparison, ifelse(
-  cheapest_eval == pk_eval, "equal",
-  ifelse(cheapest_eval == "correct", "cheap_better",
-         ifelse(pk_eval == "correct", "pk_better", "neither_better"))
-))
-comparison$comparison_random <- with(comparison, ifelse(
-  random_eval == pk_eval, "equal",
-  ifelse(random_eval == "correct", "cheap_better",
-         ifelse(pk_eval == "correct", "pk_better", "neither_better"))
-))
-comparison$comparison_twi <- with(comparison, ifelse(
-  twi == pk_eval, "equal",
-  ifelse(twi == "correct", "cheap_better",
-         ifelse(pk_eval == "correct", "pk_better", "neither_better"))
-))
-
-
-#summarize through time
-df_summary_time <- comparison %>%
-  group_by(datetime) %>%
-  summarize(
-    cheap_correct = sum(cheapest_eval == "correct"),
-    pk_correct = sum(pk_eval == "correct"),
-    random_correct = sum(random_eval == "correct"),
-    twi_correct = sum(twi_eval == "correct"),
-    total = n(),
-    cheap_accuracy = cheap_correct / total,
-    pk_accuracy = pk_correct / total,
-    random_accuracy = random_correct / total,
-    twi_accuracy = twi_correct / total
-  )
-
-df_summary_time <- df_summary_time %>%
-  select(contains("accuracy"))
-plot(df_summary_time)
-
-summary_by_node <- comparison %>%
-  group_by(ID) %>%
-  summarize(
-    cheap_correct = sum(cheapest_eval == "correct"),
-    pk_correct = sum(pk_eval == "correct"),
-    random_correct = sum(random_eval == "correct"),
-    twi_correct = sum(twi_eval == "correct"),
-    cheap_omission = sum(cheapest_eval == "omission"),
-    pk_omission = sum(pk_eval == "omission"),
-    random_omission = sum(random_eval == "omission"),
-    twi_omission = sum(twi_eval == "omission"),
-    cheap_commission = sum(cheapest_eval == "commission"),
-    pk_commission = sum(pk_eval == "commission"),
-    random_commission = sum(random_eval == "commission"),
-    twi_commission = sum(twi_eval == "commission")
-    #A_better_count = sum(comparison == "A_better"),
-    #B_better_count = sum(comparison == "B_better"),
-    #Equal_count = sum(comparison == "equal")
-  )
-
-
-
-#make data long for final plot
-comparison_long <- 
-  comparison %>% 
-  select(datetime, ends_with("eval")) %>% 
-    pivot_longer(-datetime) %>% 
-  mutate(year = year(datetime))
-#final plot
-comparison_long %>% 
-  mutate(day_of_year = yday(datetime)
-  ) %>% 
-  #group_by(datetime) %>% 
-  #filter(year == 2023) %>% 
-  mutate(total = as.numeric(length(value))) %>% 
-  ggplot() +
-  geom_histogram(aes(x = day_of_year, fill = value), binwidth = 1, na.rm = TRUE)+
-  facet_grid(name~year)
-
-comparison
-
-```
-
+## Table 1: Topographic Metrics
+## Table 2: Accuracy of models
+Create a function that will compare a chain output and it's sequential wetting model to the actual observations.
 chunk to calculate accuracy metrics and confusion matrices
-```{r}
+```{r figuring-out-accuracy}
 # Load required packages
 p_load(caret)
 
@@ -4300,18 +3926,8 @@ twi_plot <- plot_conf_mat(conf_twi,      title = "TWI")
 (cheap_plot + pk_plot) / (random_plot + twi_plot)
 ```
 
-
-```{r}
-W3_cheap <- chain_solution(W3_IDs, "W3", methods = "cheapest_insertion")
-W3_random <- chain_solution(W3_IDs, "W3", methods = "random")
-```
-
-Create a function that will compare a chain output and it's sequential wetting model to the actual observations.
-```{r}
-methods
-#function to determine a chain solution
-ZZ_cheap <- chain_solution(ZZ_IDs, "ZZ", methods = "cheapest_insertion")
-
+Can probably delete the chunk below, and keep one with pred_out instead
+```{r produce-accuracy-metrics}
 #function that will take a chain solution, and calculate accuracy metrics
 produce_metrics <- function(chain, shed, method){
 # chain <- ZZ_cheap
@@ -4435,6 +4051,13 @@ return(metrics_df)
 }
 
 produce_metrics(ZZ_cheap, "ZZ", "cheapest_insertion")
+```
+```{r accuracy-function-testing-every-method}
+methods
+#function to determine a chain solution
+ZZ_cheap <- chain_solution(ZZ_IDs, "ZZ", methods = "cheapest_insertion")
+
+
 
 #testing every method
 for(i in 1:length(methods)){
@@ -4448,36 +4071,8 @@ for(i in 1:length(methods)){
 
 all_methods_acc <- many_chains
 ```
-What if we test 100 different cheapest_insertions?
-```{r}
-many_cheap <- rep("cheapest_insertion", 10)
-for(i in 1:length(many_cheap)){
-  chain <- chain_solution(ZZ_IDs, "ZZ", methods = many_cheap[i])
-  
-  output <- produce_metrics(chain, "ZZ", many_cheap[i])
-  
-  if(i == 1) many_chains <- output
-  if(i > 1) many_chains <- rbind(many_chains, output)
-}
 
-many_chains
-many_chains -> many_chains2
-
-many_cheap <- rep("cheapest_insertion", 3)
-for(i in 1:length(many_cheap)){
-  chain <- chain_solution(W3_IDs, "W3", methods = many_cheap[i])
-  
-  output <- produce_metrics(chain, "W3", many_cheap[i])
-  
-  if(i == 1) many_chains <- output
-  if(i > 1) many_chains <- rbind(many_chains, output)
-}
-
-many_chains
-
-```
-
-```{r}
+```{r updated-function (pred_out instead of pred_binary)}
 produce_metrics <- function(chain, shed, method){
 # chain <- ZZ_cheap
 # shed <- "ZZ"
@@ -4571,6 +4166,256 @@ metrics_df <- tibble(get_metrics(comparison$pred_out, comparison$binary)) %>%
 return(metrics_df)
 }
 
+#method just specified for ID row in output table
 produce_metrics(W3_cheap, "W3", "cheapest_insertion")
 ```
+
+```{r accuracy-W3}
+w3_acc <- rbind(produce_metrics(W3_cheap, "W3", "cheapest_insertion"),
+      produce_metrics(W3_pk_seq, "W3", "pk"),
+      produce_metrics(W3_random, "W3", "random"),
+      produce_metrics(w3_twi_sequence, "W3", "twi")
+      )
+kable(w3_acc, digits = 2)
+
+```
+```{r accuracy-FB}
+fb_acc <- rbind(produce_metrics(FB_cheap, "FB", "cheapest_insertion"),
+      produce_metrics(FB_pk_seq, "FB", "pk"),
+      produce_metrics(FB_random, "FB", "random"),
+      produce_metrics(fb_twi_sequence, "FB", "twi")
+      )
+kable(fb_acc, digits = 2)
+
+```
+# Testing many random sequences
+What if we test 100 different cheapest_insertions?
+```{r 10-cheapest-ZZ}
+many_cheap <- rep("cheapest_insertion", 10)
+for(i in 1:length(many_cheap)){
+  chain <- chain_solution(ZZ_IDs, "ZZ", methods = many_cheap[i])
+  
+  output <- produce_metrics(chain, "ZZ", many_cheap[i])
+  
+  if(i == 1) many_chains <- output
+  if(i > 1) many_chains <- rbind(many_chains, output)
+}
+
+many_chains
+many_chains -> many_chains2
+
+many_cheap <- rep("cheapest_insertion", 3)
+for(i in 1:length(many_cheap)){
+  chain <- chain_solution(W3_IDs, "W3", methods = many_cheap[i])
+  
+  output <- produce_metrics(chain, "W3", many_cheap[i])
+  
+  if(i == 1) many_chains <- output
+  if(i > 1) many_chains <- rbind(many_chains, output)
+}
+
+many_chains
+
+```
+
+# Unformatted
+SOLVED! BIG PROBLEM: sequence includes all nodes, but not all nodes are present at every timestep. Sequence needs to be adjusted at each timestep to reflect the nodes that are present dynamically....
+
+Function to calculate the comparison between botter model based on a provided sequence.
+```{r}
+comparison <- input_w3 %>% 
+  filter(mins %in% c(0, 30)) %>% 
+  left_join(cheap_model, by = c("datetime", "ID")) %>% 
+  left_join(pk_model, by = c("datetime", "ID")) %>% 
+    left_join(random_model, by = c("datetime", "ID")) %>% 
+  left_join(twi_model, by = c("datetime", "ID")) %>% 
+  select(-wshed, -mins) %>% 
+  drop_na()
+
+#chat gpt method to compare them
+get_eval_label <- function(true, pred) {
+  if (true == 1 && pred == 1) return("correct")
+  if (true == 0 && pred == 0) return("correct")
+  if (true == 1 && pred == 0) return("omission")
+  if (true == 0 && pred == 1) return("commission")
+}
+get_eval_label(0,0)
+#apply get_eval function to each model run
+comparison$cheapest_eval <- mapply(get_eval_label, comparison$binary, comparison$cheapest)
+comparison$pk_eval <- mapply(get_eval_label, comparison$binary, comparison$pk)
+comparison$random_eval <- mapply(get_eval_label, comparison$binary, comparison$random)
+comparison$twi_eval <- mapply(get_eval_label, comparison$binary, comparison$twi)
+
+
+comparison$comparison <- with(comparison, ifelse(
+  cheapest_eval == pk_eval, "equal",
+  ifelse(cheapest_eval == "correct", "cheap_better",
+         ifelse(pk_eval == "correct", "pk_better", "neither_better"))
+))
+
+summary_by_node <- comparison %>%
+  group_by(ID) %>%
+  summarize(
+    cheap_correct = sum(cheapest_eval == "correct"),
+    pk_correct = sum(pk_eval == "correct"),
+    random_correct = sum(random_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    cheap_omission = sum(cheapest_eval == "omission"),
+    pk_omission = sum(pk_eval == "omission"),
+    random_omission = sum(random_eval == "omission"),
+    twi_omission = sum(twi_eval == "omission"),
+    cheap_commission = sum(cheapest_eval == "commission"),
+    pk_commission = sum(pk_eval == "commission"),
+    random_commission = sum(random_eval == "commission"),
+    twi_commission = sum(twi_eval == "commission")
+  )
+
+#summarize through time
+df_summary_time <- comparison %>%
+  group_by(datetime) %>%
+  summarize(
+    cheap_correct = sum(cheapest_eval == "correct"),
+    pk_correct = sum(pk_eval == "correct"),
+    random_correct = sum(random_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    total = n(),
+    cheap_accuracy = cheap_correct / total,
+    pk_accuracy = pk_correct / total,
+    random_accuracy = random_correct / total,
+    twi_accuracy = twi_correct / total
+  )
+
+#df long with pk accuracy 
+df_long <- df_summary_time %>%
+  select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
+  tidyr::pivot_longer(cols = c(cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy), 
+                      names_to = "model", values_to = "accuracy")
+
+
+four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
+
+#plot of the accuracy versus discharge, colored by scheme, shape by hydrograph component
+df_long %>% 
+  inner_join(discharge_df, by = "datetime") %>% 
+  #rename("Hydrograph Component", event_type)
+  #group_by(event_type, code) %>% 
+  #summarise(mean = mean(count)) %>% 
+  ggplot(aes(x = Q_mm_day, y = accuracy, color = model, shape = event_type)) +
+  geom_point(alpha = 0.3, size = 2) +
+    #geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Accuracy (correctly modeled states/total)", y = " ", x = "Discharge (mm/day)")+
+   scale_color_manual(values = four_colors)+
+  labs(color='Hydrograph Component') +
+  theme_classic()+
+  facet_wrap(~model)
+
+
+```
+
+Chunk to find if there is any time when a different sequence is better than pk
+```{r}
+#summarize through time
+df_summary_time <- comparison %>%
+  group_by(datetime) %>%
+  summarize(
+    cheap_correct = sum(cheapest_eval == "correct"),
+    pk_correct = sum(pk_eval == "correct"),
+    random_correct = sum(random_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    total = n(),
+    cheap_accuracy = cheap_correct / total,
+    pk_accuracy = pk_correct / total,
+    random_accuracy = random_correct / total,
+    twi_accuracy = twi_correct / total
+  )
+
+df_summary_time <- df_summary_time %>%
+  mutate(diff = A_accuracy - B_accuracy)
+
+df_long <- df_summary_time %>%
+  select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
+  tidyr::pivot_longer(cols = c(cheap_accuracy, random_accuracy, twi_accuracy), 
+                      names_to = "model", values_to = "accuracy") %>% 
+  mutate(diff = accuracy - pk_accuracy)
+
+#plot the difference in performance versus discharge
+df_long %>% 
+  inner_join(discharge_df, by = "datetime") %>% 
+  #rename("Hydrograph Component", event_type)
+  #group_by(event_type, code) %>% 
+  #summarise(mean = mean(count)) %>% 
+  ggplot(aes(x = Q_mm_day, y = diff, color = event_type)) +
+  geom_point(alpha = 0.5) +
+    geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Difference in Accuracy (Cheapest - Prop of time flowing)", y = " ", x = "Discharge (mm/day)")+
+   scale_color_manual(values = c("#397367", "#FFA400", "#93C2F1"))+
+  labs(color='Hydrograph Component') +
+  theme_classic()+
+  facet_wrap(~model)
+```
+
+Figuring out weird points that are the same in each plot, when looking at accuracy versus discharge
+```{r}
+df_long %>% 
+  inner_join(discharge_df, by = "datetime") %>% 
+    filter(Q_mm_day >= 45) %>% 
+    ggplot(aes(x = Q_mm_day, y = accuracy, color = model, shape = event_type)) +
+  geom_point(alpha = 0.3, size = 2) +
+    #geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Accuracy (correctly modeled states/total)", y = " ", x = "Discharge (mm/day)")+
+   scale_color_manual(values = four_colors)+
+  labs(color='Hydrograph Component') +
+  theme_classic()+
+  facet_wrap(~model)
+
+#set of timesteps where the accuracy of every model is the same, what does this look like in space?
+big_events <- df_long %>% 
+  inner_join(discharge_df, by = "datetime") %>% 
+    filter(Q_mm_day >= 45)
+
+doi <- big_events$datetime
+
+# states <- big_comb %>% 
+#     filter(datetime %in% doi[3])
+
+#w3_stic_locs_r %>% left_join(states, by = "ID")
+
+#figure without scale bar and legends
+states <- comparison %>% 
+    filter(datetime %in% doi) %>% 
+  pivot_longer(cols = c(cheapest, pk, random, twi),
+               values_to = "prediction", 
+               names_to = "sequence")
+
+states$eval <- mapply(get_eval_label, states$binary, states$prediction)
+
+ggplot()+
+  theme_void()+
+  geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 1)+
+  geom_sf(data = w3_net, colour = "grey", lwd = 0.8) +
+geom_sf(data = w3_stic_locs_r %>% inner_join(states, by = "ID"), 
+        aes(fill = as.character(prediction),
+            color = eval), size = 2, stroke = 1, pch = 21) +
+  scale_color_manual(values = c("green", "black", "orange"),
+                     name = "")+
+  scale_fill_manual(values = c("white", "black"),
+                    labels = c("dry", "flowing"),
+                    name = "")+
+  theme(rect = element_rect(fill = "transparent", color = NA),
+        legend.position = "")+
+  facet_grid(sequence~datetime)
+```
+
+
+
+
+Big problem- I do not have stage measurements from the dilutions that Logan did in August... the pressure transducers are still in the streams, I can download them in July if they are still logging.
+
+
+
+```{r}
+W3_cheap <- chain_solution(W3_IDs, "W3", methods = "cheapest_insertion")
+W3_random <- chain_solution(W3_IDs, "W3", methods = "random")
+```
+
 
