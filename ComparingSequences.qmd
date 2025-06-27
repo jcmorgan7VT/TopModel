@@ -295,6 +295,335 @@ return(un_split)
 }
 ```
 
+## Discharge and Stage
+### W3 Discharge
+```{r prepare-discharge-W3}
+#from TestingFrameworks script
+
+#read in discharge from W3-- input to Carrie's model, discharge in L/s
+#q <- read_csv("https://portal.edirepository.org/nis/dataviewer?packageid=knb-lter-hbr.1.17&entityid=efc477b3ef1bb3dd8b9355c9115cd849")
+#write.csv(q, "HB_5minQ.csv")
+q <- read_csv("HB_5minQ.csv")
+
+#input discharge needs to be in mm/day?
+#reference to understand difference between daily mean and instantaneous streamflow:
+#https://hydrofunctions.readthedocs.io/en/master/notebooks/DailyMean_vs_Instant.html
+
+#creating minute column, used to filter out higher temporal resolution measurements for plotting
+data_23$mins <- minute(data_23$datetime)
+data_24$mins <- minute(data_24$datetime)
+
+#find the range of dates that I need discharge for
+start <- min(data_23$datetime)
+stop <- max(data_23$datetime)
+
+#filtering discharge down to the range of dates
+q_23 <- q %>% 
+  filter(DATETIME > start & DATETIME < stop) %>% 
+  #convert to mm/day.
+  #converting instantaneous streamflow to mm/day by taking measurement, and scaling   it up as if that was the discharge for the whole day. It is not, it is just at that   moment, but should fix any units/order of magnitude issues
+  mutate("Q_mm_day" = Discharge_ls * 0.001 * 86400 / 420000 * 1000) 
+q_23$mins <- minute(q_23$DATETIME)
+
+#removing times that are not coincident with STIC observations
+q_23_f <- filter(q_23, mins %in% c(0, 30))
+
+ggplot(q_23_f, aes(x  = DATETIME, y = Q_mm_day))+
+  geom_line()+
+  labs(title = "Discharge from W3, July to Nov 2023",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()
+
+#also read in provisional 2024 data
+q_24 <- read_csv("w3_discharge_24.csv")
+
+#find the range of dates that I need discharge for
+start24 <- ymd_hms("2024-05-15 00:00:00 UTC")
+stop24 <- max(data_24$datetime)
+
+#filtering discharge down to the range of dates
+q_24 <- q_24 %>% 
+  mutate(datetime = mdy_hm(datetime)) %>% 
+  filter(datetime > start24 & datetime < stop24)  
+q_24$mins <- minute(q_24$datetime)
+
+#removing times that are not coincident with STIC observations
+q_24_f <- filter(q_24, mins %in% c(0, 30))
+
+ggplot(q_24_f, aes(x  = datetime, y = Q_mmperday))+
+  geom_line()+
+  labs(title = "Discharge from W3, May to July 2024",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()
+
+#get discharge ready to bind to my other data
+q_23_bind <- 
+  q_23_f %>% 
+  select(DATETIME, Q_mm_day) %>% 
+  rename("datetime" = DATETIME
+         )
+
+q_24_bind <- 
+  q_24_f %>% 
+  select(datetime, Q_mmperday) %>% 
+  rename("Q_mm_day" = Q_mmperday)
+```
+  
+Chunk straight from mapsForStoryboard, of my current best attempt to extract rising and falling limbs from discharge record for W3. Plan to use to compare how the different methods work during rising, falling, and baseflow.
+```{r identifying-events}
+start <- ymd_hms("2023-7-20 00:00:00")
+stop <- ymd_hms("2023-10-22 00:00:00")
+
+
+q_23_plotting <- q_23_f %>% 
+    filter(DATETIME > start & DATETIME < stop) %>% 
+  rename("datetime" = DATETIME)
+q_23_plotting %>% 
+ggplot(aes(x  = datetime, y = Q_mm_day))+
+  geom_line()+
+  labs(title = "Discharge from W3, July to Nov 2023",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()
+
+#calculate baseflow
+bf = baseflowB(q_23_plotting$Q_mm_day, alpha = 0.980)
+#subtract baseflow from discharge
+PoT_res = eventPOT(q_23_plotting$Q_mm_day - bf$bf, threshold = 1, min.diff = 1)
+#plot the events
+plotEvents(data = q_23_plotting$Q_mm_day, events = PoT_res, xlab = "Index", ylab = "Flow (ML/day)", colpnt = "#E41A1C", colline = "#377EB8", main = "eventPOT")
+
+
+
+limbs(data = q_23_plotting$Q_mm_day, 
+               dates =NULL, 
+               events = PoT_res, 
+               to.plot = TRUE)#now, extract just the start column, then get each window and run through scoring algorithm
+PoT_res$srt
+
+q_23_plotting %>% 
+  select(datetime, Q_mm_day) %>% 
+  arrange(datetime) %>% 
+  unique() %>% 
+  mutate(lab = as.numeric(row_number())) %>% 
+  mutate(group = data.table::rleid(lab, cols = PoT_res$srt))
+
+ranges <- data.frame("starts" = PoT_res$srt) %>% 
+  mutate("stops" = lead(starts)) %>% 
+  mutate(event_ID = row_number(starts))
+
+ranges[26,2] <- 5762
+#trying fuzzy join method?
+p_load(fuzzyjoin)
+id_events <- q_23_plotting %>% 
+  select(datetime, Q_mm_day) %>% 
+  mutate(ID = row_number()) |> fuzzy_left_join(ranges, by = c(ID = "starts", ID = "stops"),
+                              match_fun = list(`>=`, `<=`)) |> 
+   mutate(event_ID = event_ID) |> 
+   select(-starts, -stops)
+
+id_events %>% 
+  ggplot()+
+  geom_line(aes(x = datetime, y = Q_mm_day, color = event_ID))
+
+
+```
+
+```{r id-join-limbs}
+library(dplyr)
+library(purrr)
+
+
+# Example: discharge dataframe with datetime and discharge
+discharge_df <- q_23_plotting %>% 
+  select(datetime, Q_mm_day)
+
+# Copy of your event table
+events <- limbs(data = q_23_plotting$Q_mm_day, 
+               dates =NULL, 
+               events = PoT_res, 
+               to.plot = FALSE)#now, extract just the start column, then get each window and run through scoring algorithm
+
+# Initialize the event_type column
+discharge_df$event_type <- NA_character_
+discharge_df$event_id <- NA_integer_
+
+# Assign "rising" and "falling" from event definitions
+for (i in seq_len(nrow(events))) {
+  ev <- events[i, ]
+  discharge_df$event_id[ev$ris.srt:ev$fal.end] <- i  # Event ID for rising+falling
+  
+  # Rising limb
+  if (!is.na(ev$ris.srt) && !is.na(ev$ris.end) && ev$ris.srt <= ev$ris.end) {
+    discharge_df$event_type[ev$ris.srt:ev$ris.end] <- "rising"
+  }
+  
+  # Falling limb
+  if (!is.na(ev$fal.srt) && !is.na(ev$fal.end) && ev$fal.srt <= ev$fal.end) {
+    discharge_df$event_type[ev$fal.srt:ev$fal.end] <- "falling"
+  }
+  
+  # Baseflow between events
+  if (i < nrow(events)) {
+    this_fal_end <- ev$fal.end
+    next_ris_srt <- events$ris.srt[i + 1]
+    if (this_fal_end + 1 <= next_ris_srt - 1) {
+      baseflow_idx <- (this_fal_end + 1):(next_ris_srt - 1)
+      discharge_df$event_type[baseflow_idx] <- "baseflow"
+      discharge_df$event_id[baseflow_idx] <- NA  # baseflow is not part of any event
+    }
+  }
+}
+
+# Optional: label all remaining NA values as "baseflow" (e.g., before first or after last event)
+discharge_df$event_type[is.na(discharge_df$event_type)] <- "baseflow"
+
+discharge_df %>% 
+  ggplot(aes(x = datetime, y = Q_mm_day, color = event_type))+
+  geom_point()
+
+```
+
+Combine the model results above, and the identified events
+```{r}
+comparison %>% 
+  drop_na() %>% 
+  inner_join(discharge_df, by = "datetime") %>% 
+  group_by(event_type, code) %>% 
+  summarise(mean = mean(count)) %>% 
+  ggplot()+
+  geom_bar(aes(x = event_type, y = mean, fill = code), stat = "identity")
+
+comparison %>% 
+  inner_join(discharge_df, by = "datetime") %>% 
+  filter(code == "ommission") %>% 
+  ggplot()+
+  geom_line(aes(x = datetime, y = Q_mm_day, color = count))
+
+#for the graph theory solution, the commission and ommission are symmetrical most of the time... I guess this makes sense if one is out of order, it causes another to be in order, like when I did the lagging method to calculate this
+comparison %>% 
+  inner_join(discharge_df, by = "datetime") %>% 
+  pivot_wider(names_from = code, values_from = count) %>% 
+  mutate(diff = commission - ommission) %>% 
+  filter(diff != 0) %>% View()
+
+
+```
+### Stage for FB and ZZ
+```{r}
+FB_air <- read_csv("./PressureTransducers_11_14_23/FB_air.csv", skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi_air = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME))
+
+FB_water <- read_csv("./PressureTransducers_11_14_23/FB_water.csv", skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi_water = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME))
+
+FB_water %>% 
+  left_join(FB_air, by = "DATETIME") %>% 
+  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
+  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
+  ggplot(aes(x = DATETIME, y = stage_cm))+
+  geom_line()+
+  theme_classic()+
+  labs(title = "Falls Brook Stage",
+       x = "",
+       y = "Stage (in)")
+
+#exclude windows where they were not deployed
+FB_water %>% 
+  left_join(FB_air, by = "DATETIME") %>% 
+  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
+  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
+  filter(stage_cm < 5) %>% View()
+
+#7/22/2023 00:00:00
+#9/20/23 00 - 2023-09-22 00:00:00
+#2023-11-12 00:30:00
+
+FB_water %>% 
+  left_join(FB_air, by = "DATETIME") %>% 
+  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
+  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
+  filter(DATETIME > ymd_hms("2023-07-22 00:00:00"),
+         DATETIME < ymd_hms("2023-11-12 00:00:00")) %>% 
+  filter(!(DATETIME >= ymd_hms("2023-09-20 00:00:00") & 
+          DATETIME <= ymd_hms("2023-09-22 00:00:00"))) %>% 
+  mutate(minutes = minute(DATETIME)) %>% 
+  filter(minutes %in% c(0, 30)) %>% 
+  ggplot(aes(x = DATETIME, y = stage_cm))+
+  geom_line()+
+  theme_classic()+
+  labs(title = "Falls Brook Stage",
+       x = "",
+       y = "Stage (in)")
+
+processed_fb_stage <- FB_water %>% 
+  left_join(FB_air, by = "DATETIME") %>% 
+  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
+  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
+  filter(DATETIME > ymd_hms("2023-07-22 00:00:00"),
+         DATETIME < ymd_hms("2023-11-12 00:00:00")) %>% 
+  filter(!(DATETIME >= ymd_hms("2023-09-20 00:00:00") & 
+          DATETIME <= ymd_hms("2023-09-22 00:00:00"))) %>% 
+  mutate(minutes = minute(DATETIME)) %>% 
+  filter(minutes %in% c(0, 30))
+
+q_combined %>% filter(shed == "FB") %>% 
+  mutate(datetime = round_date(datetime, unit = minutes(30))) %>% 
+  rename(DATETIME = datetime) %>% 
+  left_join(processed_fb_stage, by = "DATETIME")
+
+```
+
+```{r}
+#Read in measurements from 2024
+
+FB_air <- read_csv("./PressureTransducers_summer24/FB_air.csv", skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi_air = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME))
+
+FB_water <- read_csv("./PressureTransducers_summer24/FB_water.csv", skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi_water = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME))
+
+FB_water %>% 
+  left_join(FB_air, by = "DATETIME") %>% 
+  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
+  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
+  ggplot(aes(x = DATETIME, y = stage_cm))+
+  geom_line()+
+  theme_classic()+
+  labs(title = "Falls Brook Stage",
+       x = "",
+       y = "Stage (in)")
+
+processed_fb_stage <- FB_water %>% 
+  left_join(FB_air, by = "DATETIME") %>% 
+  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
+  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
+  mutate(minutes = minute(DATETIME)) %>% 
+  filter(minutes %in% c(0, 30))
+
+q_combined %>% filter(shed == "FB") %>% 
+  mutate(datetime = round_date(datetime, unit = minutes(30))) %>% 
+  rename(DATETIME = datetime) %>% 
+  left_join(processed_fb_stage, by = "DATETIME")
+
+#BIG PROBLEM
+```
+
+
 # Graph theory sequences
 ## Determine all possible combinations, or the full graph
 Determine all possible combinations
@@ -365,7 +694,7 @@ ZZ_all_combos <- calc_props(all_combos_routes, "ZZ")
 ```
 
 ## Find a path through the full graph using the TSP
-For each watershed, find the best chain using solutions to traveling salesman problem.  
+For each watershed, find the best chain using solutions to traveling salesman problem.  Testing every method for solving the TSP manually.  Done before developing the generalized function below.   
 ```{r W3}
 #define all possible methods
 #removed 3 methods
@@ -692,6 +1021,24 @@ ggplot(ggnet, aes(x = x, y = y, xend = xend, yend = yend)) +
   #               fontface = "bold", color = "white", size = 3) +
   theme_blank()
 ```
+```{r plot-chain}
+edges2 <- all_graph_solutions %>% 
+  filter(shed == "W3", method == "random", timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down) %>% as.matrix()
+chain_graph <- graph_from_edgelist(edges2, directed = TRUE)
+plot(chain_graph)
+
+ggmst <- fortify(chain_graph, layout = igraph::layout_as_tree(chain_graph))
+ggplot(ggmst, aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_edges(color = "grey", arrow = grid::arrow(length = unit(6, "pt"),
+                                                 type = "open")) +
+  geom_nodes(color = "black", size = 3) +
+  geom_nodetext(aes(label = name),
+                fontface = "bold", color = "white", size = 1) +
+  theme_blank()
+```
+
 
 ## Defining genearlized function
 For final plots for tomorrow, keep arbitrary insertion and cheapest insertion
@@ -1040,6 +1387,19 @@ chains_output <- data.frame("ID" = unique(order$labels),
 return(chains_output)
 
 }
+```
+```{r applying-gen-func}
+#creating chains
+
+W3_cheap <- chain_solution(W3_IDs, "W3", methods = "cheapest_insertion")
+W3_random <- chain_solution(W3_IDs, "W3", methods = "random")
+
+FB_cheap <- chain_solution(FB_IDs, "FB", methods = "cheapest_insertion")
+FB_random <- chain_solution(FB_IDs, "FB", methods = "random")
+
+ZZ_cheap <- chain_solution(ZZ_IDs, "ZZ", methods = "cheapest_insertion")
+ZZ_random <- chain_solution(ZZ_IDs, "ZZ", methods = "random")
+
 ```
 
 ## Comparing all solutions to the TSP for every watershed
@@ -1441,6 +1801,24 @@ all_twi <- rbind(calc_props(routes_w3, "W3"),
                  calc_props(routes_fb, "FB"),
                  calc_props(routes_zz, "ZZ")) %>% 
   mutate("method" = "Topographic Wetness Index")
+
+```
+```{r define-TWI-sequences}
+
+
+#create a reference dataframe with the sensor ID, then the number in the sequence
+w3_twi_sequence <- w3_twi %>% 
+    filter(ID %in% W3_IDs) %>% 
+  arrange(desc(twi)) %>% 
+  rename(sequence = twi)
+
+fb_twi_sequence <- fb_twi %>% 
+    filter(ID %in% FB_IDs) %>% 
+  arrange(desc(twi))
+
+zz_twi_sequence <- zz_twi %>% 
+    filter(ID %in% ZZ_IDs) %>% 
+  arrange(desc(twi))
 
 ```
 
@@ -2122,8 +2500,178 @@ geom_density(aes(color = method, fill = method), alpha = 0.5)+
   facet_grid(shed~timescale)
 ```
 
-## Figure 6: Hydrograph, colored by which sequence works the best
+Can also calculate proportion of sequential behavior through time! Comes out looking better than modeling using Botter & Durighetto
+
+```{r calculate-how-many-follow-sequence}
+sequential <- input_w3 %>% 
+  left_join(pks_w3, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed.x, wshed.y, mins, datetime)) %>% 
+  arrange(desc(pk)) %>% 
+  mutate("downstream" = lag(binary),
+         "following" = downstream - binary) %>% 
+  filter(following != -1) %>% 
+    summarise(count_non = length(following))
+
+total <- input_w3 %>% 
+  left_join(pks_w3, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed.x, wshed.y, mins, datetime)) %>% 
+  arrange(desc(pk)) %>% 
+  mutate("downstream" = lag(binary),
+         "following" = downstream - binary) %>% 
+    summarise(count_all = length(following))
+
+final <- left_join(sequential, total, by = "datetime") %>% 
+  mutate(prop = count_non/count_all)
+
+```
+
+Old method to calculate how well sequences worked:
+Once sequence is defined, I can compare to the actual flow data
 ```{r}
+#sequential <- 
+input_w3 %>% 
+  left_join(W3_cheap, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins)) %>% 
+  arrange((sequence)) %>% 
+  mutate("downstream" = lag(binary),
+         "following" = downstream - binary) %>% 
+  #filter(following != -1) %>% 
+  filter(datetime == "2023-07-15 19:00:00") %>% View()
+   # summarise(count_non = length(following)) %>% View()
+    
+input_w3 %>% 
+  left_join(W3_pk_seq, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins)) %>% 
+  arrange((sequence)) %>% 
+  mutate("downstream" = lag(binary),
+         "following" = downstream - binary) %>% 
+  #filter(following != -1) %>% 
+  filter(datetime == "2023-07-15 19:00:00") %>% View()
+    summarise(count_non = length(following))
+
+#make a df with ID and the number in the sequence
+W3_pk_seq <- pks_w3 %>% 
+  arrange(desc(pk)) %>% 
+  mutate(sequence = seq(1, length(pks_w3$ID), 1)) %>% 
+  select(ID, sequence)
+  
+
+total <- input_w3 %>% 
+  left_join(W3_cheap, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins, datetime)) %>% 
+  arrange(sequence) %>% 
+  mutate("downstream" = lag(binary),
+         "following" = downstream - binary) %>% 
+    summarise(count_all = length(following))
+
+final <- left_join(sequential, total, by = "datetime") %>% 
+  mutate(prop = count_non/count_all)
+
+#write a function to calculate this in 1 quick step
+calc_time <- function(sequence_df, shed, seq_label){
+  
+  if(shed == "W3"){
+    input_f <- input_w3
+  } else if(shed == "FB"){
+        input_f <- input_fb
+  } else if(shed == "ZZ"){
+        input_f <- input_zz
+  }
+  
+sequential <- input_f %>% 
+  left_join(sequence_df, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins, datetime)) %>% 
+  arrange(sequence) %>% 
+  mutate("downstream" = lag(binary),
+         "following" = downstream - binary) %>% 
+  filter(following != -1) %>% 
+    summarise(count_non = length(following))
+
+total <- input_f %>% 
+  left_join(sequence_df, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins, datetime)) %>% 
+  arrange(sequence) %>% 
+  mutate("downstream" = lag(binary),
+         "following" = downstream - binary) %>% 
+    summarise(count_all = length(following))
+
+final <- left_join(sequential, total, by = "datetime") %>% 
+  mutate(prop = count_non/count_all) %>% 
+  mutate(shed = shed)
+
+output <- q_24_bind %>% 
+  inner_join(final, by = "datetime") %>% 
+  mutate(seq_label = seq_label)
+
+return(output)
+}
+
+calc_time(W3_cheap, "W3", "cheapest")
+```
+
+
+```{r plot-along-discharge}
+
+rbind(
+calc_time(W3_cheap, "W3", "cheapest"),
+calc_time(W3_random, "W3", "random"),
+calc_time(w3_twi_sequence, "W3", "twi"),
+calc_time(W3_pk_seq, "W3", "pk")
+) %>% 
+  ggplot(aes(x  = datetime, y = Q_mm_day))+
+  geom_line(aes(color = prop))+
+  labs(title = "Discharge from W3, 2024",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()+
+  scale_color_continuous(type = "viridis",
+                             limits = c(0,1))+
+                       theme(rect = element_rect(fill = "transparent", color = NA))+
+  facet_grid(seq_label~shed)
+
+```
+
+```{r}
+pk_props_join <- calc_time(W3_pk_seq, "W3", "pk") %>% 
+  select(datetime, prop) %>% 
+  rename("pk_prop" = prop)
+
+rbind(
+calc_time(W3_cheap, "W3", "cheapest"),
+calc_time(W3_random, "W3", "random"),
+calc_time(w3_twi_sequence, "W3", "twi"),
+calc_time(W3_pk_seq, "W3", "pk")
+) %>% 
+  left_join(pk_props_join, by = "datetime") %>% 
+  filter(seq_label != "pk") %>% 
+  mutate(diff = prop - pk_prop) %>% 
+  ggplot(aes(x  = datetime, y = Q_mm_day))+
+  geom_line(aes(color = diff))+
+  labs(title = "Difference between Flow permanence sequence and others, 2023",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()+
+  scale_color_gradient2(low = "red", 
+    mid = "white", 
+    high = "blue", 
+    midpoint = 0,
+    limits = c(-0.3, 0.3))+
+                       theme(rect = element_rect(fill = "transparent", color = NA))+
+  facet_grid(seq_label~shed)
+```
+
+
+## Figure 6: Hydrograph, colored by which sequence works the best
+
+## Figure 7: Accuracy of all models versus accuracy
+```{r W3}
 #trying to plot accuracy vs accuracy
 df_long2 <- df_summary_time %>%
   select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
@@ -2146,8 +2694,7 @@ df_long2 %>%
        x = c(0, 1))+
   facet_grid(event_type~model)
 ```
-
-## Figure 8: Maps of where sequences work in space, and time to a certain extent
+## Figure 8: Maps of where sequences work in space
 Set of map panels where symbol color = flowing state, outline color or shape indicating correctly predicted or not
 
 For these plots I need:
@@ -2434,291 +2981,7 @@ geom_sf(data = w3_stic_locs_r %>% inner_join(ID_acc, by = "ID"),
 ```
 
 
-#map showing the sequence in space
-```{r plot-chain}
-edges2 <- all_graph_solutions %>% 
-  filter(shed == "W3", method == "random", timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down) %>% as.matrix()
-chain_graph <- graph_from_edgelist(edges2, directed = TRUE)
-plot(chain_graph)
 
-ggmst <- fortify(chain_graph, layout = igraph::layout_as_tree(chain_graph))
-ggplot(ggmst, aes(x = x, y = y, xend = xend, yend = yend)) +
-  geom_edges(color = "grey", arrow = grid::arrow(length = unit(6, "pt"),
-                                                 type = "open")) +
-  geom_nodes(color = "black", size = 3) +
-  geom_nodetext(aes(label = name),
-                fontface = "bold", color = "white", size = 1) +
-  theme_blank()
-```
-
-#How well different sequences work through time and along the hydrograph
-```{r calculate-how-many-follow-sequence}
-sequential <- input_w3 %>% 
-  left_join(pks_w3, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed.x, wshed.y, mins, datetime)) %>% 
-  arrange(desc(pk)) %>% 
-  mutate("downstream" = lag(binary),
-         "following" = downstream - binary) %>% 
-  filter(following != -1) %>% 
-    summarise(count_non = length(following))
-
-total <- input_w3 %>% 
-  left_join(pks_w3, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed.x, wshed.y, mins, datetime)) %>% 
-  arrange(desc(pk)) %>% 
-  mutate("downstream" = lag(binary),
-         "following" = downstream - binary) %>% 
-    summarise(count_all = length(following))
-
-final <- left_join(sequential, total, by = "datetime") %>% 
-  mutate(prop = count_non/count_all)
-
-
-#create a reference dataframe with the sensor ID, then the number in the sequence
-w3_twi_sequence <- w3_twi %>% 
-    filter(ID %in% W3_IDs) %>% 
-  arrange(desc(twi)) %>% 
-  rename(sequence = twi)
-
-fb_twi_sequence <- fb_twi %>% 
-    filter(ID %in% FB_IDs) %>% 
-  arrange(desc(twi))
-
-zz_twi_sequence <- zz_twi %>% 
-    filter(ID %in% ZZ_IDs) %>% 
-  arrange(desc(twi))
-
-```
-```{r}
-#creating chains
-
-W3_cheap <- chain_solution(W3_IDs, "W3", methods = "cheapest_insertion")
-W3_random <- chain_solution(W3_IDs, "W3", methods = "random")
-
-FB_cheap <- chain_solution(FB_IDs, "FB", methods = "cheapest_insertion")
-FB_random <- chain_solution(FB_IDs, "FB", methods = "random")
-
-ZZ_cheap <- chain_solution(ZZ_IDs, "ZZ", methods = "cheapest_insertion")
-ZZ_random <- chain_solution(ZZ_IDs, "ZZ", methods = "random")
-
-```
-Once sequence is defined, I can compare to the actual flow data
-```{r}
-#sequential <- 
-input_w3 %>% 
-  left_join(W3_cheap, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed, mins)) %>% 
-  arrange((sequence)) %>% 
-  mutate("downstream" = lag(binary),
-         "following" = downstream - binary) %>% 
-  #filter(following != -1) %>% 
-  filter(datetime == "2023-07-15 19:00:00") %>% View()
-   # summarise(count_non = length(following)) %>% View()
-    
-input_w3 %>% 
-  left_join(W3_pk_seq, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed, mins)) %>% 
-  arrange((sequence)) %>% 
-  mutate("downstream" = lag(binary),
-         "following" = downstream - binary) %>% 
-  #filter(following != -1) %>% 
-  filter(datetime == "2023-07-15 19:00:00") %>% View()
-    summarise(count_non = length(following))
-
-#make a df with ID and the number in the sequence
-W3_pk_seq <- pks_w3 %>% 
-  arrange(desc(pk)) %>% 
-  mutate(sequence = seq(1, length(pks_w3$ID), 1)) %>% 
-  select(ID, sequence)
-  
-
-total <- input_w3 %>% 
-  left_join(W3_cheap, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed, mins, datetime)) %>% 
-  arrange(sequence) %>% 
-  mutate("downstream" = lag(binary),
-         "following" = downstream - binary) %>% 
-    summarise(count_all = length(following))
-
-final <- left_join(sequential, total, by = "datetime") %>% 
-  mutate(prop = count_non/count_all)
-
-#write a function to calculate this in 1 quick step
-calc_time <- function(sequence_df, shed, seq_label){
-  
-  if(shed == "W3"){
-    input_f <- input_w3
-  } else if(shed == "FB"){
-        input_f <- input_fb
-  } else if(shed == "ZZ"){
-        input_f <- input_zz
-  }
-  
-sequential <- input_f %>% 
-  left_join(sequence_df, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed, mins, datetime)) %>% 
-  arrange(sequence) %>% 
-  mutate("downstream" = lag(binary),
-         "following" = downstream - binary) %>% 
-  filter(following != -1) %>% 
-    summarise(count_non = length(following))
-
-total <- input_f %>% 
-  left_join(sequence_df, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed, mins, datetime)) %>% 
-  arrange(sequence) %>% 
-  mutate("downstream" = lag(binary),
-         "following" = downstream - binary) %>% 
-    summarise(count_all = length(following))
-
-final <- left_join(sequential, total, by = "datetime") %>% 
-  mutate(prop = count_non/count_all) %>% 
-  mutate(shed = shed)
-
-output <- q_24_bind %>% 
-  inner_join(final, by = "datetime") %>% 
-  mutate(seq_label = seq_label)
-
-return(output)
-}
-
-calc_time(W3_cheap, "W3", "cheapest")
-```
-
-```{r prepare-discharge}
-#from TestingFrameworks script
-
-#read in discharge from W3-- input to Carrie's model, discharge in L/s
-#q <- read_csv("https://portal.edirepository.org/nis/dataviewer?packageid=knb-lter-hbr.1.17&entityid=efc477b3ef1bb3dd8b9355c9115cd849")
-#write.csv(q, "HB_5minQ.csv")
-q <- read_csv("HB_5minQ.csv")
-
-#input discharge needs to be in mm/day?
-#reference to understand difference between daily mean and instantaneous streamflow:
-#https://hydrofunctions.readthedocs.io/en/master/notebooks/DailyMean_vs_Instant.html
-
-#creating minute column, used to filter out higher temporal resolution measurements for plotting
-data_23$mins <- minute(data_23$datetime)
-data_24$mins <- minute(data_24$datetime)
-
-#find the range of dates that I need discharge for
-start <- min(data_23$datetime)
-stop <- max(data_23$datetime)
-
-#filtering discharge down to the range of dates
-q_23 <- q %>% 
-  filter(DATETIME > start & DATETIME < stop) %>% 
-  #convert to mm/day.
-  #converting instantaneous streamflow to mm/day by taking measurement, and scaling   it up as if that was the discharge for the whole day. It is not, it is just at that   moment, but should fix any units/order of magnitude issues
-  mutate("Q_mm_day" = Discharge_ls * 0.001 * 86400 / 420000 * 1000) 
-q_23$mins <- minute(q_23$DATETIME)
-
-#removing times that are not coincident with STIC observations
-q_23_f <- filter(q_23, mins %in% c(0, 30))
-
-ggplot(q_23_f, aes(x  = DATETIME, y = Q_mm_day))+
-  geom_line()+
-  labs(title = "Discharge from W3, July to Nov 2023",
-       x = "",
-       y = "Instantaneous Q (mm/day)")+
-  theme_classic()
-
-#also read in provisional 2024 data
-q_24 <- read_csv("w3_discharge_24.csv")
-
-#find the range of dates that I need discharge for
-start24 <- ymd_hms("2024-05-15 00:00:00 UTC")
-stop24 <- max(data_24$datetime)
-
-#filtering discharge down to the range of dates
-q_24 <- q_24 %>% 
-  mutate(datetime = mdy_hm(datetime)) %>% 
-  filter(datetime > start24 & datetime < stop24)  
-q_24$mins <- minute(q_24$datetime)
-
-#removing times that are not coincident with STIC observations
-q_24_f <- filter(q_24, mins %in% c(0, 30))
-
-ggplot(q_24_f, aes(x  = datetime, y = Q_mmperday))+
-  geom_line()+
-  labs(title = "Discharge from W3, May to July 2024",
-       x = "",
-       y = "Instantaneous Q (mm/day)")+
-  theme_classic()
-
-#get discharge ready to bind to my other data
-q_23_bind <- 
-  q_23_f %>% 
-  select(DATETIME, Q_mm_day) %>% 
-  rename("datetime" = DATETIME
-         )
-
-q_24_bind <- 
-  q_24_f %>% 
-  select(datetime, Q_mmperday) %>% 
-  rename("Q_mm_day" = Q_mmperday)
-```
-
-```{r plot-along-discharge}
-
-rbind(
-calc_time(W3_cheap, "W3", "cheapest"),
-calc_time(W3_random, "W3", "random"),
-calc_time(w3_twi_sequence, "W3", "twi"),
-calc_time(W3_pk_seq, "W3", "pk")
-) %>% 
-  ggplot(aes(x  = datetime, y = Q_mm_day))+
-  geom_line(aes(color = prop))+
-  labs(title = "Discharge from W3, 2024",
-       x = "",
-       y = "Instantaneous Q (mm/day)")+
-  theme_classic()+
-  scale_color_continuous(type = "viridis",
-                             limits = c(0,1))+
-                       theme(rect = element_rect(fill = "transparent", color = NA))+
-  facet_grid(seq_label~shed)
-
-```
-
-```{r}
-pk_props_join <- calc_time(W3_pk_seq, "W3", "pk") %>% 
-  select(datetime, prop) %>% 
-  rename("pk_prop" = prop)
-
-rbind(
-calc_time(W3_cheap, "W3", "cheapest"),
-calc_time(W3_random, "W3", "random"),
-calc_time(w3_twi_sequence, "W3", "twi"),
-calc_time(W3_pk_seq, "W3", "pk")
-) %>% 
-  left_join(pk_props_join, by = "datetime") %>% 
-  filter(seq_label != "pk") %>% 
-  mutate(diff = prop - pk_prop) %>% 
-  ggplot(aes(x  = datetime, y = Q_mm_day))+
-  geom_line(aes(color = diff))+
-  labs(title = "Difference between Flow permanence sequence and others, 2023",
-       x = "",
-       y = "Instantaneous Q (mm/day)")+
-  theme_classic()+
-  scale_color_gradient2(low = "red", 
-    mid = "white", 
-    high = "blue", 
-    midpoint = 0,
-    limits = c(-0.3, 0.3))+
-                       theme(rect = element_rect(fill = "transparent", color = NA))+
-  facet_grid(seq_label~shed)
-```
-
-This method of evaluating did not quite produce what i was hoping, I am going to try one more then i might have to change my results and discussion...
 
 Use same method as Botter and Durighetto paper, model! Calculate the number of nodes that are active at each time step, and turn nodes following sequence until the same number of flowing nodes are on
 ```{r}
@@ -3025,7 +3288,7 @@ input_w3 %>%
   filter(datetime == ymd_hms("2023-08-08 04:00:00 UTC")) %>%  View()
 ```
 
-BIG PROBLEM: sequence includes all nodes, but not all nodes are present at every timestep. Sequence needs to be adjusted at each timestep to reflect the nodes that are present dynamically....
+SOLVED! BIG PROBLEM: sequence includes all nodes, but not all nodes are present at every timestep. Sequence needs to be adjusted at each timestep to reflect the nodes that are present dynamically....
 
 Function to calculate the comparison between botter model based on a provided sequence.
 ```{r}
@@ -3362,261 +3625,8 @@ geom_sf(data = w3_stic_locs_r %>% inner_join(states, by = "ID"),
   facet_grid(sequence~datetime)
 ```
 
-Chunk straight from mapsForStoryboard, of my current best attempt to extract rising and falling limbs from discharge record for W3. Plan to use to compare how the different methods work during rising, falling, and baseflow.
-```{r identifying-events}
-start <- ymd_hms("2023-7-20 00:00:00")
-stop <- ymd_hms("2023-10-22 00:00:00")
 
 
-q_23_plotting <- q_23_f %>% 
-    filter(DATETIME > start & DATETIME < stop) %>% 
-  rename("datetime" = DATETIME)
-q_23_plotting %>% 
-ggplot(aes(x  = datetime, y = Q_mm_day))+
-  geom_line()+
-  labs(title = "Discharge from W3, July to Nov 2023",
-       x = "",
-       y = "Instantaneous Q (mm/day)")+
-  theme_classic()
-
-#calculate baseflow
-bf = baseflowB(q_23_plotting$Q_mm_day, alpha = 0.980)
-#subtract baseflow from discharge
-PoT_res = eventPOT(q_23_plotting$Q_mm_day - bf$bf, threshold = 1, min.diff = 1)
-#plot the events
-plotEvents(data = q_23_plotting$Q_mm_day, events = PoT_res, xlab = "Index", ylab = "Flow (ML/day)", colpnt = "#E41A1C", colline = "#377EB8", main = "eventPOT")
-
-
-
-limbs(data = q_23_plotting$Q_mm_day, 
-               dates =NULL, 
-               events = PoT_res, 
-               to.plot = TRUE)#now, extract just the start column, then get each window and run through scoring algorithm
-PoT_res$srt
-
-q_23_plotting %>% 
-  select(datetime, Q_mm_day) %>% 
-  arrange(datetime) %>% 
-  unique() %>% 
-  mutate(lab = as.numeric(row_number())) %>% 
-  mutate(group = data.table::rleid(lab, cols = PoT_res$srt))
-
-ranges <- data.frame("starts" = PoT_res$srt) %>% 
-  mutate("stops" = lead(starts)) %>% 
-  mutate(event_ID = row_number(starts))
-
-ranges[26,2] <- 5762
-#trying fuzzy join method?
-p_load(fuzzyjoin)
-id_events <- q_23_plotting %>% 
-  select(datetime, Q_mm_day) %>% 
-  mutate(ID = row_number()) |> fuzzy_left_join(ranges, by = c(ID = "starts", ID = "stops"),
-                              match_fun = list(`>=`, `<=`)) |> 
-   mutate(event_ID = event_ID) |> 
-   select(-starts, -stops)
-
-id_events %>% 
-  ggplot()+
-  geom_line(aes(x = datetime, y = Q_mm_day, color = event_ID))
-
-
-```
-
-#all discharge stuff
-
-```{r id-join-limbs}
-library(dplyr)
-library(purrr)
-
-
-# Example: discharge dataframe with datetime and discharge
-discharge_df <- q_23_plotting %>% 
-  select(datetime, Q_mm_day)
-
-# Copy of your event table
-events <- limbs(data = q_23_plotting$Q_mm_day, 
-               dates =NULL, 
-               events = PoT_res, 
-               to.plot = FALSE)#now, extract just the start column, then get each window and run through scoring algorithm
-
-# Initialize the event_type column
-discharge_df$event_type <- NA_character_
-discharge_df$event_id <- NA_integer_
-
-# Assign "rising" and "falling" from event definitions
-for (i in seq_len(nrow(events))) {
-  ev <- events[i, ]
-  discharge_df$event_id[ev$ris.srt:ev$fal.end] <- i  # Event ID for rising+falling
-  
-  # Rising limb
-  if (!is.na(ev$ris.srt) && !is.na(ev$ris.end) && ev$ris.srt <= ev$ris.end) {
-    discharge_df$event_type[ev$ris.srt:ev$ris.end] <- "rising"
-  }
-  
-  # Falling limb
-  if (!is.na(ev$fal.srt) && !is.na(ev$fal.end) && ev$fal.srt <= ev$fal.end) {
-    discharge_df$event_type[ev$fal.srt:ev$fal.end] <- "falling"
-  }
-  
-  # Baseflow between events
-  if (i < nrow(events)) {
-    this_fal_end <- ev$fal.end
-    next_ris_srt <- events$ris.srt[i + 1]
-    if (this_fal_end + 1 <= next_ris_srt - 1) {
-      baseflow_idx <- (this_fal_end + 1):(next_ris_srt - 1)
-      discharge_df$event_type[baseflow_idx] <- "baseflow"
-      discharge_df$event_id[baseflow_idx] <- NA  # baseflow is not part of any event
-    }
-  }
-}
-
-# Optional: label all remaining NA values as "baseflow" (e.g., before first or after last event)
-discharge_df$event_type[is.na(discharge_df$event_type)] <- "baseflow"
-
-discharge_df %>% 
-  ggplot(aes(x = datetime, y = Q_mm_day, color = event_type))+
-  geom_point()
-
-```
-
-Combine the model results above, and the identified events
-```{r}
-comparison %>% 
-  drop_na() %>% 
-  inner_join(discharge_df, by = "datetime") %>% 
-  group_by(event_type, code) %>% 
-  summarise(mean = mean(count)) %>% 
-  ggplot()+
-  geom_bar(aes(x = event_type, y = mean, fill = code), stat = "identity")
-
-comparison %>% 
-  inner_join(discharge_df, by = "datetime") %>% 
-  filter(code == "ommission") %>% 
-  ggplot()+
-  geom_line(aes(x = datetime, y = Q_mm_day, color = count))
-
-#for the graph theory solution, the commission and ommission are symmetrical most of the time... I guess this makes sense if one is out of order, it causes another to be in order, like when I did the lagging method to calculate this
-comparison %>% 
-  inner_join(discharge_df, by = "datetime") %>% 
-  pivot_wider(names_from = code, values_from = count) %>% 
-  mutate(diff = commission - ommission) %>% 
-  filter(diff != 0) %>% View()
-
-
-```
-
-
-#Stage for FB and ZZ
-```{r}
-FB_air <- read_csv("./PressureTransducers_11_14_23/FB_air.csv", skip = 1) %>% 
-  select(2:3) %>% 
-  rename(DATETIME = 1,
-         pressure_psi_air = 2) %>% 
-  mutate(DATETIME = mdy_hms(DATETIME))
-
-FB_water <- read_csv("./PressureTransducers_11_14_23/FB_water.csv", skip = 1) %>% 
-  select(2:3) %>% 
-  rename(DATETIME = 1,
-         pressure_psi_water = 2) %>% 
-  mutate(DATETIME = mdy_hms(DATETIME))
-
-FB_water %>% 
-  left_join(FB_air, by = "DATETIME") %>% 
-  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
-  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
-  ggplot(aes(x = DATETIME, y = stage_cm))+
-  geom_line()+
-  theme_classic()+
-  labs(title = "Falls Brook Stage",
-       x = "",
-       y = "Stage (in)")
-
-#exclude windows where they were not deployed
-FB_water %>% 
-  left_join(FB_air, by = "DATETIME") %>% 
-  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
-  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
-  filter(stage_cm < 5) %>% View()
-
-#7/22/2023 00:00:00
-#9/20/23 00 - 2023-09-22 00:00:00
-#2023-11-12 00:30:00
-
-FB_water %>% 
-  left_join(FB_air, by = "DATETIME") %>% 
-  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
-  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
-  filter(DATETIME > ymd_hms("2023-07-22 00:00:00"),
-         DATETIME < ymd_hms("2023-11-12 00:00:00")) %>% 
-  filter(!(DATETIME >= ymd_hms("2023-09-20 00:00:00") & 
-          DATETIME <= ymd_hms("2023-09-22 00:00:00"))) %>% 
-  mutate(minutes = minute(DATETIME)) %>% 
-  filter(minutes %in% c(0, 30)) %>% 
-  ggplot(aes(x = DATETIME, y = stage_cm))+
-  geom_line()+
-  theme_classic()+
-  labs(title = "Falls Brook Stage",
-       x = "",
-       y = "Stage (in)")
-
-processed_fb_stage <- FB_water %>% 
-  left_join(FB_air, by = "DATETIME") %>% 
-  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
-  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
-  filter(DATETIME > ymd_hms("2023-07-22 00:00:00"),
-         DATETIME < ymd_hms("2023-11-12 00:00:00")) %>% 
-  filter(!(DATETIME >= ymd_hms("2023-09-20 00:00:00") & 
-          DATETIME <= ymd_hms("2023-09-22 00:00:00"))) %>% 
-  mutate(minutes = minute(DATETIME)) %>% 
-  filter(minutes %in% c(0, 30))
-
-q_combined %>% filter(shed == "FB") %>% 
-  mutate(datetime = round_date(datetime, unit = minutes(30))) %>% 
-  rename(DATETIME = datetime) %>% 
-  left_join(processed_fb_stage, by = "DATETIME")
-
-```
-
-```{r}
-#Read in measurements from 2024
-
-FB_air <- read_csv("./PressureTransducers_summer24/FB_air.csv", skip = 1) %>% 
-  select(2:3) %>% 
-  rename(DATETIME = 1,
-         pressure_psi_air = 2) %>% 
-  mutate(DATETIME = mdy_hms(DATETIME))
-
-FB_water <- read_csv("./PressureTransducers_summer24/FB_water.csv", skip = 1) %>% 
-  select(2:3) %>% 
-  rename(DATETIME = 1,
-         pressure_psi_water = 2) %>% 
-  mutate(DATETIME = mdy_hms(DATETIME))
-
-FB_water %>% 
-  left_join(FB_air, by = "DATETIME") %>% 
-  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
-  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
-  ggplot(aes(x = DATETIME, y = stage_cm))+
-  geom_line()+
-  theme_classic()+
-  labs(title = "Falls Brook Stage",
-       x = "",
-       y = "Stage (in)")
-
-processed_fb_stage <- FB_water %>% 
-  left_join(FB_air, by = "DATETIME") %>% 
-  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
-  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
-  mutate(minutes = minute(DATETIME)) %>% 
-  filter(minutes %in% c(0, 30))
-
-q_combined %>% filter(shed == "FB") %>% 
-  mutate(datetime = round_date(datetime, unit = minutes(30))) %>% 
-  rename(DATETIME = datetime) %>% 
-  left_join(processed_fb_stage, by = "DATETIME")
-
-#BIG PROBLEM
-```
 
 Big problem- I do not have stage measurements from the dilutions that Logan did in August... the pressure transducers are still in the streams, I can download them in July if they are still logging.
 
