@@ -19,7 +19,7 @@ Not sure if I should include the dummy or not; FB is a lot better with a dummy, 
 ```{r setup}
 #loading packages
 library(pacman)
-p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,ggnewscale, sf, elevatr, patchwork, ggspatial, zoo, igraph, TSP, ggnetwork, intergraph, ggpubr, knitr, purrr)
+p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,ggnewscale, sf, elevatr, patchwork, ggspatial, zoo, igraph, TSP, ggnetwork, intergraph, ggpubr, knitr, purrr, spatialEco)
 #whitebox::install_whitebox()
 
 #reading in final format data for summer 23
@@ -565,6 +565,8 @@ discharge_df %>%
   ggplot(aes(x = datetime, y = Q_mm_day, color = event_type))+
   geom_point()
 
+w3_limbs <- rbind(discharge_df_24, discharge_df_23)
+
 ```
 
 
@@ -624,7 +626,7 @@ FB_water %>%
   left_join(FB_air, by = "DATETIME") %>% 
   mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
   mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
-  filter(stage_cm < 5) %>% View()
+  filter(stage_cm < 5)
 
 #7/22/2023 00:00:00
 #9/20/23 00 - 2023-09-22 00:00:00
@@ -640,7 +642,7 @@ FB_water %>%
           DATETIME <= ymd_hms("2023-09-22 00:00:00"))) %>% 
   mutate(minutes = minute(DATETIME)) %>% 
   filter(minutes %in% c(0, 30)) %>% 
-  mutate(roll_mean = rollapply(stage_cm ,48,mean,align='center',fill=NA)) %>%
+  mutate(roll_mean = rollapply(stage_cm ,24,mean,align='center',fill=NA)) %>%
   ggplot()+
   geom_line(aes(x = DATETIME, y = stage_cm))+
     geom_line(aes(x = DATETIME, y = roll_mean), color = "grey")+
@@ -658,7 +660,10 @@ processed_fb_stage <- FB_water %>%
   filter(!(DATETIME >= ymd_hms("2023-09-20 00:00:00") & 
           DATETIME <= ymd_hms("2023-09-22 00:00:00"))) %>% 
   mutate(minutes = minute(DATETIME)) %>% 
-  filter(minutes %in% c(0, 30))
+  filter(minutes %in% c(0, 30)) %>% 
+  mutate(roll_mean = rollapply(stage_cm ,24,mean,align='center',fill=NA)) %>% 
+  drop_na()
+
 
 #output processed salt dilutions
 q_combined %>% filter(shed == "FB") %>% 
@@ -668,19 +673,19 @@ q_combined %>% filter(shed == "FB") %>%
 
 
 #identifying events
-bf = baseflowB(q_24_bind$Q_mm_day, alpha = 0.925)
+bf = baseflowB(processed_fb_stage$roll_mean, alpha = 0.99)
 
 
 #subtract baseflow from discharge
 #PoT_res = eventPOT(q_23_plotting$Q_mm_day - bf$bf, threshold = 1, min.diff = 1)
 
-PoT_res = eventPOT(q_24_bind$Q_mm_day - bf$bf, threshold = 0.25, min.diff = 30)
+PoT_res = eventPOT(processed_fb_stage$roll_mean - bf$bf, threshold = 0.4, min.diff = 20)
 #plot the events
-plotEvents(data = q_24_bind$Q_mm_day, events = PoT_res, xlab = "Index", ylab = "Flow (ML/day)", colpnt = "#E41A1C", colline = "#377EB8", main = "eventPOT")
+plotEvents(data = processed_fb_stage$roll_mean, events = PoT_res, xlab = "Index", ylab = "Flow (ML/day)", colpnt = "#E41A1C", colline = "#377EB8", main = "eventPOT")
 
 
 
-limbs(data = q_24_bind$Q_mm_day, 
+limbs(data = processed_fb_stage$roll_mean, 
                dates =NULL, 
                events = PoT_res, 
                to.plot = TRUE)#now, extract just the start column, then get each window and run through scoring algorithm
@@ -692,10 +697,10 @@ ranges <- data.frame("starts" = PoT_res$srt) %>%
 
 
 # Example: discharge dataframe with datetime and discharge
-discharge_df <- q_24_bind
+discharge_df <- processed_fb_stage
 
 # Copy of your event table
-events <- limbs(data = q_24_bind$Q_mm_day, 
+events <- limbs(data = processed_fb_stage$roll_mean, 
                dates =NULL, 
                events = PoT_res, 
                to.plot = FALSE)#now, extract just the start column, then get each window and run through scoring algorithm
@@ -734,15 +739,14 @@ for (i in seq_len(nrow(events))) {
 # Optional: label all remaining NA values as "baseflow" (e.g., before first or after last event)
 discharge_df$event_type[is.na(discharge_df$event_type)] <- "baseflow"
 
-discharge_df_24 <- discharge_df
+stage_df_23 <- discharge_df
 
 discharge_df %>% 
-  ggplot(aes(x = datetime, y = Q_mm_day, color = event_type))+
+  ggplot(aes(x = DATETIME, y = roll_mean, color = event_type))+
   geom_point()
 
 
 ```
-
 ```{r FB-2024}
 #Read in measurements from 2024
 
@@ -784,7 +788,6 @@ FB_water %>%
              color = "blue")
 
 
-  mutate(BLOOD_PRESSURE_UPDATED = rollmean(x=BLOOD_PRESSURE, 2)) %>%
 
 
 
@@ -792,11 +795,95 @@ processed_fb_stage <- FB_water %>%
   left_join(FB_air, by = "DATETIME") %>% 
   mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
   mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
+    filter(DATETIME <= ymd_hms("2024-07-21 10:30:00 UTC")) %>% 
   mutate(minutes = minute(DATETIME)) %>% 
-  filter(minutes %in% c(0, 30))
+  filter(minutes %in% c(0, 30)) %>% 
+  mutate(roll_mean = rollapply(stage_cm ,24,mean,align='center',fill=NA)) %>% 
+  drop_na()
+
+
+#output processed salt dilutions
+q_combined %>% filter(shed == "FB") %>% 
+  mutate(datetime = round_date(datetime, unit = minutes(30))) %>% 
+  rename(DATETIME = datetime) %>% 
+  left_join(processed_fb_stage, by = "DATETIME")
+
+
+#identifying events
+bf = baseflowB(processed_fb_stage$roll_mean, alpha = 0.99)
+
+
+#subtract baseflow from discharge
+#PoT_res = eventPOT(q_23_plotting$Q_mm_day - bf$bf, threshold = 1, min.diff = 1)
+
+PoT_res = eventPOT(processed_fb_stage$roll_mean - bf$bf, threshold = 0.2, min.diff = 20)
+#plot the events
+plotEvents(data = processed_fb_stage$roll_mean, events = PoT_res, xlab = "Index", ylab = "Flow (ML/day)", colpnt = "#E41A1C", colline = "#377EB8", main = "eventPOT")
 
 
 
+limbs(data = processed_fb_stage$roll_mean, 
+               dates =NULL, 
+               events = PoT_res, 
+               to.plot = TRUE)#now, extract just the start column, then get each window and run through scoring algorithm
+
+
+ranges <- data.frame("starts" = PoT_res$srt) %>% 
+  mutate("stops" = lead(starts)) %>% 
+  mutate(event_ID = row_number(starts))
+
+
+# Example: discharge dataframe with datetime and discharge
+discharge_df <- processed_fb_stage
+
+# Copy of your event table
+events <- limbs(data = processed_fb_stage$roll_mean, 
+               dates =NULL, 
+               events = PoT_res, 
+               to.plot = FALSE)#now, extract just the start column, then get each window and run through scoring algorithm
+
+# Initialize the event_type column
+discharge_df$event_type <- NA_character_
+discharge_df$event_id <- NA_integer_
+
+# Assign "rising" and "falling" from event definitions
+for (i in seq_len(nrow(events))) {
+  ev <- events[i, ]
+  discharge_df$event_id[ev$ris.srt:ev$fal.end] <- i  # Event ID for rising+falling
+  
+  # Rising limb
+  if (!is.na(ev$ris.srt) && !is.na(ev$ris.end) && ev$ris.srt <= ev$ris.end) {
+    discharge_df$event_type[ev$ris.srt:ev$ris.end] <- "rising"
+  }
+  
+  # Falling limb
+  if (!is.na(ev$fal.srt) && !is.na(ev$fal.end) && ev$fal.srt <= ev$fal.end) {
+    discharge_df$event_type[ev$fal.srt:ev$fal.end] <- "falling"
+  }
+  
+  # Baseflow between events
+  if (i < nrow(events)) {
+    this_fal_end <- ev$fal.end
+    next_ris_srt <- events$ris.srt[i + 1]
+    if (this_fal_end + 1 <= next_ris_srt - 1) {
+      baseflow_idx <- (this_fal_end + 1):(next_ris_srt - 1)
+      discharge_df$event_type[baseflow_idx] <- "baseflow"
+      discharge_df$event_id[baseflow_idx] <- NA  # baseflow is not part of any event
+    }
+  }
+}
+
+# Optional: label all remaining NA values as "baseflow" (e.g., before first or after last event)
+discharge_df$event_type[is.na(discharge_df$event_type)] <- "baseflow"
+
+stage_df_24 <- discharge_df
+
+discharge_df %>% 
+  ggplot(aes(x = DATETIME, y = roll_mean, color = event_type))+
+  geom_point()
+
+fb_limbs <- rbind(stage_df_24, stage_df_23) %>% 
+  rename("datetime" = DATETIME)
 #BIG PROBLEM
 ```
 
@@ -815,7 +902,8 @@ ZZ_water <- read_csv("./PressureTransducers_11_14_23/ZZ_water.csv", skip = 1) %>
          pressure_psi_water = 2) %>% 
   mutate(DATETIME = mdy_hms(DATETIME))
 
-ZZ_water %>% 
+
+processed_zz_stage <- ZZ_water %>% 
   left_join(ZZ_air, by = "DATETIME") %>% 
   mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
   mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>%
@@ -826,13 +914,94 @@ ZZ_water %>%
           DATETIME <= ymd_hms("2023-09-22 00:00:00"))) %>% 
   mutate(minutes = minute(DATETIME)) %>% 
   filter(minutes %in% c(0, 30)) %>% 
-  mutate(roll_mean = rollapply(stage_cm ,48,mean,align='center',fill=NA)) %>%
+  mutate(roll_mean = rollapply(stage_cm ,48,mean,align='center',fill=NA)) %>% 
+  drop_na()
+
+#View(processed_zz_stage)
+processed_zz_stage %>%
   ggplot()+
     geom_line(aes(x = DATETIME, y = stage_cm))+
     geom_line(aes(x = DATETIME, y = roll_mean), color = "grey")+  theme_classic()+
   labs(title = "ZZ Stage",
        x = "",
        y = "Stage (in)")
+
+
+#identifying events
+bf = baseflowB(processed_zz_stage$roll_mean, alpha = 0.99)
+
+
+#subtract baseflow from discharge
+#PoT_res = eventPOT(q_23_plotting$Q_mm_day - bf$bf, threshold = 1, min.diff = 1)
+
+PoT_res = eventPOT(processed_zz_stage$roll_mean - bf$bf, threshold = 0.25, min.diff = 85)
+#plot the events
+plotEvents(data = processed_zz_stage$roll_mean, events = PoT_res, xlab = "Index", ylab = "Flow (ML/day)", colpnt = "#E41A1C", colline = "#377EB8", main = "eventPOT")
+
+
+
+limbs(data = processed_zz_stage$roll_mean, 
+               dates =NULL, 
+               events = PoT_res, 
+               to.plot = TRUE)#now, extract just the start column, then get each window and run through scoring algorithm
+
+
+ranges <- data.frame("starts" = PoT_res$srt) %>% 
+  mutate("stops" = lead(starts)) %>% 
+  mutate(event_ID = row_number(starts))
+
+
+# Example: discharge dataframe with datetime and discharge
+discharge_df <- processed_zz_stage
+
+# Copy of your event table
+events <- limbs(data = processed_zz_stage$roll_mean, 
+               dates =NULL, 
+               events = PoT_res, 
+               to.plot = FALSE)#now, extract just the start column, then get each window and run through scoring algorithm
+
+# Initialize the event_type column
+discharge_df$event_type <- NA_character_
+discharge_df$event_id <- NA_integer_
+
+# Assign "rising" and "falling" from event definitions
+for (i in seq_len(nrow(events))) {
+  ev <- events[i, ]
+  discharge_df$event_id[ev$ris.srt:ev$fal.end] <- i  # Event ID for rising+falling
+  
+  # Rising limb
+  if (!is.na(ev$ris.srt) && !is.na(ev$ris.end) && ev$ris.srt <= ev$ris.end) {
+    discharge_df$event_type[ev$ris.srt:ev$ris.end] <- "rising"
+  }
+  
+  # Falling limb
+  if (!is.na(ev$fal.srt) && !is.na(ev$fal.end) && ev$fal.srt <= ev$fal.end) {
+    discharge_df$event_type[ev$fal.srt:ev$fal.end] <- "falling"
+  }
+  
+  # Baseflow between events
+  if (i < nrow(events)) {
+    this_fal_end <- ev$fal.end
+    next_ris_srt <- events$ris.srt[i + 1]
+    if (this_fal_end + 1 <= next_ris_srt - 1) {
+      baseflow_idx <- (this_fal_end + 1):(next_ris_srt - 1)
+      discharge_df$event_type[baseflow_idx] <- "baseflow"
+      discharge_df$event_id[baseflow_idx] <- NA  # baseflow is not part of any event
+    }
+  }
+}
+
+# Optional: label all remaining NA values as "baseflow" (e.g., before first or after last event)
+discharge_df$event_type[is.na(discharge_df$event_type)] <- "baseflow"
+
+stage_23 <- discharge_df
+
+discharge_df %>% 
+  ggplot(aes(x = DATETIME, y = roll_mean, color = event_type))+
+  geom_point()
+
+
+#BIG PROBLEM
 ```
 ```{r ZZ-2024}
 #chunk that reads in stage, converts to proper units
@@ -849,20 +1018,108 @@ ZZ_water <- read_csv("./PressureTransducers_summer24/ZZ_water.csv", skip = 1) %>
          pressure_psi_water = 2) %>% 
   mutate(DATETIME = mdy_hms(DATETIME))
 
-ZZ_water %>% 
+
+processed_zz_stage <- ZZ_water %>% 
   left_join(ZZ_air, by = "DATETIME") %>% 
   mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
   mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>%
   filter(DATETIME <= ymd_hms("2024-07-21 10:30:00 UTC")) %>% 
   mutate(minutes = minute(DATETIME)) %>% 
   filter(minutes %in% c(0, 30)) %>% 
-  mutate(roll_mean = rollapply(stage_cm ,24,mean,align='center',fill=NA)) %>%
-  ggplot()+
+  mutate(roll_mean = rollapply(stage_cm ,24,mean,align='center',fill=NA)) %>% 
+  drop_na()
+
+processed_zz_stage %>% ggplot()+
     geom_line(aes(x = DATETIME, y = stage_cm))+
     geom_line(aes(x = DATETIME, y = roll_mean), color = "grey")+  theme_classic()+
   labs(title = "ZZ Stage",
        x = "",
        y = "Stage (in)")
+
+#output processed salt dilutions
+q_combined %>% filter(shed == "ZZ") %>% 
+  mutate(datetime = round_date(datetime, unit = minutes(30))) %>% 
+  rename(DATETIME = datetime) %>% 
+  left_join(processed_zz_stage, by = "DATETIME")
+
+
+#identifying events
+bf = baseflowB(processed_zz_stage$roll_mean, alpha = 0.99)
+
+
+#subtract baseflow from discharge
+#PoT_res = eventPOT(q_23_plotting$Q_mm_day - bf$bf, threshold = 1, min.diff = 1)
+
+PoT_res = eventPOT(processed_zz_stage$roll_mean - bf$bf, threshold = 0.25, min.diff = 85)
+#plot the events
+plotEvents(data = processed_zz_stage$roll_mean, events = PoT_res, xlab = "Index", ylab = "Flow (ML/day)", colpnt = "#E41A1C", colline = "#377EB8", main = "eventPOT")
+
+
+
+limbs(data = processed_zz_stage$roll_mean, 
+               dates =NULL, 
+               events = PoT_res, 
+               to.plot = TRUE)#now, extract just the start column, then get each window and run through scoring algorithm
+
+
+ranges <- data.frame("starts" = PoT_res$srt) %>% 
+  mutate("stops" = lead(starts)) %>% 
+  mutate(event_ID = row_number(starts))
+
+
+# Example: discharge dataframe with datetime and discharge
+discharge_df <- processed_zz_stage
+
+# Copy of your event table
+events <- limbs(data = processed_zz_stage$roll_mean, 
+               dates =NULL, 
+               events = PoT_res, 
+               to.plot = FALSE)#now, extract just the start column, then get each window and run through scoring algorithm
+
+# Initialize the event_type column
+discharge_df$event_type <- NA_character_
+discharge_df$event_id <- NA_integer_
+
+# Assign "rising" and "falling" from event definitions
+for (i in seq_len(nrow(events))) {
+  ev <- events[i, ]
+  discharge_df$event_id[ev$ris.srt:ev$fal.end] <- i  # Event ID for rising+falling
+  
+  # Rising limb
+  if (!is.na(ev$ris.srt) && !is.na(ev$ris.end) && ev$ris.srt <= ev$ris.end) {
+    discharge_df$event_type[ev$ris.srt:ev$ris.end] <- "rising"
+  }
+  
+  # Falling limb
+  if (!is.na(ev$fal.srt) && !is.na(ev$fal.end) && ev$fal.srt <= ev$fal.end) {
+    discharge_df$event_type[ev$fal.srt:ev$fal.end] <- "falling"
+  }
+  
+  # Baseflow between events
+  if (i < nrow(events)) {
+    this_fal_end <- ev$fal.end
+    next_ris_srt <- events$ris.srt[i + 1]
+    if (this_fal_end + 1 <= next_ris_srt - 1) {
+      baseflow_idx <- (this_fal_end + 1):(next_ris_srt - 1)
+      discharge_df$event_type[baseflow_idx] <- "baseflow"
+      discharge_df$event_id[baseflow_idx] <- NA  # baseflow is not part of any event
+    }
+  }
+}
+
+# Optional: label all remaining NA values as "baseflow" (e.g., before first or after last event)
+discharge_df$event_type[is.na(discharge_df$event_type)] <- "baseflow"
+
+stage_24 <- discharge_df
+
+discharge_df %>% 
+  ggplot(aes(x = DATETIME, y = roll_mean, color = event_type))+
+  geom_point()
+
+zz_limbs <- rbind(stage_24, stage_23)%>% 
+  rename("datetime" = DATETIME)
+#BIG PROBLEM
+
 ```
 
 ### Number of transitions in each component of hydrograph
@@ -879,6 +1136,10 @@ test$state_change <- "none"
 test$state_change[test$transition == -1] <- "wetting"
 test$state_change[test$transition == 1] <- "drying"
 
+num_trans_w3 <- test %>% 
+  group_by(datetime, state_change) %>% 
+  summarise(number_of_nodes = length(state_change))
+
 test %>% 
   inner_join(discharge_df, by = "datetime") %>%
   group_by(state_change, event_type) %>% 
@@ -888,7 +1149,38 @@ test %>%
 
 
 ```
+```{r FB}
+num_trans_fb <- input_fb %>% 
+  filter(mins %in% c(0, 30)) %>%
+  group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) %>% 
+  filter(transition %in% c(-1, 1))
 
+num_trans_fb$state_change <- "none"
+num_trans_fb$state_change[num_trans_fb$transition == -1] <- "wetting"
+num_trans_fb$state_change[num_trans_fb$transition == 1] <- "drying"
+
+num_trans_fb <- num_trans_fb %>% 
+  group_by(datetime, state_change) %>% 
+  summarise(number_of_nodes = length(state_change))
+```
+```{r ZZ}
+num_trans_zz <- input_zz %>% 
+  filter(mins %in% c(0, 30)) %>%
+  group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) %>% 
+  filter(transition %in% c(-1, 1))
+
+num_trans_zz$state_change <- "none"
+num_trans_zz$state_change[num_trans_zz$transition == -1] <- "wetting"
+num_trans_zz$state_change[num_trans_zz$transition == 1] <- "drying"
+
+num_trans_zz <- num_trans_zz %>% 
+  group_by(datetime, state_change) %>% 
+  summarise(number_of_nodes = length(state_change))
+```
 # Graph theory sequences
 ## Determine all possible combinations, or the full graph
 Determine all possible combinations
@@ -1860,6 +2152,46 @@ fb_locs <- read_csv("./STIC_uaa/fb2.csv") %>%
 zz_locs <- read_csv("./STIC_uaa/zz1.csv")%>% 
   select(ID, POINT_X, POINT_Y)
 ```
+```{r calculate-curvature}
+dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
+m1 <- rast(dem)
+m10 <- aggregate(m1, 10)
+
+# w3_shed <- "./w3_dems/w3_shed.tif"
+# w3_outline <- as.polygons(rast(w3_shed), extent=FALSE)
+# #FB
+# fb_shed <- "./fb_dems/fb_shed.tif"
+# fb_outline <- as.polygons(rast(fb_shed), extent=FALSE)
+# #ZZ
+# zz_shed <- "./zz_dems/zz_shed.tif"
+# zz_outline <- as.polygons(rast(zz_shed), extent=FALSE)
+
+# fb_curve <- m1 %>% 
+#   crop(fb_outline) %>% 
+#   mask(fb_outline) %>% 
+#   spatialEco::curvature()
+# zz_curve <- m1 %>% 
+#   crop(zz_outline) %>% 
+#   mask(zz_outline)%>% 
+#   spatialEco::curvature()
+# w3_curve <- m1 %>% 
+#   crop(w3_outline) %>% 
+#   mask(w3_outline)%>% 
+#   spatialEco::curvature()
+#curve1 <- spatialEco::curvature(m1)
+curve10 <- spatialEco::curvature(m10, type = "planform")
+
+w3_curve <- extract(curve10, w3_locs[,2:3]) %>% 
+  rename("curvature" = dem1m) %>% 
+  pivot_longer(-ID)
+fb_curve <- extract(curve10, fb_locs[,2:3]) %>% 
+  rename("curvature" = dem1m) %>% 
+  pivot_longer(-ID)
+zz_curve <- extract(curve10, zz_locs[,2:3]) %>% 
+  rename("curvature" = dem1m) %>% 
+  pivot_longer(-ID)
+```
+
 ```{r calculate-w3-topo}
 #flow accumulation/upslope drainage area at 3 m resolution calculated earlier in markdown
 flowacc_output <- "./HB/1m hydro enforced DEM/dem3m_flowacc.tif"
@@ -1913,17 +2245,28 @@ wbt_wetness_index(sca = flowacc_output, #flow accumulation
                   slope = slope_output,
                   output = twi_output)
 
+
+w3_uaa <- extract(rast(flowacc_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+  rename("uaa" = `X10mdem_flowacc`) %>% 
+  as_tibble() %>% 
+  pivot_longer(-ID)
+
 w3_tpi <- extract(rast(tpi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("tpi" = `X10mdem_tpi`) %>% 
-  as_tibble()
+  as_tibble() %>% 
+  pivot_longer(-ID)
 
 w3_twi <- extract(rast(twi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("twi" = `X10mdem_twi`) %>% 
-  as_tibble()
+  as_tibble() %>% 
+  pivot_longer(-ID)
 
 w3_slope <- extract(rast(slope_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("slope" = `X10mdem_slope`) %>% 
-  as_tibble()
+  as_tibble() %>% 
+  pivot_longer(-ID)
+
+w3_topo <- rbind(w3_uaa, w3_twi, w3_tpi, w3_slope, w3_curve)
 
 ```
 ```{r calculate-fb-topo}
@@ -1979,17 +2322,27 @@ wbt_wetness_index(sca = flowacc_output, #flow accumulation
                   slope = slope_output,
                   output = twi_output)
 
+fb_uaa <- extract(rast(flowacc_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+  rename("uaa" = `X10mdem_flowacc`) %>% 
+  as_tibble() %>% 
+  pivot_longer(-ID)
+
 fb_tpi <- extract(rast(tpi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("tpi" = `X10mdem_tpi`) %>% 
-  as_tibble()
+  as_tibble() %>% 
+  pivot_longer(-ID)
 
 fb_twi <- extract(rast(twi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("twi" = `X10mdem_twi`) %>% 
-  as_tibble()
+  as_tibble() %>% 
+  pivot_longer(-ID)
 
 fb_slope <- extract(rast(slope_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("slope" = `X10mdem_slope`) %>% 
-  as_tibble()
+  as_tibble() %>% 
+  pivot_longer(-ID)
+
+fb_topo <- rbind(fb_uaa, fb_tpi, fb_twi, fb_slope, fb_curve)
 ```
 ```{r calculate-zz-topo}
 #flow accumulation/upslope drainage area at 3 m resolution calculated earlier in markdown
@@ -2044,17 +2397,29 @@ wbt_wetness_index(sca = flowacc_output, #flow accumulation
                   slope = slope_output,
                   output = twi_output)
 
+zz_uaa <- extract(rast(flowacc_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+  rename("uaa" = `X10mdem_flowacc`) %>% 
+  as_tibble() %>% 
+  pivot_longer(-ID)
+
 zz_tpi <- extract(rast(tpi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("tpi" = `X10mdem_tpi`) %>% 
-  as_tibble()
+  as_tibble() %>% 
+  pivot_longer(-ID)
 
 zz_twi <- extract(rast(twi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("twi" = `X10mdem_twi`) %>% 
-  as_tibble()
+  as_tibble() %>% 
+  pivot_longer(-ID)
 
 zz_slope <- extract(rast(slope_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("slope" = `X10mdem_slope`) %>% 
-  as_tibble()
+  as_tibble() %>% 
+  pivot_longer(-ID)
+
+zz_topo <- rbind(zz_uaa, zz_tpi, zz_twi, zz_slope, zz_curve)
+
+
 ```
 ```{r topographic-wetness-index}
 routes_w3 <- w3_twi %>% 
@@ -2368,6 +2733,9 @@ get_eval_label(0,0)
 ```
 Run on W3
 ```{r W3}
+
+W3_random <- tibble(ID = sample(W3_IDs),
+                    sequence = seq(1, length(W3_IDs), 1))
 #running model
 cheap_model_w3 <- calc_model_result(W3_cheap$ID, "W3") %>% rename("cheapest" = pred_out)
 pk_model_w3 <- calc_model_result(W3_pk_seq$ID, "W3") %>% rename("pk" = pred_out)
@@ -2447,8 +2815,10 @@ comparison_long_w3 %>%
 ```{r FB}
 #chains used in graph theory solutions
 FB_cheap <- chain_solution(FB_IDs, "FB", methods = "cheapest_insertion")
-FB_random <- chain_solution(FB_IDs, "FB", methods = "random")
-
+#FB_random <- chain_solution(FB_IDs, "FB", methods = "random")
+FB_random <- tibble(ID = sample(FB_IDs),
+                    sequence = seq(1, length(FB_IDs), 1))
+                    
 
 #applying evaluation model using different sequences
 cheap_model_fb <- calc_model_result(FB_cheap$ID, "FB") %>% rename("cheapest" = pred_out)
@@ -2516,8 +2886,9 @@ comparison_long_fb %>%
 ```
 ```{r ZZ}
 ZZ_cheap <- chain_solution(ZZ_IDs, "ZZ", methods = "cheapest_insertion", two_opt = FALSE)
-ZZ_random <- chain_solution(ZZ_IDs, "ZZ", methods = "random", two_opt = FALSE)
-
+#ZZ_random <- chain_solution(ZZ_IDs, "ZZ", methods = "random", two_opt = FALSE)
+ZZ_random <- tibble(ID = sample(ZZ_IDs),
+                    sequence = seq(1, length(ZZ_IDs), 1))
 
 cheap_model_zz <- calc_model_result(ZZ_cheap$ID, "ZZ") %>% rename("cheapest" = pred_out)
 pk_model_zz <- calc_model_result(ZZ_pk_seq$ID, "ZZ") %>% rename("pk" = pred_out)
@@ -2542,7 +2913,7 @@ comparison_zz$twi_eval <- mapply(get_eval_label, comparison_zz$binary, compariso
 
 
 #summarize through time
-df_summary_time <- comparison_zz %>%
+df_summary_time_zz <- comparison_zz %>%
   group_by(datetime) %>%
   summarize(
     cheap_correct = sum(cheapest_eval == "correct"),
@@ -3451,7 +3822,8 @@ df_long2 <- df_summary_time %>%
   select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
   tidyr::pivot_longer(cols = c(cheap_accuracy, random_accuracy, twi_accuracy), 
                       names_to = "model", values_to = "accuracy") %>% 
-    inner_join(discharge_df, by = "datetime")
+    inner_join(w3_limbs, by = "datetime") %>% 
+  mutate(shed = "W3")
 
 four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
 
@@ -3468,6 +3840,82 @@ df_long2 %>%
        x = c(0, 1))+
   facet_grid(event_type~model)
 ```
+```{r FB}
+#trying to plot accuracy vs accuracy
+
+#left join
+
+df_long2_fb <- df_summary_time_fb %>%
+  select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
+  tidyr::pivot_longer(cols = c(cheap_accuracy, random_accuracy, twi_accuracy), 
+                      names_to = "model", values_to = "accuracy") %>% 
+    inner_join(fb_limbs, by = "datetime")%>% 
+  mutate(shed = "FB")
+
+four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
+
+df_long2_fb %>% 
+  ggplot()+
+  geom_point(aes(x = pk_accuracy, 
+                 y = accuracy, 
+                 size = roll_mean, shape = event_type, color = model),
+             alpha = 0.5)+
+  scale_color_manual(values = c("#bb4430", "#231f20", "#f3dfa2"))+
+  geom_abline()+
+  theme_minimal()+
+  lims(y = c(0, 1),
+       x = c(0, 1))+
+  facet_grid(event_type~model)
+```
+```{r ZZ}
+#trying to plot accuracy vs accuracy
+
+#left join
+
+df_long2_zz <- df_summary_time_zz %>%
+  select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
+  tidyr::pivot_longer(cols = c(cheap_accuracy, random_accuracy, twi_accuracy), 
+                      names_to = "model", values_to = "accuracy") %>% 
+    inner_join(zz_limbs, by = "datetime")%>% 
+  mutate(shed = "ZZ")
+
+four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
+
+df_long2_zz %>% 
+  ggplot()+
+  geom_point(aes(x = pk_accuracy, 
+                 y = accuracy, 
+                 size = roll_mean, shape = event_type, color = model),
+             alpha = 0.5)+
+  scale_color_manual(values = c("#bb4430", "#231f20", "#f3dfa2"))+
+  geom_abline()+
+  theme_minimal()+
+  lims(y = c(0, 1),
+       x = c(0, 1))+
+  facet_grid(event_type~model)
+```
+Combine all of these, since they are not that different... breakup by watershed
+```{r}
+rbind(
+df_long2 %>% select(datetime, pk_accuracy, model, accuracy, event_type, shed),
+df_long2_fb %>% select(datetime, pk_accuracy, model, accuracy, event_type, shed),
+df_long2_zz %>% select(datetime, pk_accuracy, model, accuracy, event_type, shed)) %>% 
+  ggplot()+
+  geom_point(aes(x = pk_accuracy, 
+                 y = accuracy, shape = event_type, color = shed),
+             alpha = 0.5,
+             size = 2)+
+  scale_color_manual(values = shed_colors)+
+  geom_abline()+
+  theme_minimal()+
+  lims(y = c(0, 1),
+       x = c(0, 1))+
+  facet_grid(~model)
+
+
+```
+
+
 ## Figure 8: Maps of where sequences work in space
 Set of map panels where symbol color = flowing state, outline color or shape indicating correctly predicted or not
 
@@ -3521,7 +3969,7 @@ q_24_bind <-
 big_comb <- rbind(q_23_bind, q_24_bind) %>% 
   inner_join(comparison, by = "datetime")
 ```
-
+### W3
 From earlier, contains map template and actual flowing state
 ```{r W3-map-panels}
 #create a template for maps, then plot the flowing state at different timesteps on the template
@@ -3752,11 +4200,612 @@ geom_sf(data = w3_stic_locs_r %>% inner_join(ID_acc, by = "ID"),
   theme(rect = element_rect(fill = "transparent", color = NA))+#,
         #legend.position = "")+
   facet_grid(event_type ~ model)
+
+## Plot that is just a single row
+ID_acc_w3 <- comparison_w3 %>%
+    #inner_join(fb_limbs, by = "datetime") %>% 
+  group_by(ID) %>%
+  summarize(
+    cheap_correct = sum(cheapest_eval == "correct"),
+    pk_correct = sum(pk_eval == "correct"),
+    random_correct = sum(random_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    total = n(),
+    cheap_accuracy = cheap_correct / total,
+    pk_accuracy = pk_correct / total,
+    random_accuracy = random_correct / total,
+    twi_accuracy = twi_correct / total
+  ) %>%
+  select(ID, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
+  tidyr::pivot_longer(cols = c(cheap_accuracy,pk_accuracy, random_accuracy, twi_accuracy), 
+                      names_to = "model", values_to = "accuracy")
+
+ggplot()+
+  theme_void()+
+  geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 2)+
+  geom_sf(data = w3_net, colour = "grey", lwd = 1) +
+geom_sf(data = w3_stic_locs_r %>% inner_join(ID_acc_w3, by = "ID"), 
+        aes(alpha = accuracy, fill = model), size = 4, pch = 21) +
+  scale_fill_manual(values = four_colors,
+                     name = "")+
+  #scale_shape_manual(values = c(21, 24, 22))+
+  theme(rect = element_rect(fill = "transparent", color = NA))+#,
+        #legend.position = "")+
+  facet_grid( ~ model)
+```
+### FB
+Make map template:
+```{r FB-map}
+#read in DEM of whole valley, 1m resolution
+dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
+m1 <- rast(dem)
+
+#define the rectangular area that will be shown on final map
+ybounds <- c(4868850,4869650)
+xbounds <- c(279350, 280450)
+
+#create a SpatExtent from a vector (length=4; order=xmin, xmax, ymin, ymax)
+points(lcc)
+crop1 <- crop(m1, ext(c(xbounds, ybounds)))
+#save cropped 1m dem to reduce processing time below, and gurantee that everything has the same extent
+#writeRaster(crop1, "./fb_dems/1mdem_crop.tif", overwrite = TRUE)
+#read in cropped dem
+fb_crop <- "./fb_dems/1mdem_crop.tif"
+
+#read in shapefile of stream network shape from ARC file on windows computer
+fb_net <- vect("./carrieZigZag/FB_network.shp")
+
+###pour point to define where the watershed boundary is
+#manually type coords from windows computer
+fb_pour_coords <- data.frame("easting" = 280400,
+                             "northing" = 4869120)
+#convert to SpatVector object
+fb_pour <- vect(fb_pour_coords,
+                geom = c("easting", "northing"),
+                   crs = crs(m1))
+#snap pour point to make sure it lies on flowlines
+#fb_pour <- snap(fb_pour, fb_net, tol = 1)
+
+#save to file for use in whitebox functions
+fb_pour_filename <- "./fb_dems/fb_pour.shp"
+#writeVector(fb_pour, fb_pour_filename, overwrite=TRUE)
+
+####delineate watershed and keep watershed boundary
+#breach and fill I guess
+b_crop <- "./fb_dems/1mdem_crop.tif"
+
+fb_breached <- "./fb_dems/1mdem_breach.tif"
+# wbt_breach_depressions_least_cost(
+#   dem = fb_crop,
+#   output = fb_breached,
+#   dist = 1,
+#   fill = TRUE)
+
+fb_filled <- "./fb_dems/1mdem_fill.tif"
+# wbt_fill_depressions_wang_and_liu(
+#   dem = fb_breached,
+#   output = fb_filled
+# )
+#calculate flow accumulation and direction
+fb_flowacc <- "./fb_dems/1mdem_fb_flowacc.tif"
+# wbt_d8_flow_accumulation(input = fb_filled,
+#                          output = fb_flowacc)
+# plot(rast(fb_flowacc))
+fb_d8pt <- "./fb_dems/1mdem_fb_d8pt.tif"
+# wbt_d8_pointer(dem = fb_filled,
+#                output = fb_d8pt)
+# plot(rast(fb_d8pt))
+
+
+#delineate streams
+fb_streams <- "./fb_dems/fb_streams.tif"
+# wbt_extract_streams(flow_accum = fb_flowacc,
+#                     output = fb_streams,
+#                     threshold = 8000)
+# plot(rast(fb_streams))
+# points(lcc)
+#snap pour point to streams
+fb_pour_snap <- "./fb_dems/fb_pour_snap.shp"
+# wbt_jenson_snap_pour_points(pour_pts = fb_pour_filename,
+#                             streams = fb_streams,
+#                             output = fb_pour_snap,
+#                             snap_dist = 10)
+fb_pour_snap_read <- vect("./fb_dems/fb_pour_snap.shp")
+
+fb_shed <- "./fb_dems/fb_shed.tif"
+# wbt_watershed(d8_pntr = fb_d8pt,
+#               pour_pts = fb_pour_snap,
+#               output = fb_shed)
+
+#convert raster of watershed area to vector for final mapping
+fb_outline <- as.polygons(rast(fb_shed), extent=FALSE)
+
+#get sensor locations from STIC data, format
+locs <- data_23 %>% 
+  filter(wshed == "FB") %>% 
+  select(ID, lat, long) %>% 
+  unique()
+#convert STIC data to a SpatVector data format
+locs_shape <- vect(locs, 
+                   geom=c("long", "lat"), 
+                   crs = "+proj=longlat +datum=WGS84")
+#reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
+lcc <- terra::project(locs_shape, crs(m1))
+
+#assign destination for hillshade calculation
+hillshade_out <- "./fb_dems/1mdem_hillshade.tif"
+# wbt_hillshade(
+#   dem = fb_crop,
+#   output = hillshade_out,
+# )
+hill <- rast(hillshade_out)
+
+#final plot with cropped hillshade and dem, STIC locations, watershed boundary, and stream network.
+
+  
+#copy and pasted from W3 chunk
+  #summarize through time
+ID_acc_fb <- comparison_fb %>%
+    inner_join(fb_limbs, by = "datetime") %>% 
+  group_by(ID, event_type) %>%
+  summarize(
+    cheap_correct = sum(cheapest_eval == "correct"),
+    pk_correct = sum(pk_eval == "correct"),
+    random_correct = sum(random_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    total = n(),
+    cheap_accuracy = cheap_correct / total,
+    pk_accuracy = pk_correct / total,
+    random_accuracy = random_correct / total,
+    twi_accuracy = twi_correct / total
+  ) %>%
+  select(ID, event_type, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
+  tidyr::pivot_longer(cols = c(cheap_accuracy,pk_accuracy, random_accuracy, twi_accuracy), 
+                      names_to = "model", values_to = "accuracy")
+
+#figure with scale bar and legends
+
+#another version, where the points maintain their colors from earlier, but accuracy is illustrated using size or alpha
+ggplot()+
+  theme_void()+
+  geom_sf(data = fb_outline, fill = NA, color = "#397367", alpha = 0.3, lwd = 2)+
+  geom_sf(data = fb_net, colour = "grey", lwd = 1) +
+geom_sf(data = locs_shape %>% inner_join(ID_acc_fb, by = "ID"), 
+        aes(alpha = accuracy, shape = event_type, fill = model), size = 4) +
+  scale_fill_manual(values = four_colors,
+                     name = "")+
+  scale_shape_manual(values = c(21, 24, 22))+
+  theme(rect = element_rect(fill = "transparent", color = NA))+#,
+        #legend.position = "")+
+  facet_grid(event_type ~ model)
+
+
+## Plot that is just a single row
+ID_acc_fb <- comparison_fb %>%
+    #inner_join(fb_limbs, by = "datetime") %>% 
+  group_by(ID) %>%
+  summarize(
+    cheap_correct = sum(cheapest_eval == "correct"),
+    pk_correct = sum(pk_eval == "correct"),
+    random_correct = sum(random_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    total = n(),
+    cheap_accuracy = cheap_correct / total,
+    pk_accuracy = pk_correct / total,
+    random_accuracy = random_correct / total,
+    twi_accuracy = twi_correct / total
+  ) %>%
+  select(ID, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
+  tidyr::pivot_longer(cols = c(cheap_accuracy,pk_accuracy, random_accuracy, twi_accuracy), 
+                      names_to = "model", values_to = "accuracy")
+
+ggplot()+
+  theme_void()+
+  geom_sf(data = fb_outline, fill = NA, color = "#397367", alpha = 0.3, lwd = 2)+
+  geom_sf(data = fb_net, colour = "grey", lwd = 1) +
+geom_sf(data = locs_shape %>% inner_join(ID_acc_fb, by = "ID"), 
+        aes(alpha = accuracy, fill = model), size = 4, pch = 21) +
+  scale_fill_manual(values = four_colors,
+                     name = "")+
+  #scale_shape_manual(values = c(21, 24, 22))+
+  theme(rect = element_rect(fill = "transparent", color = NA))+#,
+        #legend.position = "")+
+  facet_grid( ~ model)
+
+```
+
+### ZZ
+```{r ZZ-map}
+#map for ZZ
+#read in DEM of whole valley, 1m resolution
+dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
+m1 <- rast(dem)
+#plot(m1)
+
+#get sensor locations from STIC data, format
+locs <- data_23 %>% 
+  filter(wshed == "ZZ") %>% 
+  select(ID, lat, long) %>% 
+  unique()
+#convert STIC data to a SpatVector data format
+locs_shape <- vect(locs, 
+                   geom=c("long", "lat"), 
+                   crs = "+proj=longlat +datum=WGS84")
+#plot(locs_shape)
+#reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
+lcc <- terra::project(locs_shape, crs(m1))
+#plot(lcc)
+#define the rectangular area that will be shown on final map
+ybounds <- c(4866400,4867500)
+xbounds <- c(277200, 277650)
+#plot(m1, xlim = xbounds, ylim = ybounds)
+#points(lcc)
+
+#create a SpatExtent from a vector (length=4; order=xmin, xmax, ymin, ymax)
+crop1 <- crop(m1, ext(c(xbounds, ybounds)))
+#plot(crop1)
+#save cropped 1m dem to reduce processing time below, and gurantee that everything has the same extent
+#writeRaster(crop1, "./zz_dems/1mdem_crop.tif", overwrite = TRUE)
+#read in cropped dem
+zz_crop <- "./zz_dems/1mdem_crop.tif"
+
+#read in shapefile of stream network shape from ARC file on windows computer
+zz_net <- vect("./carrieZigZag/zigzag_streams.shp")
+#plot(zz_net)
+
+###pour point to define where the watershed boundary is
+#manually type coords from windows computer
+
+
+zz_pour_coords <- data.frame("easting" = 277280.45,
+                             "northing" = 4867436.45)
+#convert to SpatVector object
+zz_pour <- vect(zz_pour_coords,
+                geom = c("easting", "northing"),
+                   crs = crs(m1))
+#snap pour point to make sure it lies on flowlines
+#fb_pour <- snap(fb_pour, fb_net, tol = 1)
+
+#save to file for use in whitebox functions
+zz_pour_filename <- "./zz_dems/zz_pour.shp"
+#writeVector(zz_pour, zz_pour_filename, overwrite=TRUE)
+
+####delineate watershed and keep watershed boundary
+#breach and fill I guess
+zz_crop <- "./zz_dems/1mdem_crop.tif"
+
+zz_breached <- "./zz_dems/1mdem_breach.tif"
+
+
+zz_filled <- "./zz_dems/1mdem_fill.tif"
+# wbt_fill_depressions_wang_and_liu(
+#   dem = zz_breached,
+#   output = zz_filled
+# )
+#calculate flow accumulation and direction
+zz_flowacc <- "./zz_dems/1mdem_zz_flowacc.tif"
+# wbt_d8_flow_accumulation(input = zz_filled,
+#                          output = zz_flowacc)
+#plot(rast(zz_flowacc))
+zz_d8pt <- "./zz_dems/1mdem_zz_d8pt.tif"
+# wbt_d8_pointer(dem = zz_filled,
+#                output = zz_d8pt)
+#plot(rast(zz_d8pt))
+
+
+#delineate streams
+zz_streams <- "./zz_dems/zz_streams.tif"
+# wbt_extract_streams(flow_accum = zz_flowacc,
+#                     output = zz_streams,
+#                     threshold = 8000)
+# plot(rast(zz_streams))
+# points(lcc)
+#snap pour point to streams
+zz_pour_snap <- "./zz_dems/zz_pour_snap.shp"
+# wbt_jenson_snap_pour_points(pour_pts = zz_pour_filename,
+#                             streams = zz_streams,
+#                             output = zz_pour_snap,
+#                             snap_dist = 10)
+zz_pour_snap_read <- vect("./zz_dems/zz_pour_snap.shp")
+# plot(rast(zz_streams), 
+#      xlim = c(280200, 280410),
+#      ylim = c(4869300, 4869000))
+# points(zz_pour_snap_read, pch = 1)
+
+zz_shed <- "./zz_dems/zz_shed.tif"
+# wbt_watershed(d8_pntr = zz_d8pt,
+#               pour_pts = zz_pour_snap,
+#               output = zz_shed)
+
+#plot(rast(zz_shed))
+#convert raster of watershed area to vector for final mapping
+zz_outline <- as.polygons(rast(zz_shed), extent=FALSE)
+#plot(zz_outline)
+
+
+
+#assign destination for hillshade calculation
+hillshade_out <- "./zz_dems/1mdem_hillshade.tif"
+# wbt_hillshade(
+#   dem = zz_crop,
+#   output = hillshade_out,
+# )
+hill <- rast(hillshade_out)
+#plot(hill)
+#final plot with cropped hillshade and dem, STIC locations, watershed boundary, and stream network.
+#zz_map <- 
+  ggplot()+
+  geom_spatraster(data = hill)+
+  theme_void()+
+  theme(legend.position = "")+
+  scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
+    new_scale_fill() +
+  geom_spatraster(data = crop1, alpha = 0.5)+
+    geom_sf(data = zz_outline, fill = NA, color = "#7E6B8F", alpha = 0.3, lwd = 2) +
+  geom_sf(data = zz_net, colour = "darkslategray3", lwd = 2) +
+    geom_sf(data = lcc, colour = "midnightblue", pch = 19, size = 2) +
+  #geom_sf(data = zz_pour, colour = "black", pch = 8, size = 3) +
+   scale_fill_hypso_c(palette = "dem_screen", limits = c(200, 1000))+
+  theme(rect = element_rect(fill = "transparent", color = NA))+
+  ggspatial::annotation_scale(location = 'tr', pad_x = unit(1, "cm"), 
+                              pad_y = unit(1, "cm"))
+
+#copy and pasted from W3 chunk
+  #summarize through time
+ID_acc_zz <- comparison_zz %>%
+    inner_join(zz_limbs, by = "datetime") %>% 
+  group_by(ID, event_type) %>%
+  summarize(
+    cheap_correct = sum(cheapest_eval == "correct"),
+    pk_correct = sum(pk_eval == "correct"),
+    random_correct = sum(random_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    total = n(),
+    cheap_accuracy = cheap_correct / total,
+    pk_accuracy = pk_correct / total,
+    random_accuracy = random_correct / total,
+    twi_accuracy = twi_correct / total
+  ) %>%
+  select(ID, event_type, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
+  tidyr::pivot_longer(cols = c(cheap_accuracy,pk_accuracy, random_accuracy, twi_accuracy), 
+                      names_to = "model", values_to = "accuracy")
+
+#figure with scale bar and legends
+
+#another version, where the points maintain their colors from earlier, but accuracy is illustrated using size or alpha
+ggplot()+
+  theme_void()+
+  geom_sf(data = zz_outline, fill = NA, color = "#7E6B8F", alpha = 0.3, lwd = 2)+
+  geom_sf(data = zz_net, colour = "grey", lwd = 1) +
+geom_sf(data = locs_shape %>% inner_join(ID_acc_zz, by = "ID"), 
+        aes(alpha = accuracy, shape = event_type, fill = model), size = 4) +
+  scale_fill_manual(values = four_colors,
+                     name = "")+
+  scale_shape_manual(values = c(21, 24, 22))+
+  theme(rect = element_rect(fill = "transparent", color = NA))+#,
+        #legend.position = "")+
+  facet_grid(event_type ~ model)
+
+
+## Plot that is just a single row
+ID_acc_zz <- comparison_zz %>%
+    #inner_join(fb_limbs, by = "datetime") %>% 
+  group_by(ID) %>%
+  summarize(
+    cheap_correct = sum(cheapest_eval == "correct"),
+    pk_correct = sum(pk_eval == "correct"),
+    random_correct = sum(random_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    total = n(),
+    cheap_accuracy = cheap_correct / total,
+    pk_accuracy = pk_correct / total,
+    random_accuracy = random_correct / total,
+    twi_accuracy = twi_correct / total
+  ) %>%
+  select(ID, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
+  tidyr::pivot_longer(cols = c(cheap_accuracy,pk_accuracy, random_accuracy, twi_accuracy), 
+                      names_to = "model", values_to = "accuracy")
+
+ggplot()+
+  theme_void()+
+  geom_sf(data = zz_outline, fill = NA, color = "#7E6B8F", alpha = 0.3, lwd = 2)+
+  geom_sf(data = zz_net, colour = "grey", lwd = 1) +
+geom_sf(data = locs_shape %>% inner_join(ID_acc_zz, by = "ID"), 
+        aes(alpha = accuracy, fill = model), size = 4, pch = 21) +
+  scale_fill_manual(values = four_colors,
+                     name = "")+
+  #scale_shape_manual(values = c(21, 24, 22))+
+  theme(rect = element_rect(fill = "transparent", color = NA))+#,
+        #legend.position = "")+
+  facet_grid( ~ model)
+
+```
+
+
+## Figure 8: Tile plot
+```{r W3}
+
+range01 <- function(x){(x-min(x))/(max(x)-min(x))}
+
+W3_twi_seq <- w3_twi_sequence %>% 
+  mutate(sequence = seq(1, length(ID), 1))
+
+w3_topo_norm <- w3_topo %>% 
+  group_by(name) %>% 
+  mutate(norm_value = range01(value))
+
+#tile plot, original vision
+rbind(W3_cheap %>% mutate(model = "cheapest"),
+      W3_pk_seq %>% mutate(model = "pk")) %>% #,
+     # W3_random %>% mutate(model = "random"),
+     # W3_twi_seq %>% mutate(model = "twi")) %>% 
+  left_join(w3_topo_norm, by = "ID", relationship = "many-to-many") %>% 
+  drop_na() %>% 
+  ggplot() +
+  geom_tile(aes(x = sequence, y = name, fill = norm_value))+
+  scale_fill_gradient(low = "white", 
+                      high = "black")+
+  facet_grid(rows = "model")
+
+#will it look better as a line?
+w3_explain <- rbind(W3_cheap %>% mutate(model = "cheapest"),
+      W3_pk_seq %>% mutate(model = "pk")) %>% #,
+     # W3_random %>% mutate(model = "random"),
+     # W3_twi_seq %>% mutate(model = "twi")) %>% 
+  left_join(w3_topo_norm, by = "ID", relationship = "many-to-many") %>% 
+  drop_na() %>%
+  mutate(shed = "W3")
+  ggplot() +
+  geom_smooth(aes(x = sequence, y = norm_value, color = name))+
+  facet_grid(~model, scales = "free_x")+
+  theme_classic()
+```
+```{r FB}
+
+FB_twi_seq <- fb_twi_sequence %>% 
+  mutate(sequence = seq(1, length(ID), 1))
+
+fb_topo_norm <- fb_topo %>% 
+  group_by(name) %>% 
+  mutate(norm_value = range01(value))
+
+#tile plot, original vision
+rbind(FB_cheap %>% mutate(model = "cheapest"),
+      FB_pk_seq %>% mutate(model = "pk")) %>%
+  left_join(fb_topo_norm, by = "ID", relationship = "many-to-many") %>% 
+  drop_na() %>% 
+  ggplot() +
+  geom_tile(aes(x = sequence, y = name, fill = norm_value))+
+  scale_fill_gradient(low = "white", 
+                      high = "black")+
+  facet_grid(rows = "model")
+
+#will it look better as a line?
+fb_explain <- rbind(FB_cheap %>% mutate(model = "cheapest"),
+      FB_pk_seq %>% mutate(model = "pk")) %>% #,
+     # W3_random %>% mutate(model = "random"),
+     # W3_twi_seq %>% mutate(model = "twi")) %>% 
+  left_join(fb_topo_norm, by = "ID", relationship = "many-to-many") %>% 
+  mutate(shed = "FB") %>% 
+  drop_na()
+  ggplot() +
+  geom_smooth(aes(x = sequence, y = norm_value, color = name))+
+  facet_grid(~model, scales = "free_x")+
+  theme_classic()
+```
+```{r ZZ}
+
+ZZ_twi_seq <- zz_twi_sequence %>% 
+  mutate(sequence = seq(1, length(ID), 1))
+
+zz_topo_norm <- zz_topo %>% 
+  group_by(name) %>% 
+  mutate(norm_value = range01(value))
+
+#tile plot, original vision
+rbind(ZZ_cheap %>% mutate(model = "cheapest"),
+      ZZ_pk_seq %>% mutate(model = "pk")) %>%
+  left_join(zz_topo_norm, by = "ID", relationship = "many-to-many") %>% 
+  drop_na() %>% 
+  ggplot() +
+  geom_tile(aes(x = sequence, y = name, fill = norm_value))+
+  scale_fill_gradient(low = "white", 
+                      high = "black")+
+  facet_grid(rows = "model")
+
+#will it look better as a line?
+zz_explain <- rbind(ZZ_cheap %>% mutate(model = "cheapest"),
+      ZZ_pk_seq %>% mutate(model = "pk")) %>% #,
+     # W3_random %>% mutate(model = "random"),
+     # W3_twi_seq %>% mutate(model = "twi")) %>% 
+  left_join(zz_topo_norm, by = "ID", relationship = "many-to-many") %>% 
+  mutate(shed = "ZZ")
+  drop_na() %>% 
+  ggplot() +
+  geom_smooth(aes(x = sequence, y = norm_value, color = name))+
+  facet_grid(~model, scales = "free_x")+
+  theme_classic()
+```
+```{r combine-as-lines}
+rbind(w3_explain, fb_explain, zz_explain) %>% 
+  ggplot() +
+  geom_smooth(aes(x = sequence, y = norm_value, color = name), method = 'lm', se = FALSE)+
+  facet_grid(model~shed, scales = "free_x")+
+  theme_classic()
+
+#lm(sequence ~ )
+
 ```
 
 
 
+## Figure 9: Change in Q, versus accuracy
+```{r dQ}
+#calculate the delta Q
+df_long2 %>% 
+  mutate(dQ = abs(Q_mm_day - lag(Q_mm_day))) %>% 
+  ggplot()+
+  geom_point(aes(x = dQ, y = pk_accuracy, color = event_type))
+
+df_long2_fb %>% 
+  mutate(dQ = abs(roll_mean - lag(roll_mean))) %>% 
+  ggplot()+
+  geom_point(aes(x = dQ, y = pk_accuracy, color = event_type))+
+  lims(x = c(0,0.75))
+
+df_long2_zz %>% 
+  mutate(dQ = abs(roll_mean - lag(roll_mean))) %>% 
+  ggplot()+
+  geom_point(aes(x = dQ, y = pk_accuracy, color = event_type))+
+  lims(x = c(0,0.25))
+```
+```{r number-of-transitions}
+
+df_long2 %>%
+  filter(model == "cheap_accuracy") %>% 
+  left_join(num_trans_w3, by = "datetime") %>% 
+  ggplot()+
+  geom_point(aes(x = number_of_nodes, y = pk_accuracy, color = state_change),
+             size = 2, alpha = 0.5)
+
+df_long2_fb %>% 
+  filter(model == "cheap_accuracy") %>% 
+  left_join(num_trans_fb, by = "datetime") %>% 
+  ggplot()+
+  geom_point(aes(x = number_of_nodes, y = pk_accuracy, color = state_change),
+             size = 2, alpha = 0.5)
+
+df_long2_zz %>% 
+  filter(model == "cheap_accuracy") %>% 
+  left_join(num_trans_zz, by = "datetime") %>% 
+  ggplot()+
+  geom_point(aes(x = number_of_nodes, y = pk_accuracy, color = state_change),
+             size = 2, alpha = 0.5)
+
+rbind(df_long2 %>%
+  filter(model == "cheap_accuracy") %>% 
+  left_join(num_trans_w3, by = "datetime") %>% 
+        select(datetime, pk_accuracy, shed, number_of_nodes, state_change),
+  df_long2_fb %>% 
+  filter(model == "cheap_accuracy") %>% 
+  left_join(num_trans_fb, by = "datetime")%>% 
+        select(datetime, pk_accuracy, shed, number_of_nodes, state_change),
+  df_long2_zz %>% 
+  filter(model == "cheap_accuracy") %>% 
+  left_join(num_trans_zz, by = "datetime") %>% 
+        select(datetime, pk_accuracy, shed, number_of_nodes, state_change)) %>% 
+  ggplot()+
+  geom_point(aes(x = number_of_nodes, y = pk_accuracy, color = state_change),
+             size = 2, alpha = 0.5)+
+  facet_wrap(~shed)
+```
+
 ## Table 1: Topographic Metrics
+```{r}
+#print topo metrics calculated in earlier section
+
+```
+
 ## Table 2: Accuracy of models
 Create a function that will compare a chain output and it's sequential wetting model to the actual observations.
 chunk to calculate accuracy metrics and confusion matrices
@@ -3960,6 +5009,15 @@ fb_acc <- rbind(produce_metrics(FB_cheap, "FB", "cheapest_insertion"),
       produce_metrics(fb_twi_sequence, "FB", "twi")
       )
 kable(fb_acc, digits = 2)
+
+```
+```{r accuracy-ZZ}
+zz_acc <- rbind(produce_metrics(ZZ_cheap, "ZZ", "cheapest_insertion"),
+      produce_metrics(ZZ_pk_seq, "ZZ", "pk"),
+      produce_metrics(ZZ_random, "ZZ", "random"),
+      produce_metrics(zz_twi_sequence, "ZZ", "twi")
+      )
+kable(rbind(w3_acc, fb_acc, zz_acc), digits = 2)
 
 ```
 # Testing many random sequences
