@@ -21,7 +21,7 @@ Formatted, should contain everything needed for current analysis. Have not check
 ```{r setup}
 #loading packages
 library(pacman)
-p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,ggnewscale, sf, elevatr, patchwork, ggspatial, zoo, igraph, TSP, ggnetwork, intergraph, ggpubr, knitr, purrr, spatialEco)
+p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,ggnewscale, sf, elevatr, patchwork, ggspatial, zoo, igraph, TSP, ggnetwork, intergraph, ggpubr, knitr, purrr, spatialEco, hydroEvents)
 #whitebox::install_whitebox()
 
 #reading in final format data for summer 23
@@ -1597,6 +1597,11 @@ ggplot(ggmst, aes(x = x, y = y, xend = xend, yend = yend)) +
   geom_nodetext(aes(label = name),
                 fontface = "bold", color = "white", size = 1) +
   theme_blank()
+```
+
+Make a map of the activation sequence
+```{r}
+
 ```
 
 
@@ -5077,6 +5082,12 @@ seqq <- tibble("seqs" = unlist(many_chainsZZ$chain[1:500]),
   arrange(mean_pos)
 
 average_sequence <- seqq$seqs
+
+routes_zz_test <- tibble("up" = average_sequence,
+                    "down" = lag(average_sequence)) %>% drop_na() %>% 
+  select(up, down)
+
+test <- calc_props(routes_zz_test, "ZZ")
 ```
 
 
