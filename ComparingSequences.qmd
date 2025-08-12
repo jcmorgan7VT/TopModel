@@ -21,7 +21,8 @@ Formatted, should contain everything needed for current analysis. Have not check
 ```{r setup}
 #loading packages
 library(pacman)
-p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,ggnewscale, sf, elevatr, patchwork, ggspatial, zoo, igraph, TSP, ggnetwork, intergraph, ggpubr, knitr, purrr, spatialEco, hydroEvents)
+p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,ggnewscale, sf, elevatr, patchwork, ggspatial, zoo, igraph, TSP, ggnetwork, intergraph, ggpubr, knitr, purrr, spatialEco, hydroEvents,
+       maptools)
 #whitebox::install_whitebox()
 
 #reading in final format data for summer 23
@@ -81,7 +82,8 @@ bind23 <- data_23 %>%
 #filter by each watershed, then recombine at the end
 input_w3 <- rbind(bind23, bind24) %>%
   filter(wshed == "W3") %>% 
-  filter(ID %in% W3_IDs)
+  filter(ID %in% W3_IDs) %>% 
+  drop_na()
 input_fb <- rbind(bind23, bind24) %>%
   filter(wshed == "FB") %>% 
   filter(ID %in% FB_IDs)
@@ -435,7 +437,18 @@ id_events <- q_23_plotting %>%
 
 id_events %>% 
   ggplot()+
-  geom_line(aes(x = datetime, y = Q_mm_day, color = event_ID))
+  geom_point(aes(x = datetime, y = Q_mm_day, color = event_ID))
+
+id_events <- q_23_plotting %>% 
+  select(datetime, Q_mm_day) %>% 
+  mutate(ID = row_number()) |> fuzzy_left_join(ranges, by = c(ID = "starts", ID = "stops"),
+                              match_fun = list(`>=`, `<=`)) |> 
+   mutate(event_ID = event_ID) |> 
+   select(-starts, -stops)
+
+id_events %>% 
+  ggplot()+
+  geom_point(aes(x = datetime, y = Q_mm_day, color = event_ID))
 
 
 ```
@@ -491,6 +504,10 @@ discharge_df_23 <- discharge_df
 
 discharge_df %>% 
   ggplot(aes(x = datetime, y = Q_mm_day, color = event_type))+
+  geom_point()
+
+discharge_df %>% 
+  ggplot(aes(x = datetime, y = Q_mm_day, color = event_id))+
   geom_point()
 
 ```
@@ -572,6 +589,50 @@ w3_limbs <- rbind(discharge_df_24, discharge_df_23)
 
 ```
 
+Doing a thing where I define a sequence based on the activation order during events
+```{r}
+events
+
+discharge_df <- q_23_plotting %>% 
+  select(datetime, Q_mm_day)
+
+discharge_df$event_id <- NA_integer_
+
+for (i in seq_len(nrow(events))) {
+  ev <- events[i, ]
+  discharge_df$event_id[ev$ris.srt:events[i+1, ]$ris.srt] <- i  # Event ID for rising+falling
+}
+
+discharge_df %>% 
+  ggplot(aes(x = datetime, y = Q_mm_day, color = as.character(event_id)))+
+  geom_point()
+
+
+
+#now, take this new dataframe and for each event find the start of flow
+ttt <- 
+input_w3 %>%
+  inner_join(discharge_df,  by = c("datetime")) %>% 
+    filter(binary == 1) %>% 
+    group_by(ID, event_id) %>% 
+    summarise(start_of_flow = min(datetime)) %>% 
+    arrange(start_of_flow)
+
+#write a for loop to go through event ids, calculate the sequence for each event, and then find an "average" sequence
+for(i in 1:length(unique(ttt$event_id))){
+  event <- unique(ttt$event_id)[i]
+  
+  sequenced_event <- filter(ttt, event_id == event) %>% 
+    arrange(start_of_flow) %>% 
+      rowid_to_column("Sequence")
+  
+  if(i == 1) all_events <- sequenced_event
+  if(i > 1) all_events <- rbind(all_events, sequenced_event)
+}
+  mutate(Sequence = )
+  group_by(ID) %>% 
+  summarise(mean(Sequence))
+```
 
 
 Combine the model results above, and the identified events
@@ -669,10 +730,10 @@ processed_fb_stage <- FB_water %>%
 
 
 #output processed salt dilutions
-q_combined %>% filter(shed == "FB") %>% 
-  mutate(datetime = round_date(datetime, unit = minutes(30))) %>% 
-  rename(DATETIME = datetime) %>% 
-  left_join(processed_fb_stage, by = "DATETIME")
+# q_combined %>% filter(shed == "FB") %>% 
+#   mutate(datetime = round_date(datetime, unit = minutes(30))) %>% 
+#   rename(DATETIME = datetime) %>% 
+#   left_join(processed_fb_stage, by = "DATETIME")
 
 
 #identifying events
@@ -1040,10 +1101,10 @@ processed_zz_stage %>% ggplot()+
        y = "Stage (in)")
 
 #output processed salt dilutions
-q_combined %>% filter(shed == "ZZ") %>% 
-  mutate(datetime = round_date(datetime, unit = minutes(30))) %>% 
-  rename(DATETIME = datetime) %>% 
-  left_join(processed_zz_stage, by = "DATETIME")
+# q_combined %>% filter(shed == "ZZ") %>% 
+#   mutate(datetime = round_date(datetime, unit = minutes(30))) %>% 
+#   rename(DATETIME = datetime) %>% 
+#   left_join(processed_zz_stage, by = "DATETIME")
 
 
 #identifying events
@@ -2431,33 +2492,36 @@ zz_topo <- rbind(zz_uaa, zz_tpi, zz_twi, zz_slope, zz_curve)
 
 ```
 ```{r topographic-wetness-index}
-routes_w3 <- w3_twi %>% 
+routes_w3_twi <- w3_twi %>% 
     filter(ID %in% W3_IDs) %>% 
-  rename("up" = ID) %>%
+  rename("up" = ID,
+         "twi" = value) %>%
   arrange(desc(twi)) %>% 
   mutate(down = lag(up)) %>% 
    drop_na() %>% 
   select(up, down) 
 
-routes_fb <- fb_twi %>% 
+routes_fb_twi <- fb_twi %>% 
     filter(ID %in% FB_IDs) %>% 
-  rename("up" = ID) %>%
+  rename("up" = ID,
+         "twi" = value) %>%
   arrange(desc(twi)) %>% 
   mutate(down = lag(up)) %>% 
    drop_na() %>% 
   select(up, down)
 
-routes_zz <- zz_twi %>% 
+routes_zz_twi <- zz_twi %>% 
     filter(ID %in% ZZ_IDs) %>% 
-  rename("up" = ID) %>%
+  rename("up" = ID,
+         "twi" = value) %>%
   arrange(desc(twi)) %>% 
   mutate(down = lag(up)) %>% 
    drop_na() %>% 
   select(up, down) 
 
-all_twi <- rbind(calc_props(routes_w3, "W3"),
-                 calc_props(routes_fb, "FB"),
-                 calc_props(routes_zz, "ZZ")) %>% 
+all_twi <- rbind(calc_props(routes_w3_twi, "W3"),
+                 calc_props(routes_fb_twi, "FB"),
+                 calc_props(routes_zz_twi, "ZZ")) %>% 
   mutate("method" = "Topographic Wetness Index")
 
 ```
@@ -2467,16 +2531,24 @@ all_twi <- rbind(calc_props(routes_w3, "W3"),
 #create a reference dataframe with the sensor ID, then the number in the sequence
 w3_twi_sequence <- w3_twi %>% 
     filter(ID %in% W3_IDs) %>% 
+  rename("twi" = value) %>% 
   arrange(desc(twi)) %>% 
-  rename(sequence = twi)
+  mutate(sequence = seq(1, length(w3_twi$ID), 1)) %>% 
+  select(ID, sequence)
 
 fb_twi_sequence <- fb_twi %>% 
-    filter(ID %in% FB_IDs) %>% 
-  arrange(desc(twi))
+    filter(ID %in% FB_IDs) %>%
+  rename("twi" = value) %>%
+  arrange(desc(twi)) %>% 
+  mutate(sequence = seq(1, length(FB_IDs), 1)) %>% 
+  select(ID, sequence)
 
 zz_twi_sequence <- zz_twi %>% 
     filter(ID %in% ZZ_IDs) %>% 
-  arrange(desc(twi))
+  rename("twi" = value) %>%
+  arrange(desc(twi)) %>% 
+  mutate(sequence = seq(1, length(ZZ_IDs), 1)) %>% 
+  select(ID, sequence)
 
 ```
 
@@ -2750,6 +2822,8 @@ cheap_model_w3 <- calc_model_result(W3_cheap$ID, "W3") %>% rename("cheapest" = p
 pk_model_w3 <- calc_model_result(W3_pk_seq$ID, "W3") %>% rename("pk" = pred_out)
 random_model_w3 <- calc_model_result(W3_random$ID, "W3") %>% rename("random" = pred_out)
 twi_model_w3 <- calc_model_result(w3_twi_sequence$ID, "W3") %>% rename("twi" = pred_out)
+
+
 
 comparison_w3 <- input_w3 %>% 
   filter(mins %in% c(0, 30)) %>% 
@@ -3406,7 +3480,7 @@ test <-
   #filter(ID %in% W3_IDs) %>% 
   left_join(precip1, by = c("day", "hour")) %>% 
   left_join(pks_ordered, by = "ID") #%>% 
-  filter(mins.x == 0)
+  #filter(mins.x == 0)
 test2 <- test %>% 
   select(datetime.x, binary, hourly_precip, pk_order)
 sec2 <- with(test2, train_sec(pk_order, hourly_precip))
@@ -3445,8 +3519,6 @@ scale_x_continuous(breaks=c(ymd_hms("2023-10-20 00:00:00"),
     theme(legend.position="right",
           axis.title.y = element_text(angle = 0))
 
-p_load(patchwork)
-
 (water)/tiles + plot_layout(heights = c(1, 5))
 
 
@@ -3480,7 +3552,140 @@ scale_x_continuous(breaks=c(ymd_hms("2023-10-20 00:00:00"),
     theme(legend.position="right")
 
 
+#different order, not based on Pk but the actual sequence that they activate in
+#determine what the activation order is
+pks_ordered <- 
+input_w3 %>% 
+    filter(ID %in% remainder) %>% 
+    filter(datetime > start & datetime < stop,
+           binary == 1) %>% 
+    group_by(ID) %>% 
+    summarise(start_of_flow = min(datetime)) %>% 
+    arrange(start_of_flow) %>% 
+  rowid_to_column("pk_order") %>% 
+  select(ID, pk_order) %>% unique()
+
+test <- input_w3 %>% 
+    filter(datetime > start & datetime < stop) %>% 
+  #filter(ID == 17)
+  #filter(ID %in% W3_IDs) %>% 
+  left_join(pks_ordered, by = "ID") #%>% 
+sec2 <- with(test, train_sec(pk_order, pk))
+
+test <- 
+  input_w3 %>% 
+    filter(datetime > start & datetime < stop) %>% 
+    mutate(day = day(datetime),
+           hour = hour(datetime)) %>% 
+  #filter(ID == 17)
+  #filter(ID %in% W3_IDs) %>% 
+  left_join(precip1, by = c("day", "hour")) %>% 
+  left_join(pks_ordered, by = "ID") #%>% 
+  #filter(mins.x == 0)
+test2 <- test %>% 
+  select(datetime.x, binary, hourly_precip, pk_order)
+sec2 <- with(test2, train_sec(pk_order, hourly_precip))
+
+binary <- c("#DB995A",
+            "#586BA4"
+  )
+
+
+tiles <- 
+test2 %>% 
+  ggplot(aes(x = datetime.x))+
+  geom_tile(aes(y = pk_order, fill = as.character(binary)))+
+  scale_y_continuous("Supposed Activation Order")+
+  #facet_grid(~name, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                    values = binary,
+                    breaks = c(0, 1),
+                    labels = c("Dry", "Wet"),
+                    name = ""
+                    )+
+  labs(#title = "Very dry to very wet",
+       #subtitle = "W3, 10/20 - 10/22, 2023",
+       x = "")+
+scale_x_continuous(breaks=c(ymd_hms("2023-10-20 00:00:00"),
+                            ymd_hms("2023-10-21 00:00:00"),
+                            ymd_hms("2023-10-22 00:00:00"),
+                            ymd_hms("2023-10-23 00:00:00"),
+                            ymd_hms("2023-10-24 00:00:00")),
+                   labels = c("10/20/23",
+                              "10/21/23",
+                              "10/22/23",
+                              "10/23/23",
+                              "10/24/23"))+
+  theme_classic()+
+    theme(legend.position="right",
+          axis.title.y = element_text(angle = 0))
+
+(water)/tiles + plot_layout(heights = c(1, 5))
 ```
+```{r}
+pks_ordered <- rename(pks_ordered, sequence = pk_order)
+calc_model_result(pks_ordered$ID, "W3")
+produce_metrics(pks_ordered, "W3", "one_event")
+```
+
+Plot it one more time, but maybe with sequence dictated by graph theory solution?
+```{r}
+pks_ordered <- 
+W3_cheap %>% 
+      filter(ID %in% remainder) %>% 
+  rename("pk_order" = sequence)
+
+test <- 
+  input_w3 %>% 
+    filter(datetime > start & datetime < stop) %>% 
+    mutate(day = day(datetime),
+           hour = hour(datetime)) %>% 
+  #filter(ID == 17)
+  #filter(ID %in% W3_IDs) %>% 
+  left_join(precip1, by = c("day", "hour")) %>% 
+  left_join(pks_ordered, by = "ID") #%>% 
+  #filter(mins.x == 0)
+test2 <- test %>% 
+  select(datetime.x, binary, hourly_precip, pk_order)
+sec2 <- with(test2, train_sec(pk_order, hourly_precip))
+
+binary <- c("#DB995A",
+            "#586BA4"
+  )
+
+
+tiles <- 
+test2 %>% 
+  ggplot(aes(x = datetime.x))+
+  geom_tile(aes(y = pk_order, fill = as.character(binary)))+
+  scale_y_continuous("Supposed Activation Order")+
+  #facet_grid(~name, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                    values = binary,
+                    breaks = c(0, 1),
+                    labels = c("Dry", "Wet"),
+                    name = ""
+                    )+
+  labs(#title = "Very dry to very wet",
+       #subtitle = "W3, 10/20 - 10/22, 2023",
+       x = "")+
+scale_x_continuous(breaks=c(ymd_hms("2023-10-20 00:00:00"),
+                            ymd_hms("2023-10-21 00:00:00"),
+                            ymd_hms("2023-10-22 00:00:00"),
+                            ymd_hms("2023-10-23 00:00:00"),
+                            ymd_hms("2023-10-24 00:00:00")),
+                   labels = c("10/20/23",
+                              "10/21/23",
+                              "10/22/23",
+                              "10/23/23",
+                              "10/24/23"))+
+  theme_classic()+
+    theme(legend.position="right",
+          axis.title.y = element_text(angle = 0))
+
+(water)/tiles + plot_layout(heights = c(1, 5))
+```
+
 ```{r W3-map-panels}
 #create a template for maps, then plot the flowing state at different timesteps on the template
 #map of watershed 3 with depth to bedrock
@@ -3634,18 +3839,25 @@ geom_density(aes(color = method, fill = method), alpha = 0.5)+
   scale_color_manual(values = four_colors,
                      name = "Method")+
   facet_grid(shed~timescale)
+
+fixed_combined %>% 
+  filter(timescale == "30mins", 
+         shed == "W3",
+         method %in% c("cheapest_insertion", "Flow Permanence")) %>% print(n = 50)
 ```
 
 Can also calculate proportion of sequential behavior through time! Comes out looking better than modeling using Botter & Durighetto
 
 ```{r calculate-how-many-follow-sequence}
-sequential <- input_w3 %>% 
+#sequential <- 
+  input_w3 %>% 
   left_join(pks_w3, by = "ID") %>%
   group_by(datetime) %>% 
   select(-c(wshed.x, wshed.y, mins, datetime)) %>% 
   arrange(desc(pk)) %>% 
   mutate("downstream" = lag(binary),
-         "following" = downstream - binary) %>% 
+         "following" = downstream - binary) %>%
+  filter(datetime == ymd_hms("2023-07-03 17:00:00")) %>% print(n = 25)
   filter(following != -1) %>% 
     summarise(count_non = length(following))
 
@@ -3660,6 +3872,11 @@ total <- input_w3 %>%
 
 final <- left_join(sequential, total, by = "datetime") %>% 
   mutate(prop = count_non/count_all)
+
+final %>% 
+  mutate(diff = count_all - count_non) %>% 
+  summarise(sum(diff),
+            sum(count_all))
 
 ```
 
@@ -3751,8 +3968,6 @@ return(output)
 
 calc_time(W3_cheap, "W3", "cheapest")
 ```
-
-
 ```{r plot-along-discharge}
 
 rbind(
@@ -3773,8 +3988,7 @@ calc_time(W3_pk_seq, "W3", "pk")
   facet_grid(seq_label~shed)
 
 ```
-
-```{r}
+```{r difference-plot}
 pk_props_join <- calc_time(W3_pk_seq, "W3", "pk") %>% 
   select(datetime, prop) %>% 
   rename("pk_prop" = prop)
@@ -3803,6 +4017,660 @@ calc_time(W3_pk_seq, "W3", "pk")
   facet_grid(seq_label~shed)
 ```
 
+New idea: bar graphs, where the height of the bar represents the proportion of sequential transitions
+```{r}
+#calculate the total number of timesteps, and how many contain a transition in state?
+
+
+test <- input_w3 %>% 
+  select(datetime, ID, binary) %>% 
+    group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) #%>% 
+  #filter(transition %in% c(-1, 1))
+
+test$state_change <- "none"
+test$state_change[test$transition == -1] <- "wetting"
+test$state_change[test$transition == 1] <- "drying"
+
+test %>% ungroup() %>% 
+  group_by(state_change) %>% 
+  summarise(count = length(state_change))
+
+length(test$datetime)
+
+test %>% ungroup() %>% 
+  group_by(state_change) %>% 
+  summarise(count = length(state_change)) %>% 
+  mutate(shed = "W3" ) %>% 
+  ggplot(aes(x = shed, y = count, fill = state_change))+
+  geom_histogram(stat = "identity")
+
+#changing_dates <- 
+  test %>% 
+  ungroup() %>% 
+  select(datetime, state_change) %>% 
+  group_by(datetime) %>% 
+  filter(state_change != "none") #%>% select(datetime) %>% unique() %>% 
+  mutate(status = "changing")
+
+`%not_in%` <- purrr::negate(`%in%`)
+
+#bar of total timesteps
+test %>% 
+  ungroup() %>% 
+  select(datetime) %>% unique() %>% 
+filter(datetime %not_in% changing_dates$datetime) %>% 
+  mutate(status = "no change") %>% 
+  bind_rows(changing_dates) %>% 
+  group_by(status) %>% 
+  summarise(count = length(status)) %>% 
+  mutate(shed = "W3") %>% 
+  ggplot(aes(x = shed, y = count, fill = status))+
+  geom_histogram(stat = "identity")
+  
+test %>% 
+  ungroup() %>% 
+  select(datetime, state_change) %>% 
+  group_by(datetime) %>% 
+  filter(state_change != "none") %>% unique() %>% 
+  group_by(state_change) %>% 
+  summarise(timesteps = length(datetime))
+
+test %>% 
+  ungroup() %>% 
+  select(datetime) %>% unique() %>% 
+  summarise(length(datetime))
+
+test %>% 
+  ungroup() %>% 
+  select(datetime, state_change) %>% 
+  group_by(datetime) %>% 
+  filter(state_change != "wetting",
+         state_change != "drying") %>% unique() %>% 
+  group_by(state_change) %>% 
+  summarise(timesteps = length(datetime))
+
+summarise(how_many = length(unique(state_change))) %>% 
+  ungroup() %>% 
+  filter(how_many > 1)
+```
+
+```{r define-functions}
+filtered_input <- input_w3 %>%
+      filter(mins %in% c(0, 30)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+#calc_support_combos <- function(up, down, input){
+#inputs to function- comment out in final version
+i <- 1
+child <- paste0("r_",routes_w3$up[i])
+parent <- paste0("r_",routes_w3$down[i])
+input <- filtered_input
+
+#create output with the total and the sub, also the two input locations
+output <- data.frame(child, parent)
+
+  
+no_dupes <- input %>% 
+      select(up,down, datetime) %>% #remove date
+      # make it so that there cannot be a sequence without change
+      # keep date column for indexing purposes later
+      #filter(row_number() == 1 | !apply(select(., up, down) == lag(select(., up, down)), 1, all)) %>% 
+      #remove rows where one of the sensors is missing data
+      drop_na()
+
+      #View(no_dupes)
+#all flowing all the time?
+check <- nrow(no_dupes)
+
+# if(check <= 2){
+#   sequence_df <- data.frame("Sequence" = NA, 
+#                             "Frequency" = NA,
+#                             "up" = up,
+#                             "down" = down)
+#   return(sequence_df)
+# } 
+# else {
+# Define window size
+window_size <- 2
+
+# Create sliding windows
+windows <- rollapply(
+  select(no_dupes, -datetime),
+  width = window_size,
+  by.column = FALSE,
+  FUN = function(x) paste(as.vector(t(x)), collapse = "")
+)
+
+# Count and sort sequences
+sequence_counts <- table(windows)
+sorted_counts <- sort(sequence_counts, decreasing = TRUE)
+
+# Display all sequences and their frequencies
+sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
+if(check > 1) colnames(sequence_df) <- c("Sequence", "Frequency")
+
+
+sequence_df$up <- up
+sequence_df$down <- down
+#output$total <- sum(sequence_df$Frequency)
+#write some way to score the sequence_df
+#award one point for one of these configs:
+#supports <- c("0001","0111","1101", "0100")
+
+
+#sub <- filter(sequence_df, Sequence %in% supports)
+#output$points <- sum(sub$Frequency)
+
+
+#create output with transitions
+#error handling- in situation where both points flowed 100% of the time
+
+return(sequence_df)
+}
+
+
+#test function
+
+calc_support_combos("r_18", "r_11", input)
+
+#function to break up groups of continuous measurements, ensure that gaps are not considered
+#contains calc_support function
+#iterate_groups_combos <- function(up, down, input, timestep){
+  #create group column that identifies gaps in continuous data in time
+
+i <- 4
+up <- paste0("r_",routes_w3$up[i])
+down <- paste0("r_",routes_w3$down[i])
+timestep <- minutes(30)
+  input$group <- cumsum(c(TRUE, diff(input$datetime) != timestep))
+  #View(input)
+
+  for(u in 1:length(unique(input$group))){
+  # u <- 1
+    print(u)
+    filtered_input <- input %>% filter(group == u)
+    #this line throws error if 
+    output <- calc_support_combos(up, down, filtered_input)
+    
+
+     if(u == 1) iterate_groups_alldat <- output
+     if(u > 1) iterate_groups_alldat <- rbind(iterate_groups_alldat, output)
+  }
+  # final_iterate_groups_alldat <- iterate_groups_alldat %>% 
+  #   drop_na() %>% 
+  #   group_by(up, down) %>% 
+  #   summarise(total = sum(total),
+  #             points = sum(points))
+  return(iterate_groups_alldat)
+}
+
+iterate_groups_combos("r_13", "r_19", input, minutes(30))
+#function to take a list of routes and input dataset
+#contains group iteration function
+#for loop to iterate through full list of combinations of up and downstream locations
+#IMPORTANT- calculate hierarchy and iterate groups only work if the input timestep is approriate
+calculate_hierarchy_combos <- function(routes, input, timestep){
+  for(x in 1:length(routes$up)){
+  up <- paste0("r_",routes$up[x])
+  down <- paste0("r_",routes$down[x])
+  #print(x)
+  
+  #out <- iterate_groups_combos(up, down, input, timestep)
+    out <- calc_support_combos(up, down, input)
+
+
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
+
+  }
+  final_output <- alldat %>% 
+    drop_na() %>%
+    group_by(up, down, Sequence) %>%
+    summarise(Frequency = sum(Frequency))
+  return(final_output)
+}
+test <- calculate_hierarchy_combos(routes_w3, filtered_input, minutes(30))
+
+test %>% 
+  group_by(Sequence) %>% 
+  summarise(sum(Frequency))
+
+supports <- c("0001","0111","1101", "0100")
+
+test %>% ungroup() %>% 
+  filter(Sequence %in% supports) %>% 
+  summarise(sum(Frequency))
+
+test %>% ungroup() %>% 
+  #filter(Sequence %in% supports) %>% 
+  summarise(sum(Frequency))
+
+#create a key for wetting and drying
+wetting <- c("0001", "0010", "0011", "0111", "1011")
+drying <- c("0100", "1000", "1100", "1101", "1110")
+no_net_change <- c("0000", "0101", "0110", "1001", "1010", "1111")
+#create key for sequential and non
+sequential <- c("0001", "0100", "0111", "1101")
+nonsequential <- c("0010", "1000", "1011", "1110")
+undeterminable <- c("0011","0110", "1001","1100")
+no_change2 <- c("0000", "1111", "0101", "1010")
+
+test2 <- test %>% 
+  #mutate(Sequence = as.numeric(Sequence)) %>% 
+  mutate(status = case_when(Sequence %in% wetting ~ "wetting",
+                            Sequence %in% drying ~ "drying",
+                            Sequence %in% no_net_change ~ "no_net_change"),
+         category = case_when(Sequence %in% sequential ~ "sequential",
+                              Sequence %in% nonsequential ~ "nonsequential",
+                              Sequence %in% undeterminable ~ "undeterminable",
+                              Sequence %in% no_change2 ~ "no_change")) %>% 
+  group_by(status, category) %>% 
+  summarise(count = sum(Frequency))
+
+test2 %>% ungroup() %>% 
+  group_by(category) %>% 
+  mutate(shed = "W3" ) %>% 
+  ggplot(aes(x = shed, y = count, fill = category))+
+  geom_histogram(stat = "identity")
+
+#second plot- what proportion of transitions are sequential or not
+#ultimately one of these for each sequence?
+test2 %>% ungroup() %>% 
+  filter(category != "no_change") %>% 
+  group_by(category) %>% 
+  mutate(shed = "W3" ) %>% 
+  ggplot(aes(x = shed, y = count, fill = category))+
+  geom_histogram(stat = "identity")
+
+
+#fantastic four function has been modified, to do average daily state. Removed hourly and 4 hr time blocks
+fantastic_four_combos <- function(routes, shed){
+  theFour <- c("30mins", "daily")
+  
+  for(q in 1:length(theFour)){
+    #if statements to detect timescale, calculate appropriate inputs
+    timescale <- theFour[q]
+  if(timescale == "30mins"){
+    input <- rbind(input_w3, input_fb, input_zz) %>%
+      filter(wshed == shed, mins %in% c(0, 30)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- minutes(30)
+  } 
+  else if(timescale == "daily"){
+    input <- rbind(input_w3, input_fb, input_zz) %>%
+      filter(wshed == shed) %>% 
+      mutate(
+             "day" = day(datetime),
+             "month" = month(datetime),
+             "year" = year(datetime)) %>% 
+      group_by(day, month, year, ID) %>%
+      summarise(avg_state = mean(binary)) %>% 
+      ungroup() %>% 
+      mutate(avg_state = round(avg_state)) %>% 
+      rename("binary" = avg_state) %>% 
+      mutate("datetime" = ymd_hms(paste0(year,"-",month,"-",day," ","00:00:00"))) %>% 
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+          arrange(datetime) %>% 
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- days(1)
+  } 
+  else {
+    stop("Not a timescale anticipated!")
+  }
+    out <- calculate_hierarchy_combos(routes, input, timestep)
+    out$timescale <- theFour[q]
+    
+    if(q == 1) fanfar <- out
+    if(q > 1) fanfar <- rbind(fanfar, out)
+  }
+  fanfar$shed <- shed
+  return(fanfar)
+}
+
+
+fantastic_four_combos(routes_w3, "W3")
+# function to determine proportion of transitions that state changes follow all parent child relationships
+calc_props_silly <- function(routes, shed){
+  full_combos <- routes
+total_state_changes <- full_combos %>% 
+    filter(Sequence %not_in% c(undeterminable, no_change2)) %>% 
+    group_by(up, down) %>% 
+    summarise(totals = sum(Frequency))
+supports <- c("0001","0111","1101", "0100")
+
+hierarchical_changes <- full_combos %>% 
+    filter(Sequence %not_in% c(undeterminable, no_change2)) %>% 
+    filter(Sequence %in% supports) %>% 
+    group_by(up, down) %>%  
+    summarise(hierarchical = sum(Frequency)) 
+
+un_split <- total_state_changes %>% 
+  left_join(hierarchical_changes, by = c("up", "down")) %>% 
+  mutate(prop = hierarchical/totals) %>% 
+  mutate_all(~replace(., is.na(.), 0))
+return(un_split)
+}
+
+calc_props_silly(test, "W3")
+```
+
+Final first graph
+```{r}
+#final first graph
+test <- input_w3 %>% 
+  select(datetime, ID, binary) %>% 
+    group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) #%>% 
+  #filter(transition %in% c(-1, 1))
+
+test$state_change <- "none"
+test$state_change[test$transition == -1] <- "wetting"
+test$state_change[test$transition == 1] <- "drying"
+
+test %>% ungroup() %>% 
+  group_by(state_change) %>% 
+  summarise(count = length(state_change))
+
+length(test$datetime)
+
+test %>% ungroup() %>% 
+  group_by(state_change) %>% 
+  summarise(count = length(state_change)) %>% 
+  mutate(shed = "W3" ) %>% 
+  ggplot(aes(x = shed, y = count, fill = state_change))+
+  geom_histogram(stat = "identity")
+
+#changing_dates <- 
+  test %>% 
+  ungroup() %>% 
+  select(datetime, state_change) %>% 
+  group_by(datetime) %>% 
+  filter(state_change != "none") #%>% select(datetime) %>% unique() %>% 
+  mutate(status = "changing")
+
+`%not_in%` <- purrr::negate(`%in%`)
+
+#bar of total timesteps
+test %>% 
+  ungroup() %>% 
+  select(datetime) %>% unique() %>% 
+filter(datetime %not_in% changing_dates$datetime) %>% 
+  mutate(status = "no change") %>% 
+  bind_rows(changing_dates) %>% 
+  group_by(status) %>% 
+  summarise(count = length(status)) %>% 
+  mutate(shed = "W3") %>% 
+  #ungroup() %>% 
+  ggplot(aes(x = shed, y = count/sum(count), fill = status))+
+  geom_histogram(stat = "identity")
+```
+Final second graph
+```{r}
+filtered_input <- input_w3 %>%
+      filter(mins %in% c(0, 30)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+calc_support_combos <- function(up, down, input){
+#inputs to function- comment out in final version
+# i <- 1
+# child <- paste0("r_",routes_w3$up[i])
+# parent <- paste0("r_",routes_w3$down[i])
+# input <- filtered_input
+
+#create output with the total and the sub, also the two input locations
+output <- data.frame(child, parent)
+
+  
+no_dupes <- input %>% 
+      select(up,down, datetime) %>% #remove date
+      # make it so that there cannot be a sequence without change
+      # keep date column for indexing purposes later
+      #filter(row_number() == 1 | !apply(select(., up, down) == lag(select(., up, down)), 1, all)) %>% 
+      #remove rows where one of the sensors is missing data
+      drop_na()
+
+      #View(no_dupes)
+#all flowing all the time?
+check <- nrow(no_dupes)
+
+# if(check <= 2){
+#   sequence_df <- data.frame("Sequence" = NA, 
+#                             "Frequency" = NA,
+#                             "up" = up,
+#                             "down" = down)
+#   return(sequence_df)
+# } 
+# else {
+# Define window size
+window_size <- 2
+
+# Create sliding windows
+windows <- rollapply(
+  select(no_dupes, -datetime),
+  width = window_size,
+  by.column = FALSE,
+  FUN = function(x) paste(as.vector(t(x)), collapse = "")
+)
+
+# Count and sort sequences
+sequence_counts <- table(windows)
+sorted_counts <- sort(sequence_counts, decreasing = TRUE)
+
+# Display all sequences and their frequencies
+sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
+if(check > 1) colnames(sequence_df) <- c("Sequence", "Frequency")
+
+
+sequence_df$up <- up
+sequence_df$down <- down
+#output$total <- sum(sequence_df$Frequency)
+#write some way to score the sequence_df
+#award one point for one of these configs:
+#supports <- c("0001","0111","1101", "0100")
+
+
+#sub <- filter(sequence_df, Sequence %in% supports)
+#output$points <- sum(sub$Frequency)
+
+
+#create output with transitions
+#error handling- in situation where both points flowed 100% of the time
+
+return(sequence_df)
+}
+
+
+#test function
+
+#calc_support_combos("r_18", "r_11", input)
+
+#function to break up groups of continuous measurements, ensure that gaps are not considered
+#contains calc_support function
+iterate_groups_combos <- function(up, down, input, timestep){
+  #create group column that identifies gaps in continuous data in time
+
+# i <- 4
+# up <- paste0("r_",routes_w3$up[i])
+# down <- paste0("r_",routes_w3$down[i])
+# timestep <- minutes(30)
+  input$group <- cumsum(c(TRUE, diff(input$datetime) != timestep))
+  #View(input)
+
+  for(u in 1:length(unique(input$group))){
+  # u <- 1
+    print(u)
+    filtered_input <- input %>% filter(group == u)
+    #this line throws error if 
+    output <- calc_support_combos(up, down, filtered_input)
+    
+
+     if(u == 1) iterate_groups_alldat <- output
+     if(u > 1) iterate_groups_alldat <- rbind(iterate_groups_alldat, output)
+  }
+  # final_iterate_groups_alldat <- iterate_groups_alldat %>% 
+  #   drop_na() %>% 
+  #   group_by(up, down) %>% 
+  #   summarise(total = sum(total),
+  #             points = sum(points))
+  return(iterate_groups_alldat)
+}
+
+#iterate_groups_combos("r_13", "r_19", input, minutes(30))
+#function to take a list of routes and input dataset
+#contains group iteration function
+#for loop to iterate through full list of combinations of up and downstream locations
+#IMPORTANT- calculate hierarchy and iterate groups only work if the input timestep is approriate
+calculate_hierarchy_combos <- function(routes, input, timestep){
+  for(x in 1:length(routes$up)){
+  up <- paste0("r_",routes$up[x])
+  down <- paste0("r_",routes$down[x])
+  #print(x)
+  
+  #out <- iterate_groups_combos(up, down, input, timestep)
+    out <- calc_support_combos(up, down, input)
+
+
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
+
+  }
+  final_output <- alldat %>% 
+    drop_na() %>%
+    group_by(up, down, Sequence) %>%
+    summarise(Frequency = sum(Frequency))
+  return(final_output)
+}
+
+test <- calculate_hierarchy_combos(routes_w3, filtered_input, minutes(30))
+calc_props_silly(test, "W3")$prop %>% hist()
+
+
+#create a key for wetting and drying
+wetting <- c("0001", "0010", "0011", "0111", "1011")
+drying <- c("0100", "1000", "1100", "1101", "1110")
+no_net_change <- c("0000", "0101", "0110", "1001", "1010", "1111")
+#create key for sequential and non
+sequential <- c("0001", "0100", "0111", "1101")
+nonsequential <- c("0010", "1000", "1011", "1110")
+undeterminable <- c("0011","0110", "1001","1100")
+no_change2 <- c("0000", "1111", "0101", "1010")
+
+test2 <- test %>% 
+  #mutate(Sequence = as.numeric(Sequence)) %>% 
+  mutate(status = case_when(Sequence %in% wetting ~ "wetting",
+                            Sequence %in% drying ~ "drying",
+                            Sequence %in% no_net_change ~ "no_net_change"),
+         category = case_when(Sequence %in% sequential ~ "sequential",
+                              Sequence %in% nonsequential ~ "nonsequential",
+                              Sequence %in% undeterminable ~ "undeterminable",
+                              Sequence %in% no_change2 ~ "no_change")) %>% 
+  group_by(status, category) %>% 
+  summarise(count = sum(Frequency))
+
+# test2 %>% ungroup() %>% 
+#   group_by(category) %>% 
+#   mutate(shed = "W3" ) %>% 
+#   ggplot(aes(x = shed, y = count, fill = category))+
+#   geom_histogram(stat = "identity")
+
+#second plot- what proportion of transitions are sequential or not
+#ultimately one of these for each sequence?
+test2 %>% ungroup() %>% 
+  filter(category != "no_change") %>% 
+  #group_by(category) %>% 
+  mutate(shed = "W3" ) %>% 
+  ggplot(aes(x = shed, y = count/sum(count), fill = category))+
+  geom_histogram(stat = "identity")
+
+
+#do it again, but for twi
+routes_w3_twi
+
+hist_prep <- function(routes) {
+  test <- calculate_hierarchy_combos(routes, filtered_input, minutes(30))
+
+
+#create a key for wetting and drying
+wetting <- c("0001", "0010", "0011", "0111", "1011")
+drying <- c("0100", "1000", "1100", "1101", "1110")
+no_net_change <- c("0000", "0101", "0110", "1001", "1010", "1111")
+#create key for sequential and non
+sequential <- c("0001", "0100", "0111", "1101")
+nonsequential <- c("0010", "1000", "1011", "1110")
+undeterminable <- c("0011","0110", "1001","1100")
+no_change2 <- c("0000", "1111", "0101", "1010")
+
+test2 <- test %>% 
+  #mutate(Sequence = as.numeric(Sequence)) %>% 
+  mutate(status = case_when(Sequence %in% wetting ~ "wetting",
+                            Sequence %in% drying ~ "drying",
+                            Sequence %in% no_net_change ~ "no_net_change"),
+         category = case_when(Sequence %in% sequential ~ "sequential",
+                              Sequence %in% nonsequential ~ "nonsequential",
+                              Sequence %in% undeterminable ~ "undeterminable",
+                              Sequence %in% no_change2 ~ "no_change")) %>% 
+  group_by(status, category) %>% 
+  summarise(count = sum(Frequency))
+
+return(test2)
+}
+
+hist_prep(routes_w3_twi) %>%
+  ungroup() %>% 
+  filter(category != "no_change") %>% 
+  #group_by(category) %>% 
+  mutate(shed = "W3" ) %>% 
+  ggplot(aes(x = shed, y = count/sum(count), fill = category))+
+  geom_histogram(stat = "identity")
+
+calc_props_silly(calculate_hierarchy_combos(routes_w3_twi, filtered_input, minutes(30)), "W3")$prop %>% hist()
+
+#again for graph theory
+W3_cheap
+W3_random
+
+routes_w3_cheap <- W3_cheap %>% 
+    filter(ID %in% W3_IDs) %>% 
+  rename("up" = ID)  %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+hist_prep(routes_w3_cheap) %>%
+  ungroup() %>% 
+  filter(category != "no_change") %>% 
+  #group_by(category) %>% 
+  mutate(shed = "W3" ) %>% 
+  ggplot(aes(x = shed, y = count/sum(count), fill = category))+
+  geom_histogram(stat = "identity")
+
+calc_props_silly(calculate_hierarchy_combos(routes_w3_cheap, filtered_input, minutes(30)), "W3")$prop %>% hist()
+
+
+#again for random sequence
+routes_w3_random <- W3_random %>% 
+    filter(ID %in% W3_IDs) %>% 
+  rename("up" = ID)  %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+hist_prep(routes_w3_random) %>%
+  ungroup() %>% 
+  filter(category != "no_change") %>% 
+  #group_by(category) %>% 
+  mutate(shed = "W3" ) %>% 
+  ggplot(aes(x = shed, y = count/sum(count), fill = category))+
+  geom_histogram(stat = "identity")
+```
 
 ## Figure 6: Hydrograph, colored by which sequence works the best
 NEED TO FIX COLORS
@@ -3932,6 +4800,8 @@ For these plots I need:
 - actual flowing state
 - map template
 - predicted state based on a sequence
+
+Run lines 2815 and beyond
 ```{r model_predictions}
 cheap_model <- calc_model_result(W3_cheap$ID) %>% rename("cheapest" = pred_binary)
 pk_model <- calc_model_result(W3_pk_seq$ID) %>% rename("pk" = pred_binary)
@@ -4160,7 +5030,7 @@ bars <- ggplot(filter(states, datetime == doi[1]), aes(y = datetime, fill = eval
 Map where the points are colored by accuracy, and faceted by hydrograph component and sequence
 ```{r W3-map}
 #summarize through time
-ID_acc <- comparison %>%
+ID_acc <- comparison_w3 %>%
     inner_join(discharge_df, by = "datetime") %>% 
   group_by(ID, event_type) %>%
   summarize(
@@ -4177,6 +5047,7 @@ ID_acc <- comparison %>%
   select(ID, event_type, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
   tidyr::pivot_longer(cols = c(cheap_accuracy,pk_accuracy, random_accuracy, twi_accuracy), 
                       names_to = "model", values_to = "accuracy")
+
 
 #figure with scale bar and legends
 ggplot()+
@@ -4242,6 +5113,21 @@ geom_sf(data = w3_stic_locs_r %>% inner_join(ID_acc_w3, by = "ID"),
         #legend.position = "")+
   facet_grid( ~ model)
 ```
+
+```{r final-map-one-row}
+ggplot()+
+  theme_void()+
+  geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 2)+
+  geom_sf(data = w3_net, colour = "grey", lwd = 1) +
+geom_sf(data = w3_stic_locs_r %>% inner_join(ID_acc_w3, by = "ID"), 
+        aes(fill = accuracy), size = 4, pch = 21) +
+  scale_fill_gradient(low = "white", high = "black")+
+  #scale_shape_manual(values = c(21, 24, 22))+
+  theme(rect = element_rect(fill = "transparent", color = NA))+#,
+        #legend.position = "")+
+  facet_grid( ~ model)
+```
+
 ### FB
 Make map template:
 ```{r FB-map}
@@ -4254,7 +5140,7 @@ ybounds <- c(4868850,4869650)
 xbounds <- c(279350, 280450)
 
 #create a SpatExtent from a vector (length=4; order=xmin, xmax, ymin, ymax)
-points(lcc)
+#points(lcc)
 crop1 <- crop(m1, ext(c(xbounds, ybounds)))
 #save cropped 1m dem to reduce processing time below, and gurantee that everything has the same extent
 #writeRaster(crop1, "./fb_dems/1mdem_crop.tif", overwrite = TRUE)
@@ -4330,16 +5216,16 @@ fb_shed <- "./fb_dems/fb_shed.tif"
 fb_outline <- as.polygons(rast(fb_shed), extent=FALSE)
 
 #get sensor locations from STIC data, format
-locs <- data_23 %>% 
+locs_fb <- data_23 %>% 
   filter(wshed == "FB") %>% 
   select(ID, lat, long) %>% 
   unique()
 #convert STIC data to a SpatVector data format
-locs_shape <- vect(locs, 
+locs_shape_fb <- vect(locs, 
                    geom=c("long", "lat"), 
                    crs = "+proj=longlat +datum=WGS84")
 #reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
-lcc <- terra::project(locs_shape, crs(m1))
+lcc_fb <- terra::project(locs_shape_fb, crs(m1))
 
 #assign destination for hillshade calculation
 hillshade_out <- "./fb_dems/1mdem_hillshade.tif"
@@ -4349,6 +5235,32 @@ hillshade_out <- "./fb_dems/1mdem_hillshade.tif"
 # )
 hill <- rast(hillshade_out)
 
+#also clip and mask shapefiles
+fb_outline <- as.polygons(rast(fb_shed), extent=FALSE)
+fb_net <- vect("./carrieZigZag/FB_network.shp")
+plot(ext(fb_outline))
+
+plot(maptools::elide(sf::st_as_sf(fb_outline), 90), add = TRUE)
+s <- sf::st_as_sf(v)
+
+plot(ext(fb_net), add = TRUE)
+plot(fb_net, add = TRUE)
+plot(fb_outline, add = TRUE)
+plot(centroids(vect(ext(fb_net))))
+unname(ext(fb_outline)[1:4])
+
+polygon_cropped <- crop(fb_net, unname(ext(fb_outline)[1:4]))
+plot(ext(polygon_cropped), add = TRUE, col = "red")
+
+fb_net <- terra::crop(fb_net, ext(fb_outline))
+
+plot(ext(fb_net), add = TRUE, col = "red")
+
+
+rescale()
+
+plot(ext(fb_net))
+plot(fb_net, add = TRUE)
 #final plot with cropped hillshade and dem, STIC locations, watershed boundary, and stream network.
 
   
@@ -4422,6 +5334,22 @@ geom_sf(data = locs_shape %>% inner_join(ID_acc_fb, by = "ID"),
   facet_grid( ~ model)
 
 ```
+```{r final-map-one-row}
+
+#terra::spin(fb_outline, 90, 279933.5, 4869173)
+ggplot()+
+  theme_void()+
+  geom_sf(data = terra::spin(fb_outline, 90, 279933.5, 4869173), fill = NA, color = "#397367", alpha = 0.3, lwd = 2)+
+  geom_sf(data = terra::spin(fb_net, 90, 279933.5, 4869173), colour = "grey", lwd = 1) +
+geom_sf(data =  terra::spin(lcc_fb, 90, 279933.5, 4869173) %>% inner_join(ID_acc_fb, by = "ID"),
+        aes(fill = accuracy), size = 4, pch = 21) +
+     scale_fill_gradient(low = "white", high = "black")+
+
+  #scale_shape_manual(values = c(21, 24, 22))+
+  theme(rect = element_rect(fill = "transparent", color = NA)) +
+  facet_grid( ~ model)
+```
+
 
 ### ZZ
 ```{r ZZ-map}
@@ -4432,17 +5360,17 @@ m1 <- rast(dem)
 #plot(m1)
 
 #get sensor locations from STIC data, format
-locs <- data_23 %>% 
+locs_zz <- data_23 %>% 
   filter(wshed == "ZZ") %>% 
   select(ID, lat, long) %>% 
   unique()
 #convert STIC data to a SpatVector data format
-locs_shape <- vect(locs, 
+locs_shape_zz <- vect(locs_zz, 
                    geom=c("long", "lat"), 
                    crs = "+proj=longlat +datum=WGS84")
 #plot(locs_shape)
 #reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
-lcc <- terra::project(locs_shape, crs(m1))
+lcc_zz <- terra::project(locs_shape_zz, crs(m1))
 #plot(lcc)
 #define the rectangular area that will be shown on final map
 ybounds <- c(4866400,4867500)
@@ -4541,6 +5469,9 @@ hillshade_out <- "./zz_dems/1mdem_hillshade.tif"
 # )
 hill <- rast(hillshade_out)
 #plot(hill)
+
+centroids(vect(ext(zz_net)))
+
 #final plot with cropped hillshade and dem, STIC locations, watershed boundary, and stream network.
 #zz_map <- 
   ggplot()+
@@ -4629,6 +5560,90 @@ geom_sf(data = locs_shape %>% inner_join(ID_acc_zz, by = "ID"),
   facet_grid( ~ model)
 
 ```
+
+```{r final-map-one-row}
+ggplot()+
+  theme_void()+
+  geom_sf(data = zz_outline, fill = NA, color = "#7E6B8F", alpha = 0.3, lwd = 2)+
+  geom_sf(data = zz_net, colour = "grey", lwd = 1) +
+geom_sf(data = locs_shape %>% inner_join(ID_acc_zz, by = "ID"), 
+        aes(fill = accuracy), size = 4, pch = 21) +
+    scale_fill_gradient(low = "white", high = "black")+
+
+  #scale_shape_manual(values = c(21, 24, 22))+
+  theme(rect = element_rect(fill = "transparent", color = NA))+#,
+        #legend.position = "")+
+  facet_grid( ~ model)
+
+ggplot()+
+  theme_void()+
+  geom_sf(data = terra::spin(zz_outline, 180, 277401.8, 4867071), fill = NA, color = "#7E6B8F", alpha = 0.3, lwd = 2)+
+  geom_sf(data = terra::spin(zz_net, 180, 277401.8, 4867071), colour = "grey", lwd = 1) +
+geom_sf(data =  terra::spin(lcc_zz, 180, 277401.8, 4867071) %>% inner_join(ID_acc_fb, by = "ID"),
+        aes(fill = accuracy), size = 4, pch = 21) +
+     scale_fill_gradient(low = "white", high = "black")+
+
+  #scale_shape_manual(values = c(21, 24, 22))+
+  theme(rect = element_rect(fill = "transparent", color = NA)) +
+  facet_grid( ~ model)
+```
+
+```{r}
+#combine all of the spun plots from before
+#W3
+W3_rot <- ggplot()+
+  theme_void()+
+  geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 2)+
+  geom_sf(data = w3_net, colour = "grey", lwd = 1) +
+geom_sf(data = w3_stic_locs_r %>% inner_join(ID_acc_w3, by = "ID"), 
+        aes(fill = accuracy), size = 2, pch = 21) +
+  scale_fill_gradient(low = "white", high = "black")+
+  #scale_shape_manual(values = c(21, 24, 22))+
+  theme(rect = element_rect(fill = "transparent", color = NA),
+        legend.position = "none",
+        strip.text.x = element_blank())+
+  facet_grid( ~ model)
+
+#FB
+FB_rot <- ggplot()+
+  theme_void()+
+  geom_sf(data = terra::spin(fb_outline, 90, 279933.5, 4869173), fill = NA, color = "#397367", alpha = 0.3, lwd = 2)+
+  geom_sf(data = terra::spin(fb_net, 90, 279933.5, 4869173), colour = "grey", lwd = 1) +
+geom_sf(data =  terra::spin(lcc_fb, 90, 279933.5, 4869173) %>% inner_join(ID_acc_fb, by = "ID"),
+        aes(fill = accuracy), size = 2, pch = 21) +
+     scale_fill_gradient(low = "white", high = "black")+
+
+  #scale_shape_manual(values = c(21, 24, 22))+
+  theme(rect = element_rect(fill = "transparent", color = NA),
+        legend.position="none",
+        strip.text.x = element_blank()) +
+  facet_grid( ~ model)
+
+#zz
+ZZ_rot <- ggplot()+
+  theme_void()+
+  geom_sf(data = terra::spin(zz_outline, 180, 277401.8, 4867071), fill = NA, color = "#7E6B8F", alpha = 0.3, lwd = 2)+
+  geom_sf(data = terra::spin(zz_net, 180, 277401.8, 4867071), colour = "grey", lwd = 1) +
+geom_sf(data =  terra::spin(lcc_zz, 180, 277401.8, 4867071) %>% inner_join(ID_acc_fb, by = "ID"),
+        aes(fill = accuracy), size = 2, pch = 21) +
+     scale_fill_gradient(low = "white", high = "black",
+                         limits = c(0,1),
+                         labels = c("0", "0.25", "0.5", "0.75", "1"),
+                         name = "Accuracy")+
+
+  #scale_shape_manual(values = c(21, 24, 22))+
+  theme(rect = element_rect(fill = "transparent", color = NA),
+        legend.position="bottom",
+        panel.spacing = unit(5, "lines"),
+        strip.text.x = element_blank()) +
+  facet_grid( ~ model) 
+ZZ_rot
+#combine all plots
+W3_rot / FB_rot / (ZZ_rot)
+
+#In canva will have to add north arrows and the scale bar
+```
+
 
 ## Figure 8: Tile plot
 ```{r W3}
