@@ -25,6 +25,9 @@ Adapting script from rgeos and raster land to do analysis that Linda is thinking
 3/18/24
 Adapting script to test against my observations of flow
 
+6/30/25
+Need to convert this to terra land, currently still using raster package. Doing follow up analysis for Danielle's control point paper.
+
 ```{r}
 #setup chunk
 library(pacman)
@@ -35,7 +38,7 @@ p_load(tidyverse, terra, rgdal, sp, sf, mapview, spdplyr, tmap, stars,
 ```
 
 
-```{r}
+```{r prepare-network-shapes}
 #defining a normal channel
 #threshold drainage area, based on shapefiles of channel locations that Scott provided
 #uaa calculated in script QPM_analysis_9_9_23.Rmd
@@ -74,7 +77,7 @@ st_crs(zz) <- 26919
 #could sub in a more sophisticated method later
 ```
   
-```{r}
+```{r plot-W3}
 #clip to extent of watershed 3
 flo_crop <- crop(flowacc, w3)
 flo_mask <- mask(flo_crop, w3)
@@ -98,7 +101,7 @@ ggplot() +
 ```
 
 Figuring out how to determine if stream within a predefined channel is flowing:
-```{r}
+```{r figuring-out-model}
 #before function, create inputs
 #clipped flow accumulation raster
 w3 <- sheds %>% filter(WS == "WS3")
@@ -187,7 +190,7 @@ ggplot(output)+
 
 
 JP Method works!: convert raster of channel to points, then find log(twi) at each point, determine threshold to flow, then I am in dataframe land
-```{r}
+```{r run-model-all-decades}
 #pull in raster that defines pre-existing channel
 w3 <- sheds %>% filter(WS == "WS3")
 flo_crop <- crop(flowacc, w3)
@@ -375,7 +378,7 @@ ggplot(diffs)+
 ```
 
 Figure of percentage of time flowing for each watershed
-```{r}
+```{r percentage-of-time-flowing-all-sheds}
 #perhaps write a function where the watershed is the input, and then it filters sheds shapefile and discharge record, produces my desired plot or at least the data for desired plot
 #pull in raster that defines pre-existing channel
 WS <- 3
@@ -493,7 +496,7 @@ ggplot(ws8_flowing)+
 ```
 
 Make mini watersheds for presentation organization
-```{r}
+```{r mini-sheds-visualization}
 #0d3b66
 #ff6663
 #57a773
@@ -511,7 +514,7 @@ plot(l, col = "#8e9dcc")
 
 Graph of surface area through time, averaged for each year
 Could also make graph of max and min surface area for each year
-```{r}
+```{r surface-area-through-time-average-each-year}
 growing_szn <- read_csv("growing_szn.csv")
 growing_szn <- growing_szn[,3:7]
 growing_szn <- growing_szn[-(which(growing_szn$Date == "1973-06-30")),]
@@ -563,7 +566,7 @@ ggplot(blest,
 
 
 Attempt to quantify how CO2 evasion is changing based on changing surface area
-```{r}
+```{r calc-surface-area-and-CO2}
 #4.0 g C/m2-yr of CO2 evaded from streams, from
 # Fahey, T.J., Siccama, T.G., Driscoll, C.T. et al. The Biogeochemistry of Carbon at Hubbard Brook. Biogeochemistry 75, 109–176 (2005). https://doi-org.ezproxy.lib.vt.edu/10.1007/s10533-004-6321-y
 
@@ -690,7 +693,7 @@ ggplot(blest,
 
 ```
 
-
+Find where expanded channels reach into rock outcrops and shallow soil
 ```{r}
 #find where expanded channels reach into rocky outcrops and shallow soil
 

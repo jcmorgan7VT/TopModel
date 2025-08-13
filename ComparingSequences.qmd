@@ -1268,6 +1268,8 @@ W3_combos_routes <- data.frame("up" = rep(combos, zzz),
                                 "down" = all_list)
 #Run suite of functions to determine proportion of time that state changes follow the parent -> child relationship
 W3_all_combos <- calc_props(W3_combos_routes, "W3")
+
+#general_graph(W3_IDs, "W3", methods = c("cheapest_insertion"), two_opt = TRUE)
 ```
 ```{r FB}
 #set routes for all 3 watersheds
@@ -1413,6 +1415,47 @@ geom_density(aes(color = method), alpha = 0.5)+
   facet_grid(~timescale)
 
 ```
+
+```{r fooling around}
+# 8/12/25, fooling around
+atsp <- as.ATSP(edges_W3)
+
+edges4 <- 
+  test %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  left_join(up_pks, by = "up") %>% 
+  left_join(down_pks, by = "down") %>% 
+  mutate(diff = abs(down_pk - up_pk)) %>% 
+  rename(weight = diff,
+         label = prop) %>% 
+  select(up, down, weight, label)
+
+edges_W3 <- 
+  W3_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  rename(weight = prop)
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) %>% as.matrix() %>% unname()
+
+  #concorde solver?
+#downloaded concorde but could not figure out how to get it working
+concorde_path("/Users/johnmorgan/Documents/VT Research/HBTopModel/concorde/TSP")
+
+data("USCA312")
+
+## run concorde in verbose mode (-v) with fast cuts only (-V)
+solve_TSP(USCA312, method = "concorde", control = list(clo = "-v -V"))
+
+```
+
 ```{r FB-analysis}
 #define all possible methods
 #removed 3 methods
@@ -3820,27 +3863,47 @@ rbind(general_graph(W3_IDs, "W3", methods = c("random"), two_opt = FALSE),
       all_pk,
       all_twi) 
 
+general_graph(W3_IDs, "W3", methods = c("cheapest_insertion"), two_opt = TRUE)
+
 four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
 
+#fixing names for legend, and factor levels
+
 fixed_combined %>% 
+  ungroup() %>% 
+  mutate(method = case_when(method == "random" ~ "Random",
+                            method == "Flow Permanence" ~ "Proportion of Time Flowing",
+                            method == "cheapest_insertion" ~ "TSP Solution",
+                            method == "Topographic Wetness Index" ~ "Topographic Wetness Index")) %>% 
+  mutate(timescale = case_when(timescale == "30mins" ~ "30 Minute Frequency",
+                               timescale == "daily" ~ "Daily Average Flow State")) %>% 
+  mutate(shed = fct_relevel(shed,
+                              c("W3", "FB", "ZZ"))) %>% 
+  mutate(method = fct_relevel(method, 
+                              c("TSP Solution",  "Proportion of Time Flowing", "Random",
+                                 "Topographic Wetness Index"))) %>% 
   ggplot(aes(x = prop, y = after_stat(density))) +
 geom_density(aes(color = method, fill = method), alpha = 0.5)+
     stat_central_tendency(aes(color = method), type = "median", linetype = "dashed")+
     #geom_density(alpha = 0.5, lty = 3)+
      # geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
-    theme_bw()+
+    theme_classic2()+
   #ylim(c(0, 6.25))+
   xlim(c(0,1))+
-  labs(title = "Distributions of Proportion of time Sequence Followed",
-       x = "Proportion of time followed",
+  labs(title = "Proportion of Transitions where Sequence is Followed",
+       x = "Proportion of transitions that are sequential",
        y = "Density")+
   scale_fill_manual(values = four_colors,
                      name = "Method")+
   scale_color_manual(values = four_colors,
                      name = "Method")+
+  scale_linetype_manual(values = 2, name = "Median")+
+  scale_x_continuous(labels = c("0", "0.25", "0.5", "0.75", "1"), expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0))+
+  theme(panel.spacing = unit(1, "lines"))+
   facet_grid(shed~timescale)
 
-fixed_combined %>% 
+fixefixefixed_combined %>% 
   filter(timescale == "30mins", 
          shed == "W3",
          method %in% c("cheapest_insertion", "Flow Permanence")) %>% print(n = 50)
@@ -4695,7 +4758,7 @@ inner_join(big_comb, by = "datetime") %>%
 ## Figure 7: Accuracy of all models versus pk accuracy
 ```{r W3}
 #trying to plot accuracy vs accuracy
-df_long2 <- df_summary_time %>%
+df_long2 <- df_summary_time_w3 %>%
   select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
   tidyr::pivot_longer(cols = c(cheap_accuracy, random_accuracy, twi_accuracy), 
                       names_to = "model", values_to = "accuracy") %>% 
@@ -5114,7 +5177,7 @@ geom_sf(data = w3_stic_locs_r %>% inner_join(ID_acc_w3, by = "ID"),
   facet_grid( ~ model)
 ```
 
-```{r final-map-one-row}
+```{r W3-one-row}
 ggplot()+
   theme_void()+
   geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 2)+
@@ -5560,8 +5623,7 @@ geom_sf(data = locs_shape %>% inner_join(ID_acc_zz, by = "ID"),
   facet_grid( ~ model)
 
 ```
-
-```{r final-map-one-row}
+```{r ZZ-one-row}
 ggplot()+
   theme_void()+
   geom_sf(data = zz_outline, fill = NA, color = "#7E6B8F", alpha = 0.3, lwd = 2)+
@@ -5587,8 +5649,8 @@ geom_sf(data =  terra::spin(lcc_zz, 180, 277401.8, 4867071) %>% inner_join(ID_ac
   theme(rect = element_rect(fill = "transparent", color = NA)) +
   facet_grid( ~ model)
 ```
-
-```{r}
+### Combine all
+```{r final-combined-plot}
 #combine all of the spun plots from before
 #W3
 W3_rot <- ggplot()+
