@@ -1271,6 +1271,46 @@ W3_all_combos <- calc_props(W3_combos_routes, "W3")
 
 #general_graph(W3_IDs, "W3", methods = c("cheapest_insertion"), two_opt = TRUE)
 ```
+
+What if I tried to show this in some way- map where each sensor was the average prop value when it is a parent?
+```{r}
+parents <- W3_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  rename(parent = down, child = up) %>% 
+  group_by(parent) %>% 
+  summarise(mean_parent = mean(prop)) %>% 
+  rename(ID = parent)
+  
+childs <- W3_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  rename(parent = down, child = up) %>% 
+  group_by(child) %>% 
+  summarise(mean_child = mean(prop)) %>% 
+  rename(ID = child)
+
+left_join(parents, childs, by = "ID") %>% 
+  ggplot(aes(x = mean_parent, y = mean_child))+
+  geom_point()
+
+parents <- FB_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  rename(parent = down, child = up) %>% 
+  group_by(parent) %>% 
+  summarise(mean_parent = mean(prop)) %>% 
+  rename(ID = parent)
+  
+childs <- FB_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  rename(parent = down, child = up) %>% 
+  group_by(child) %>% 
+  summarise(mean_child = mean(prop)) %>% 
+  rename(ID = child)
+
+left_join(parents, childs, by = "ID") %>% 
+  ggplot(aes(x = mean_parent, y = mean_child))+
+  geom_point()
+```
+
 ```{r FB}
 #set routes for all 3 watersheds
 input <- rbind(bind23, bind24) %>%
@@ -1418,26 +1458,25 @@ geom_density(aes(color = method), alpha = 0.5)+
 
 ```{r fooling around}
 # 8/12/25, fooling around
-atsp <- as.ATSP(edges_W3)
-
-edges4 <- 
-  test %>% 
+keyz <- 
+  W3_all_combos %>% 
   filter(timescale == "30mins") %>% 
   ungroup() %>% 
   select(up, down, prop) %>% 
-  left_join(up_pks, by = "up") %>% 
-  left_join(down_pks, by = "down") %>% 
-  mutate(diff = abs(down_pk - up_pk)) %>% 
-  rename(weight = diff,
-         label = prop) %>% 
-  select(up, down, weight, label)
+  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) #%>% as.matrix() %>% unname()
+#create an accurate key, old one is WRONG!!!
+key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
+                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
+
 
 edges_W3 <- 
   W3_all_combos %>% 
   filter(timescale == "30mins") %>% 
   ungroup() %>% 
   select(up, down, prop) %>% 
-  rename(weight = prop)
   #rename(labels = prop) %>% 
   #filter(prop != 0) %>% 
   mutate(prop = 1 - prop) %>%  #weight will be opposite prop value
@@ -1447,14 +1486,215 @@ edges_W3 <-
 
   #concorde solver?
 #downloaded concorde but could not figure out how to get it working
-concorde_path("/Users/johnmorgan/Documents/VT Research/HBTopModel/concorde/TSP")
+concorde_path("/Users/johnmorgan/Documents/concorde/TSP")
 
 data("USCA312")
 
 ## run concorde in verbose mode (-v) with fast cuts only (-V)
 solve_TSP(USCA312, method = "concorde", control = list(clo = "-v -V"))
 
+#now try applying
+atsp <- as.ATSP(edges_W3)
+
+    atsp <- insert_dummy(atsp, label = "dummy")
+  tour <- solve_TSP(atsp, method = "concorde", as_TSP = TRUE, precision = 6, two_opt = TRUE)
+  #control = list(clo = "-B")
+    #tour <- solve_TSP(atsp, method = "cheapest_insertion", as_TSP = TRUE, two_opt = TRUE)
+
+    #tour <- solve_TSP(tour, method = "two_opt")
+
+  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
+
+  # Extract path, removing dummy node
+  path <- as.integer(tour)
+  path <- path[labels(tour)[path] != "dummy"]
+  #convert edges to format 
+  edges <- cbind(path[-length(path)], path[-1])
+  
+con_sol <- c(edges[,1], edges[25,2])
+
+concon <- tibble(ID = con_sol, sequence = seq(1, length(con_sol), 1))
+concon <- tibble(node_ID = con_sol, sequence = seq(1, length(con_sol), 1)) %>% 
+  left_join(key2, by = "node_ID") %>%
+  rename(ID = sensor_ID) %>% 
+  select(ID, sequence)
+  
+
+#con_model <- calc_model_result(concon$ID, "W3") %>% rename("con" = pred_out)
+produce_metrics(concon, "W3", "concorde")
+
+
+#acc_0.755 <- concon
+
+#trying another thing
+C_int <- round(1e6 * edges_W3)
+diag(C_int) <- max(C_int) + 1L
+
+
+reformed <- reformulate_ATSP_as_TSP(atsp)
+
+write_TSPLIB(reformed, file = "myinstance.tsp")
+
+sol <- as.integer(scan("~/Documents/concorde/myinstance.sol", quiet = TRUE)[-1])
+
+read_delim("~/Documents/concorde/myinstance.sol", delim = " ")
+
+as.TOUR(sol+1)
+
+n_orig <- 26
+map_to_atsp <- function(id) {
+  if (id < n_orig) {
+    return(id)
+  } else if (id < 2 * n_orig) {
+    return(id - n_orig)
+  } else {
+    return(NA)  # dummy
+  }
+}
+tour_atsp <- vapply(sol, map_to_atsp, integer(1))
+tour_atsp <- tour_atsp[!is.na(tour_atsp)]         # remove dummy
+tour_atsp <- tour_atsp[!duplicated(tour_atsp)]    # keep first visit only
+
+
+filter_ATSP_as_TSP_dummies(as.TOUR(sol+1))
+
 ```
+
+```{r}
+
+edges_W3
+# 1. JV-transform + dummy
+atsp_to_stsp <- function(cost_mat, dummy_cost = 0) {
+  n <- nrow(cost_mat)
+  M <- max(cost_mat) * n + 1  # big constant
+  
+  # JV transform: create 2n x 2n symmetric matrix
+  sym_mat <- matrix(M, nrow = 2*n, ncol = 2*n)
+  
+  # link in->out copies (zero cost)
+  for (i in 1:n) {
+    sym_mat[i, n+i] <- 0
+    sym_mat[n+i, i] <- 0
+  }
+  
+  # original costs from out(i) to in(j)
+  for (i in 1:n) {
+    for (j in 1:n) {
+      if (i != j) {
+        sym_mat[n+i, j] <- cost_mat[i, j]
+        sym_mat[j, n+i] <- cost_mat[i, j]
+      }
+    }
+  }
+  
+  # Add dummy node
+  sym_with_dummy <- matrix(M, nrow = 2*n + 1, ncol = 2*n + 1)
+  sym_with_dummy[1:(2*n), 1:(2*n)] <- sym_mat
+  
+  dummy_idx <- 2*n + 1
+  # Connect dummy to all "in" nodes with dummy_cost
+  sym_with_dummy[dummy_idx, 1:n] <- dummy_cost
+  sym_with_dummy[1:n, dummy_idx] <- dummy_cost
+  
+  # return symmetric matrix
+  sym_with_dummy
+}
+
+out_matrix <- atsp_to_stsp(edges_W3)
+# 2. Write TSPLIB file
+write_tsplib <- function(sym_mat, file) {
+  tsp_obj <- TSP(as.dist(sym_mat))
+  write_TSPLIB(tsp_obj, file = file)
+}
+
+write_tsplib(out_matrix, "~/Documents/concorde/myinstance.tsp")
+# 3. Read Concorde .sol and convert to ATSP tour
+read_concorde_sol <- function(sol_file, cost_mat) {
+  n <- nrow(cost_mat)
+  tour_nodes <- scan(sol_file, what = integer(), quiet = TRUE)
+  
+  # Remove first line if it's length
+  if (length(tour_nodes) == n + 1 || length(tour_nodes) == 2*n + 1 || length(tour_nodes) == 2*n + 2) {
+    # If first number equals length of tour, drop it
+    if (tour_nodes[1] == length(tour_nodes) - 1) {
+      tour_nodes <- tour_nodes[-1]
+    }
+  }
+  
+  # Remove dummy index if present
+  dummy_idx <- 2*n + 1
+  tour_nodes <- tour_nodes[tour_nodes != (dummy_idx - 1)]  # Concorde may index from 0
+  
+  # Map back to original ATSP nodes: out(i) -> i, in(i) -> i
+  atsp_tour <- unique(((tour_nodes %% n) + 1))
+  
+  atsp_tour
+}
+
+con_big <- read_concorde_sol("~/Documents/concorde/TSP/mysolution.tour", edges_W3)
+
+concon2 <- tibble(node_ID = con_big, sequence = seq(1, length(con_big), 1)) %>% 
+  left_join(key2, by = "node_ID") %>%
+  rename(ID = sensor_ID) %>% 
+  select(ID, sequence)
+  
+
+#con_model <- calc_model_result(concon$ID, "W3") %>% rename("con" = pred_out)
+produce_metrics(concon2, "W3", "concorde")
+
+#both of these are the same, the concorde solution to my TSP
+concon
+concon2
+
+opt_routes <- 
+  tibble(node_ID = con_big) %>% 
+  left_join(key2, by = "node_ID") %>% 
+  mutate(down = lag(sensor_ID)) %>% 
+    rename("up" = sensor_ID) %>% 
+    select(up, down) %>% drop_na()
+
+# actually determining how often the nodes follow proportion of time flowing sequence
+calc_props(opt_routes, "W3")
+# Example usage:
+# Suppose cost_df is your n x n dataframe of ATSP costs
+# cost_mat <- as.matrix(cost_df)
+# sym <- atsp_to_stsp(cost_mat, dummy_cost = 0)
+# write_tsplib(sym, "instance.tsp")
+# (Run Concorde externally on instance.tsp to get instance.sol)
+# tour <- read_concorde_sol("instance.sol", nrow(cost_mat))
+
+```
+
+Trying one more thing- what if the sequence was defined in order by average prop value when it is the parent?
+```{r}
+#new_seq <- 
+  W3_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  rename(parent = down,
+         child = up) %>% 
+  group_by(parent) %>% 
+  summarise(mean = mean(prop),
+            sd = sd(prop)) %>% 
+  arrange(desc(mean)) %>% View()
+  mutate(sequence = seq(1, length(con_big), 1)) %>% 
+  rename(ID = parent) %>% 
+  mutate(ID = as.numeric(substr(ID, 3, 4))) %>% 
+  select(ID, sequence)
+  #filter(prop != 0) %>% 
+  
+produce_metrics(new_seq, "W3", "ordered")
+
+
+w3_pk_renum <- W3_pk_seq %>% 
+  filter(ID %in% (W3_IDs)) %>% 
+  mutate(sequence = seq(1, 26, 1))
+new_seq %>% 
+  left_join(w3_pk_renum, by = "ID") %>% 
+View()
+```
+New sequence is just as good as proportion of time flowing, but definitely a different sequence... definitely related to the number of transitions I think
 
 ```{r FB-analysis}
 #define all possible methods
@@ -2915,7 +3155,11 @@ df_summary_time_w3 <- comparison_w3 %>%
   )
 
 df_summary_time_w3 <- df_summary_time_w3 %>%
-  select(contains("accuracy"))
+  select(datetime, contains("accuracy"))
+
+df_long_w3 <- df_summary_time_w3 %>%
+  select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
+  tidyr::pivot_longer(cols = c(cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy), names_to = "model", values_to = "accuracy")
 
 #make data long for final plot
 comparison_long_w3 <- 
@@ -3241,16 +3485,16 @@ fb_shed <- "./fb_dems/fb_shed.tif"
 fb_outline <- as.polygons(rast(fb_shed), extent=FALSE)
 
 #get sensor locations from STIC data, format
-locs <- data_23 %>% 
+locs_fb <- data_23 %>% 
   filter(wshed == "FB") %>% 
   select(ID, lat, long) %>% 
   unique()
 #convert STIC data to a SpatVector data format
-locs_shape <- vect(locs, 
+locs_shape_fb <- vect(locs, 
                    geom=c("long", "lat"), 
                    crs = "+proj=longlat +datum=WGS84")
 #reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
-lcc <- terra::project(locs_shape, crs(m1))
+lcc_fb <- terra::project(locs_shape_fb, crs(m1))
 
 #assign destination for hillshade calculation
 hillshade_out <- "./fb_dems/1mdem_hillshade.tif"
@@ -3262,21 +3506,37 @@ hill <- rast(hillshade_out)
 
 #final plot with cropped hillshade and dem, STIC locations, watershed boundary, and stream network.
 #fb_map <- 
+ggplot()+
+  geom_spatraster(data = t(flip(hill)))
+
   ggplot()+
-  geom_spatraster(data = hill)+
+  geom_spatraster(data = t(flip(hill)))+
   theme_void()+
   theme(legend.position = "")+
   scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
     new_scale_fill() +
-  geom_spatraster(data = crop1, alpha = 0.5)+
-    geom_sf(data = fb_outline, fill = NA, color = "#397367", alpha = 0.3, lwd = 2) +
-  geom_sf(data = fb_net, colour = "darkslategray3", lwd = 2) +
-    geom_sf(data = lcc, colour = "midnightblue", pch = 19, size = 2) +
+  geom_spatraster(data = t(flip(crop1)), alpha = 0.5)+
+    geom_sf(data = terra::spin(fb_outline, 90, 279933.5, 4869173), fill = NA, color = "#397367", alpha = 0.3, lwd = 2) +
+  geom_sf(data = terra::spin(fb_net, 90, 279933.5, 4869173), colour = "darkslategray3", lwd = 2) +
+    geom_sf(data = terra::spin(lcc_fb, 90, 279933.5, 4869173), colour = "midnightblue", pch = 19, size = 2) +
   #geom_sf(data = fb_pour, colour = "black", pch = 8, size = 3) +
    scale_fill_hypso_c(palette = "dem_screen", limits = c(200, 1000))+
   theme(rect = element_rect(fill = "transparent", color = NA))+
   ggspatial::annotation_scale(location = 'tr', pad_x = unit(1, "cm"), 
                               pad_y = unit(1, "cm"))
+  
+#rotated map
+  ggplot()+
+  theme_void()+
+  geom_sf(data = terra::spin(fb_outline, 90, 279933.5, 4869173), fill = NA, color = "#397367", alpha = 0.3, lwd = 2)+
+  geom_sf(data = terra::spin(fb_net, 90, 279933.5, 4869173), colour = "grey", lwd = 1) +
+geom_sf(data =  terra::spin(lcc_fb, 90, 279933.5, 4869173) %>% inner_join(ID_acc_fb, by = "ID"),
+        aes(fill = accuracy), size = 4, pch = 21) +
+     scale_fill_gradient(low = "white", high = "black")+
+
+  #scale_shape_manual(values = c(21, 24, 22))+
+  theme(rect = element_rect(fill = "transparent", color = NA)) +
+  facet_grid( ~ model)
 
 ```
 ```{r ZZ-map}
@@ -3909,6 +4169,59 @@ fixefixefixed_combined %>%
          method %in% c("cheapest_insertion", "Flow Permanence")) %>% print(n = 50)
 ```
 
+```{r combine-and-plot-two}
+#fixing randomly generated sequence
+fixed_combined2 <- 
+rbind(general_graph(W3_IDs, "W3", methods = c("random"), two_opt = FALSE),
+      general_graph(W3_IDs, "W3", methods = c("cheapest_insertion"), two_opt = TRUE),
+      all_pk,
+      all_twi,
+      mutate(calc_props(opt_routes, "W3"), method = "concorde")
+      ) %>% 
+  filter(shed == "W3")
+
+four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2", "green")
+
+#fixing names for legend, and factor levels
+
+fixed_combined2 %>% 
+  ungroup() %>% 
+  # mutate(method = case_when(method == "random" ~ "Random",
+  #                           method == "Flow Permanence" ~ "Proportion of Time Flowing",
+  #                           method == "cheapest_insertion" ~ "TSP Solution",
+  #                           method == "Topographic Wetness Index" ~ "Topographic Wetness Index")) %>% 
+  # mutate(timescale = case_when(timescale == "30mins" ~ "30 Minute Frequency",
+  #                              timescale == "daily" ~ "Daily Average Flow State")) %>% 
+  # mutate(method = fct_relevel(method, 
+  #                             c("TSP Solution",  "Proportion of Time Flowing", "Random",
+  #                                "Topographic Wetness Index", "concorde"))) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(color = method, fill = method), alpha = 0.5)+
+    stat_central_tendency(aes(color = method), type = "median", linetype = "dashed")+
+    #geom_density(alpha = 0.5, lty = 3)+
+     # geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_classic2()+
+  #ylim(c(0, 6.25))+
+  xlim(c(0,1))+
+  labs(title = "Proportion of Transitions where Sequence is Followed",
+       x = "Proportion of transitions that are sequential",
+       y = "Density")+
+  scale_fill_manual(values = four_colors,
+                     name = "Method")+
+  scale_color_manual(values = four_colors,
+                     name = "Method")+
+  scale_linetype_manual(values = 2, name = "Median")+
+  scale_x_continuous(labels = c("0", "0.25", "0.5", "0.75", "1"), expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0))+
+  theme(panel.spacing = unit(1, "lines"))+
+  facet_grid(shed~timescale)
+
+fixefixefixed_combined %>% 
+  filter(timescale == "30mins", 
+         shed == "W3",
+         method %in% c("cheapest_insertion", "Flow Permanence")) %>% print(n = 50)
+```
+
 Can also calculate proportion of sequential behavior through time! Comes out looking better than modeling using Botter & Durighetto
 
 ```{r calculate-how-many-follow-sequence}
@@ -4424,7 +4737,7 @@ calc_props_silly(test, "W3")
 ```
 
 Final first graph
-```{r}
+```{r W3}
 #final first graph
 test <- input_w3 %>% 
   select(datetime, ID, binary) %>% 
@@ -4450,18 +4763,21 @@ test %>% ungroup() %>%
   ggplot(aes(x = shed, y = count, fill = state_change))+
   geom_histogram(stat = "identity")
 
-#changing_dates <- 
+changing_dates <- 
   test %>% 
   ungroup() %>% 
   select(datetime, state_change) %>% 
   group_by(datetime) %>% 
-  filter(state_change != "none") #%>% select(datetime) %>% unique() %>% 
+  filter(state_change != "none") %>% select(datetime) %>% unique() %>% 
   mutate(status = "changing")
+  
+  length(changing_dates$datetime)/48
+  length(unique(input_w3$datetime))/48
 
 `%not_in%` <- purrr::negate(`%in%`)
 
 #bar of total timesteps
-test %>% 
+w3_bar_ready <- test %>% 
   ungroup() %>% 
   select(datetime) %>% unique() %>% 
 filter(datetime %not_in% changing_dates$datetime) %>% 
@@ -4469,11 +4785,135 @@ filter(datetime %not_in% changing_dates$datetime) %>%
   bind_rows(changing_dates) %>% 
   group_by(status) %>% 
   summarise(count = length(status)) %>% 
-  mutate(shed = "W3") %>% 
+  mutate(shed = "W3")
+  #ungroup() %>% 
+
+w3_bar_ready %>% 
+  ggplot(aes(x = shed, y = count/sum(count), fill = status))+
+  geom_histogram(stat = "identity")
+
+#one more thing, looking at the accuracy during times of transition
+make_change <- test %>% 
+  ungroup() %>% 
+  select(datetime) %>% unique() %>% 
+filter(datetime %not_in% changing_dates$datetime) %>% 
+  mutate(status = "no change") %>% 
+  bind_rows(changing_dates)
+
+df_summary_time_w3 %>% 
+  pivot_longer(-datetime) %>% 
+left_join(make_change, by = "datetime") %>% 
+  group_by(name, status) %>% 
+  summarise(average_acc = mean(value),
+            sd(value))
+```
+```{r FB}
+#final first graph
+test <- input_fb %>% 
+  select(datetime, ID, binary) %>% 
+    group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) #%>% 
+  #filter(transition %in% c(-1, 1))
+
+test$state_change <- "none"
+test$state_change[test$transition == -1] <- "wetting"
+test$state_change[test$transition == 1] <- "drying"
+
+test %>% ungroup() %>% 
+  group_by(state_change) %>% 
+  summarise(count = length(state_change))
+
+length(test$datetime)
+
+test %>% ungroup() %>% 
+  group_by(state_change) %>% 
+  summarise(count = length(state_change)) %>% 
+  mutate(shed = "FB" ) %>% 
+  ggplot(aes(x = shed, y = count, fill = state_change))+
+  geom_histogram(stat = "identity")
+
+changing_dates <- 
+  test %>% 
+  ungroup() %>% 
+  select(datetime, state_change) %>% 
+  group_by(datetime) %>% 
+  filter(state_change != "none") %>% select(datetime) %>% unique() %>% 
+  mutate(status = "changing")
+  
+#  length(changing_dates$datetime)/48
+#  length(unique(input_w3$datetime))/48
+
+#bar of total timesteps
+fb_bar_ready <- test %>% 
+  ungroup() %>% 
+  select(datetime) %>% unique() %>% 
+filter(datetime %not_in% changing_dates$datetime) %>% 
+  mutate(status = "no change") %>% 
+  bind_rows(changing_dates) %>% 
+  group_by(status) %>% 
+  summarise(count = length(status)) %>% 
+  mutate(shed = "FB")
+
+fb_bar_ready %>% 
   #ungroup() %>% 
   ggplot(aes(x = shed, y = count/sum(count), fill = status))+
   geom_histogram(stat = "identity")
 ```
+```{r ZZ}
+#final first graph
+test <- input_zz %>% 
+  select(datetime, ID, binary) %>% 
+    group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) #%>% 
+  #filter(transition %in% c(-1, 1))
+
+test$state_change <- "none"
+test$state_change[test$transition == -1] <- "wetting"
+test$state_change[test$transition == 1] <- "drying"
+
+test %>% ungroup() %>% 
+  group_by(state_change) %>% 
+  summarise(count = length(state_change))
+
+length(test$datetime)
+
+test %>% ungroup() %>% 
+  group_by(state_change) %>% 
+  summarise(count = length(state_change)) %>% 
+  mutate(shed = "ZZ" ) %>% 
+  ggplot(aes(x = shed, y = count, fill = state_change))+
+  geom_histogram(stat = "identity")
+
+changing_dates <- 
+  test %>% 
+  ungroup() %>% 
+  select(datetime, state_change) %>% 
+  group_by(datetime) %>% 
+  filter(state_change != "none") %>% select(datetime) %>% unique() %>% 
+  mutate(status = "changing")
+  
+#  length(changing_dates$datetime)/48
+#  length(unique(input_w3$datetime))/48
+
+#bar of total timesteps
+zz_bar_ready <- test %>% 
+  ungroup() %>% 
+  select(datetime) %>% unique() %>% 
+filter(datetime %not_in% changing_dates$datetime) %>% 
+  mutate(status = "no change") %>% 
+  bind_rows(changing_dates) %>% 
+  group_by(status) %>% 
+  summarise(count = length(status)) %>% 
+  mutate(shed = "ZZ")
+
+zz_bar_ready %>% 
+  #ungroup() %>% 
+  ggplot(aes(x = shed, y = count/sum(count), fill = status))+
+  geom_histogram(stat = "identity")
+```
+
 Final second graph
 ```{r}
 filtered_input <- input_w3 %>%
@@ -4739,19 +5179,20 @@ hist_prep(routes_w3_random) %>%
 NEED TO FIX COLORS
 ```{r}
 #plot the best at each timestep
-df_long %>% 
+df_long_w3 %>% 
   group_by(datetime) %>% 
   filter(accuracy == max(accuracy)) %>% 
   mutate(dup = as.character(n() > 1)) %>% ungroup()  %>% 
   mutate(unique_sol = case_when(dup == TRUE ~ "z_tie",
                                 dup == FALSE ~ model)) %>% 
-inner_join(big_comb, by = "datetime") %>% 
+inner_join(big_comb, by = "datetime") #%>% 
   ggplot(aes(x = datetime, y = Q_mm_day, color = unique_sol, alpha = accuracy)) +
   #geom_point() +
   geom_point(size = 1)+
   theme_classic()+
   scale_color_manual(values = c(four_colors, "grey"))+
-  labs(title = "Most accurate model along hydrograph", y = "Discharge (mm/day)", x = "")
+  labs(title = "Most accurate model along hydrograph", y = "Discharge (mm/day)", x = "")+
+  facet_wrap(~ unique_sol)
 
 ```
 
@@ -4908,7 +5349,7 @@ q_24_bind <-
   select(datetime, Q_mmperday) %>% 
   rename("Q_mm_day" = Q_mmperday)
 
-big_comb <- rbind(q_23_bind, q_24_bind) %>% 
+big_comb <- rbind(q_23_bind, q_24_bind) #%>% 
   inner_join(comparison, by = "datetime")
 ```
 ### W3
@@ -6281,7 +6722,7 @@ return(output)}
 }
 
 #test function
-#all_transitions("r_23", "r_6", input)
+all_transitions("r_23", "r_6", input)
 
 #function to break up groups of continuous measurements, ensure that gaps are not considered
 #contains calc_support function
@@ -6314,7 +6755,7 @@ iterate_groups_wd <- function(up, down, input, timestep){
   return(iterate_groups_alldat)
 }
 
-#iterate_groups_wd("r_23", "r_6", input, hours(1))
+iterate_groups_wd("r_23", "r_6", input, minutes(30))
 #function to take a list of routes and input dataset
 #contains group iteration function
 #for loop to iterate through full list of combinations of up and downstream locations
@@ -6421,6 +6862,12 @@ geom_density(aes(fill = direction, color = direction), alpha = 0.5)+
   xlim(c(0,1))+
   facet_grid(shed~timescale)
 
+
+sults_so_far %>% 
+  filter(shed == "W3", timescale == "30mins") %>% 
+  group_by(direction) %>% 
+  summarise(mean(prop))
+
 #for each scenario create the routes, inputs, and specify the timestep
 
 calc_props <- function(routes, shed){
@@ -6444,6 +6891,49 @@ un_split <- total_state_changes %>%
 return(un_split)
 }
 ```
+
+```{r}
+
+routes <- W3_cheap %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+
+all_tsp_wd <- rbind(fantastic_four_wd(routes_w3, "W3"),
+                      fantastic_four_wd(routes_fb, "FB"),
+                      fantastic_four_wd(routes_zz, "ZZ")) %>% 
+  mutate("hierarchy" = "TSP")
+
+sults_so_far_tsp <- all_tsp_wd %>% 
+  group_by(up, down, timescale, shed, hierarchy) %>%
+    summarise(avg_wet_prop = mean(wetting),
+              avg_dry_prop = mean(drying)) %>% 
+  pivot_longer(cols = starts_with("avg"),
+               names_to = "direction",
+               values_to = "prop")
+
+sults_so_far_tsp$direction[sults_so_far_tsp$direction == "avg_wet_prop"] <- "wetting"
+sults_so_far_tsp$direction[sults_so_far_tsp$direction == "avg_dry_prop"] <- "drying"
+
+#plot
+sults_so_far_tsp %>% 
+  #filter(timescale %in% c(possible_times[t])) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(fill = direction, color = direction), alpha = 0.5)+
+    geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  labs(
+       x = "Proportion of time followed",
+       y = "Density")+
+  scale_fill_manual(values = c("#FFA400", "#93C2F1"),name = "Direction")+
+  scale_color_manual(values = c("#FFA400", "#93C2F1"), name = "Direction")+
+  ylim(c(0, 4))+
+  xlim(c(0,1))+
+  facet_grid(shed~timescale)
+```
+
 
 ```{r proportion-of-time-flowing-analysis}
 routes_w3 <- pks_w3 %>% 
