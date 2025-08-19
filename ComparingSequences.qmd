@@ -1560,110 +1560,6 @@ filter_ATSP_as_TSP_dummies(as.TOUR(sol+1))
 
 ```
 
-```{r}
-
-edges_W3
-# 1. JV-transform + dummy
-atsp_to_stsp <- function(cost_mat, dummy_cost = 0) {
-  n <- nrow(cost_mat)
-  M <- max(cost_mat) * n + 1  # big constant
-  
-  # JV transform: create 2n x 2n symmetric matrix
-  sym_mat <- matrix(M, nrow = 2*n, ncol = 2*n)
-  
-  # link in->out copies (zero cost)
-  for (i in 1:n) {
-    sym_mat[i, n+i] <- 0
-    sym_mat[n+i, i] <- 0
-  }
-  
-  # original costs from out(i) to in(j)
-  for (i in 1:n) {
-    for (j in 1:n) {
-      if (i != j) {
-        sym_mat[n+i, j] <- cost_mat[i, j]
-        sym_mat[j, n+i] <- cost_mat[i, j]
-      }
-    }
-  }
-  
-  # Add dummy node
-  sym_with_dummy <- matrix(M, nrow = 2*n + 1, ncol = 2*n + 1)
-  sym_with_dummy[1:(2*n), 1:(2*n)] <- sym_mat
-  
-  dummy_idx <- 2*n + 1
-  # Connect dummy to all "in" nodes with dummy_cost
-  sym_with_dummy[dummy_idx, 1:n] <- dummy_cost
-  sym_with_dummy[1:n, dummy_idx] <- dummy_cost
-  
-  # return symmetric matrix
-  sym_with_dummy
-}
-
-out_matrix <- atsp_to_stsp(edges_W3)
-# 2. Write TSPLIB file
-write_tsplib <- function(sym_mat, file) {
-  tsp_obj <- TSP(as.dist(sym_mat))
-  write_TSPLIB(tsp_obj, file = file)
-}
-
-write_tsplib(out_matrix, "~/Documents/concorde/myinstance.tsp")
-# 3. Read Concorde .sol and convert to ATSP tour
-read_concorde_sol <- function(sol_file, cost_mat) {
-  n <- nrow(cost_mat)
-  tour_nodes <- scan(sol_file, what = integer(), quiet = TRUE)
-  
-  # Remove first line if it's length
-  if (length(tour_nodes) == n + 1 || length(tour_nodes) == 2*n + 1 || length(tour_nodes) == 2*n + 2) {
-    # If first number equals length of tour, drop it
-    if (tour_nodes[1] == length(tour_nodes) - 1) {
-      tour_nodes <- tour_nodes[-1]
-    }
-  }
-  
-  # Remove dummy index if present
-  dummy_idx <- 2*n + 1
-  tour_nodes <- tour_nodes[tour_nodes != (dummy_idx - 1)]  # Concorde may index from 0
-  
-  # Map back to original ATSP nodes: out(i) -> i, in(i) -> i
-  atsp_tour <- unique(((tour_nodes %% n) + 1))
-  
-  atsp_tour
-}
-
-con_big <- read_concorde_sol("~/Documents/concorde/TSP/mysolution.tour", edges_W3)
-
-concon2 <- tibble(node_ID = con_big, sequence = seq(1, length(con_big), 1)) %>% 
-  left_join(key2, by = "node_ID") %>%
-  rename(ID = sensor_ID) %>% 
-  select(ID, sequence)
-  
-
-#con_model <- calc_model_result(concon$ID, "W3") %>% rename("con" = pred_out)
-produce_metrics(concon2, "W3", "concorde")
-
-#both of these are the same, the concorde solution to my TSP
-concon
-concon2
-
-opt_routes <- 
-  tibble(node_ID = con_big) %>% 
-  left_join(key2, by = "node_ID") %>% 
-  mutate(down = lag(sensor_ID)) %>% 
-    rename("up" = sensor_ID) %>% 
-    select(up, down) %>% drop_na()
-
-# actually determining how often the nodes follow proportion of time flowing sequence
-calc_props(opt_routes, "W3")
-# Example usage:
-# Suppose cost_df is your n x n dataframe of ATSP costs
-# cost_mat <- as.matrix(cost_df)
-# sym <- atsp_to_stsp(cost_mat, dummy_cost = 0)
-# write_tsplib(sym, "instance.tsp")
-# (Run Concorde externally on instance.tsp to get instance.sol)
-# tour <- read_concorde_sol("instance.sol", nrow(cost_mat))
-
-```
 
 Trying one more thing- what if the sequence was defined in order by average prop value when it is the parent?
 ```{r}
@@ -1695,6 +1591,34 @@ new_seq %>%
 View()
 ```
 New sequence is just as good as proportion of time flowing, but definitely a different sequence... definitely related to the number of transitions I think
+
+Calculate new sequence for figure 5:
+```{r}
+new_seq <- 
+  W3_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  rename(parent = down,
+         child = up) %>% 
+  group_by(parent) %>% 
+  summarise(mean = mean(prop),
+            sd = sd(prop)) %>% 
+  arrange(desc(mean)) %>% View()
+  mutate(sequence = seq(1, length(con_big), 1)) %>% 
+  rename(ID = parent) %>% 
+  mutate(ID = as.numeric(substr(ID, 3, 4))) %>% 
+  select(ID, sequence)
+  
+opt_routes <- 
+  new_seq %>% 
+  mutate(down = lag(ID)) %>% 
+    rename("up" = ID) %>% 
+    select(up, down) %>% drop_na()
+  
+calc_props(opt_routes, "W3")
+```
+
 
 ```{r FB-analysis}
 #define all possible methods
@@ -1947,6 +1871,250 @@ Make a map of the activation sequence
 ```{r}
 
 ```
+
+## Concorde solver
+```{r W3}
+keyz_w3 <- 
+  W3_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) #%>% as.matrix() %>% unname()
+#create an accurate key, old one is WRONG!!!
+key2_w3 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz_w3), 3, 4)),
+                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz_w3), 3, 4))), 1))
+
+edges_W3 <- 
+  W3_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) %>% as.matrix() %>% unname()
+
+
+
+# 1. JV-transform + dummy
+atsp_to_stsp <- function(cost_mat, dummy_cost = 0) {
+  n <- nrow(cost_mat)
+  M <- max(cost_mat) * n + 1  # big constant
+  
+  # JV transform: create 2n x 2n symmetric matrix
+  sym_mat <- matrix(M, nrow = 2*n, ncol = 2*n)
+  
+  # link in->out copies (zero cost)
+  for (i in 1:n) {
+    sym_mat[i, n+i] <- 0
+    sym_mat[n+i, i] <- 0
+  }
+  
+  # original costs from out(i) to in(j)
+  for (i in 1:n) {
+    for (j in 1:n) {
+      if (i != j) {
+        sym_mat[n+i, j] <- cost_mat[i, j]
+        sym_mat[j, n+i] <- cost_mat[i, j]
+      }
+    }
+  }
+  
+  # Add dummy node
+  sym_with_dummy <- matrix(M, nrow = 2*n + 1, ncol = 2*n + 1)
+  sym_with_dummy[1:(2*n), 1:(2*n)] <- sym_mat
+  
+  dummy_idx <- 2*n + 1
+  # Connect dummy to all "in" nodes with dummy_cost
+  sym_with_dummy[dummy_idx, 1:n] <- dummy_cost
+  sym_with_dummy[1:n, dummy_idx] <- dummy_cost
+  
+  # return symmetric matrix
+  sym_with_dummy
+}
+
+out_matrix_w3 <- atsp_to_stsp(edges_W3)
+# 2. Write TSPLIB file
+write_tsplib <- function(sym_mat, file) {
+  tsp_obj <- TSP(as.dist(sym_mat))
+  write_TSPLIB(tsp_obj, file = file)
+}
+
+write_tsplib(out_matrix_w3, "~/Documents/concorde/W3.tsp")
+
+#/Users/johnmorgan/Documents/concorde/TSP/concorde -o W3solution.tour /Users/johnmorgan/Documents/concorde/W3.tsp
+
+# 3. Read Concorde .sol and convert to ATSP tour
+read_concorde_sol <- function(sol_file, cost_mat) {
+  n <- nrow(cost_mat)
+  tour_nodes <- scan(sol_file, what = integer(), quiet = TRUE)
+  
+  # Remove first line if it's length
+  if (length(tour_nodes) == n + 1 || length(tour_nodes) == 2*n + 1 || length(tour_nodes) == 2*n + 2) {
+    # If first number equals length of tour, drop it
+    if (tour_nodes[1] == length(tour_nodes) - 1) {
+      tour_nodes <- tour_nodes[-1]
+    }
+  }
+  
+  # Remove dummy index if present
+  dummy_idx <- 2*n + 1
+  tour_nodes <- tour_nodes[tour_nodes != (dummy_idx - 1)]  # Concorde may index from 0
+  
+  # Map back to original ATSP nodes: out(i) -> i, in(i) -> i
+  atsp_tour <- unique(((tour_nodes %% n) + 1))
+  
+  atsp_tour
+}
+
+con_big_w3 <- read_concorde_sol("~/Documents/concorde/TSP/W3solution.tour", edges_W3)
+
+concon2_w3 <- tibble(node_ID = con_big_w3, sequence = seq(1, length(con_big_w3), 1)) %>% 
+  left_join(key2_w3, by = "node_ID") %>%
+  rename(ID = sensor_ID) %>% 
+  select(ID, sequence)
+  
+#con_model <- calc_model_result(concon$ID, "W3") %>% rename("con" = pred_out)
+produce_metrics(concon2, "W3", "concorde")
+
+opt_routes_w3 <- 
+  concon2 %>% 
+  mutate(down = lag(ID)) %>% 
+    rename("up" = ID) %>% 
+    select(up, down) %>% drop_na()
+
+# actually determining how often the nodes follow proportion of time flowing sequence
+conc_props_w3 <- calc_props(opt_routes, "W3")
+
+conc_props_w3 %>% 
+  filter(timescale == "30mins") %>% 
+  hist(prop)
+
+hist(conc_props_w3$prop)
+```
+```{r FB}
+keyz_fb <- 
+  FB_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) #%>% as.matrix() %>% unname()
+#create an accurate key, old one is WRONG!!!
+key2_fb <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz_fb), 3, 4)),
+                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz_fb), 3, 4))), 1))
+
+edges_FB <- 
+  FB_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>% #%>% #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    mutate(
+    across(everything(), ~replace_na(.x, 1))
+  ) %>%
+    select(-up) %>% as.matrix() %>% unname()
+
+
+out_matrix_fb <- atsp_to_stsp(edges_FB)
+
+write_tsplib(out_matrix_fb, "~/Documents/concorde/FB.tsp")
+#/Users/johnmorgan/Documents/concorde/TSP/concorde -o FBsolution.tour /Users/johnmorgan/Documents/concorde/FB.tsp
+
+con_big_fb <- read_concorde_sol("~/Documents/concorde/TSP/FBsolution.tour", edges_FB)
+
+concon_fb <- tibble(node_ID = con_big_fb, sequence = seq(1, length(con_big_fb), 1)) %>% 
+  left_join(key2_fb, by = "node_ID") %>%
+  rename(ID = sensor_ID) %>% 
+  select(ID, sequence)
+  
+#con_model <- calc_model_result(concon$ID, "W3") %>% rename("con" = pred_out)
+produce_metrics(concon_fb, "FB", "concorde")
+
+opt_routes_fb <- 
+  tibble(node_ID = con_big_fb) %>% 
+  left_join(key2_fb, by = "node_ID") %>% 
+  mutate(down = lag(sensor_ID)) %>% 
+    rename("up" = sensor_ID) %>% 
+    select(up, down) %>% drop_na()
+
+# actually determining how often the nodes follow proportion of time flowing sequence
+hist(calc_props(opt_routes, "FB")$prop)
+conc_props_fb <- calc_props(opt_routes, "FB")
+```
+```{r ZZ}
+keyz_zz <- 
+  ZZ_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) #%>% as.matrix() %>% unname()
+#create an accurate key, old one is WRONG!!!
+key2_zz <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz_zz), 3, 4)),
+                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz_zz), 3, 4))), 1))
+#set up edges and distance matrix, convert to TSP object
+
+#IF there are NAs, replace them with 1; results from when there is a node that flowed the whole time it was deployed along with another, and not deployed for part of the other one's deployment; happened most in FB
+
+edges_ZZ <- 
+  ZZ_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) %>% as.matrix() %>% unname()
+
+
+out_matrix_zz <- atsp_to_stsp(edges_ZZ)
+
+write_tsplib(out_matrix_zz, "~/Documents/concorde/ZZ.tsp")
+#/Users/johnmorgan/Documents/concorde/TSP/concorde -o ZZsolution.tour /Users/johnmorgan/Documents/concorde/ZZ.tsp
+
+con_big_zz <- read_concorde_sol("~/Documents/concorde/TSP/ZZsolution.tour", edges_ZZ)
+
+concon_zz <- tibble(node_ID = con_big_zz, sequence = seq(1, length(con_big_zz), 1)) %>% 
+  left_join(key2_zz, by = "node_ID") %>%
+  rename(ID = sensor_ID) %>% 
+  select(ID, sequence)
+  
+#con_model <- calc_model_result(concon$ID, "W3") %>% rename("con" = pred_out)
+produce_metrics(concon_zz, "ZZ", "concorde")
+
+opt_routes_zz <- 
+  tibble(node_ID = con_big_zz) %>% 
+  left_join(key2_zz, by = "node_ID") %>% 
+  mutate(down = lag(sensor_ID)) %>% 
+    rename("up" = sensor_ID) %>% 
+    select(up, down) %>% drop_na()
+
+# actually determining how often the nodes follow proportion of time flowing sequence
+conc_props_zz <- calc_props(opt_routes, "ZZ")
+
+
+all_conc <- rbind(conc_props_w3,
+                  conc_props_fb,
+                  conc_props_zz) %>% 
+  mutate(method = "Concorde TSP")
+```
+
 
 
 ## Defining genearlized function
@@ -2835,6 +3003,119 @@ zz_twi_sequence <- zz_twi %>%
 
 ```
 
+# Defining New Sequence- average prop value as parent node
+Calculate new sequence for figure 5:
+```{r combine}
+new_seq_w3 <- 
+  W3_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  group_by(down) %>% 
+  summarise(mean = mean(prop)) %>% 
+  arrange(desc(mean)) %>% 
+  mutate(up = as.numeric(substr(down, 3, 4)),
+         down = lag(up)) %>% 
+  select(down, up) %>% 
+  drop_na()
+
+new_seq_fb <- 
+  FB_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  group_by(down) %>% 
+  summarise(mean = mean(prop)) %>% 
+  arrange(desc(mean)) %>% 
+  mutate(up = as.numeric(substr(down, 3, 4)),
+         down = lag(up)) %>% 
+  select(down, up) %>% 
+  drop_na()
+
+new_seq_zz <- 
+  ZZ_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  group_by(down) %>% 
+  summarise(mean = mean(prop)) %>% 
+  arrange(desc(mean)) %>% 
+  mutate(up = as.numeric(substr(down, 3, 4)),
+         down = lag(up)) %>% 
+  select(down, up) %>% 
+  drop_na()
+  
+# actually determining how often the nodes follow proportion of time flowing sequence
+all_new <- rbind(calc_props(new_seq_w3, "W3"),
+                calc_props(new_seq_fb, "FB"),
+                calc_props(new_seq_zz, "ZZ")) %>% 
+  mutate("method" = "Average Sequential Wetting")
+```
+
+Make them ID/sequence format
+```{r}
+#write wrapper functions to convert between the two forms easily
+#routes_w3 <- 
+  pks_w3 %>% 
+    filter(ID %in% W3_IDs) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+#convert from up/down to ID/seq
+convert_to_IDseq <- function(input){
+
+  convert <-
+    input %>%
+    mutate(sequence = seq(1, length(input$up), 1)) %>%
+    rename(ID = down) %>%
+    select(ID, sequence)
+return(convert)
+}
+  
+
+#convert from ID/seq to up/down
+input <- W3_cheap
+
+  input %>% 
+    mutate(down = "")
+  mutate(up = as.numeric(substr(down, 3, 4)),
+         down = lag(up)) %>% 
+  select(down, up) %>% 
+  drop_na()
+```
+
+# Defining random sequences
+
+```{r}
+W3_random <- 
+tibble(down = sample(W3_IDs)) %>% 
+  mutate(up = lag(down)) %>% 
+  select(up, down) %>% 
+  drop_na()
+
+FB_random <- 
+tibble(down = sample(FB_IDs)) %>% 
+  mutate(up = lag(down)) %>% 
+  select(up, down) %>% 
+  drop_na()
+
+ZZ_random <- 
+tibble(down = sample(ZZ_IDs)) %>% 
+  mutate(up = lag(down)) %>% 
+  select(up, down) %>% 
+  drop_na()
+
+
+#create randomly generated sequences
+all_random <- rbind(calc_props(W3_random, "W3"),
+                    calc_props(FB_random, "FB"),
+                    calc_props(ZZ_random, "ZZ")) %>% 
+  mutate(method = "Random")
+```
+
+
 # Testing Sequences, running model
 This section contains all chunks used to test the effectiveness of a given sequence.  
 Model is using same Method as Botter et al. 2021, where the number of active nodes at a given timestep is known. Nodes are activated in order of the sequence until the number activated is reached. The presence or absence of flow based on the model is then compared to the actual values for each node at each timestep.  
@@ -3098,14 +3379,14 @@ get_eval_label(0,0)
 Run on W3
 ```{r W3}
 
-W3_random <- tibble(ID = sample(W3_IDs),
-                    sequence = seq(1, length(W3_IDs), 1))
+
 #running model
 cheap_model_w3 <- calc_model_result(W3_cheap$ID, "W3") %>% rename("cheapest" = pred_out)
 pk_model_w3 <- calc_model_result(W3_pk_seq$ID, "W3") %>% rename("pk" = pred_out)
 random_model_w3 <- calc_model_result(W3_random$ID, "W3") %>% rename("random" = pred_out)
 twi_model_w3 <- calc_model_result(w3_twi_sequence$ID, "W3") %>% rename("twi" = pred_out)
-
+new_model_w3 <- calc_model_result(new_seq_w3$down, "W3") %>% rename("new" = pred_out)
+con_model_w3 <- calc_model_result(opt_routes_w3$down, "W3") %>% rename("concorde" = pred_out)
 
 
 comparison_w3 <- input_w3 %>% 
@@ -3114,6 +3395,8 @@ comparison_w3 <- input_w3 %>%
   left_join(pk_model_w3, by = c("datetime", "ID")) %>% 
     left_join(random_model_w3, by = c("datetime", "ID")) %>% 
   left_join(twi_model_w3, by = c("datetime", "ID")) %>% 
+  left_join(new_model_w3, by = c("datetime", "ID")) %>% 
+    left_join(con_model_w3, by = c("datetime", "ID")) %>% 
   select(-wshed, -mins) %>% 
   drop_na()
 
@@ -3122,6 +3405,10 @@ comparison_w3$cheapest_eval <- mapply(get_eval_label, comparison_w3$binary, comp
 comparison_w3$pk_eval <- mapply(get_eval_label, comparison_w3$binary, comparison_w3$pk)
 comparison_w3$random_eval <- mapply(get_eval_label, comparison_w3$binary, comparison_w3$random)
 comparison_w3$twi_eval <- mapply(get_eval_label, comparison_w3$binary, comparison_w3$twi)
+comparison_w3$new_eval <- mapply(get_eval_label, comparison_w3$binary, comparison_w3$new)
+comparison_w3$con_eval <- mapply(get_eval_label, comparison_w3$binary, comparison_w3$concorde)
+
+
 
 # comparison$comparison_cheap <- with(comparison, ifelse(
 #   cheapest_eval == pk_eval, "equal",
@@ -3147,19 +3434,27 @@ df_summary_time_w3 <- comparison_w3 %>%
     pk_correct = sum(pk_eval == "correct"),
     random_correct = sum(random_eval == "correct"),
     twi_correct = sum(twi_eval == "correct"),
+    new_correct = sum(new_eval == "correct"),
+      new_correct = sum(new_eval == "correct"),
+    con_correct = sum(con_eval == "correct"),
+
+
     total = n(),
     cheap_accuracy = cheap_correct / total,
     pk_accuracy = pk_correct / total,
     random_accuracy = random_correct / total,
-    twi_accuracy = twi_correct / total
+    twi_accuracy = twi_correct / total,
+    new_accuracy = new_correct / total,
+    con_accuracy = con_correct / total
+
+
   )
 
-df_summary_time_w3 <- df_summary_time_w3 %>%
-  select(datetime, contains("accuracy"))
-
 df_long_w3 <- df_summary_time_w3 %>%
-  select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
-  tidyr::pivot_longer(cols = c(cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy), names_to = "model", values_to = "accuracy")
+  select(datetime, contains("accuracy")) %>% 
+  tidyr::pivot_longer(cols = c(cheap_accuracy, pk_accuracy, 
+                               random_accuracy, twi_accuracy, new_accuracy, con_accuracy), 
+                      names_to = "model", values_to = "accuracy")
 
 #make data long for final plot
 comparison_long_w3 <- 
@@ -3171,6 +3466,9 @@ comparison_long_w3 <-
 
 #plot of correct, ommission, and commission through time
 comparison_long_w3 %>% 
+  filter(#name != "random_eval",
+         name != "cheapest_eval",
+         name != "con_eval") %>% 
   mutate(day_of_year = yday(datetime)
   ) %>% 
   mutate(total = as.numeric(length(value))) %>% 
@@ -3378,11 +3676,11 @@ ggplot()+
   geom_spatraster(data = crop1, alpha = 0.5)+
      scale_fill_hypso_c(palette = "dem_screen" , limits = c(200, 1000))
 
-#test <- 
+w3_map_f1 <- 
   ggplot()+
   geom_spatraster(data = hill)+
   theme_void()+
-  #theme(legend.position = "")+
+  theme(legend.position = "")+
   scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
     new_scale_fill() +
   geom_spatraster(data = crop1, alpha = 0.5)+
@@ -3394,9 +3692,12 @@ ggplot()+
   #geom_sf(data = w3_pour, colour = "black") +
    scale_fill_hypso_c(palette = "dem_screen" , limits = c(200, 1000))+
   theme(rect = element_rect(fill = "transparent", color = NA))+
-  ggspatial::annotation_scale(location = 'tr', pad_x = unit(1, "cm"), 
-                              pad_y = unit(1, "cm"))
-
+  ggspatial::annotation_scale(location = 'tr',
+                              pad_x = unit(1, "cm"),
+                              pad_y = unit(0.1, "cm"))
+                              
+w3_map_f1
+#ggsave(w3_map_f1)
 
 ```
 ```{r FB-map}
@@ -3497,46 +3798,31 @@ locs_shape_fb <- vect(locs,
 lcc_fb <- terra::project(locs_shape_fb, crs(m1))
 
 #assign destination for hillshade calculation
-hillshade_out <- "./fb_dems/1mdem_hillshade.tif"
+hillshade_out_fb <- "./fb_dems/1mdem_hillshade.tif"
 # wbt_hillshade(
 #   dem = fb_crop,
 #   output = hillshade_out,
 # )
-hill <- rast(hillshade_out)
+hill_fb <- rast(hillshade_out_fb)
 
 #final plot with cropped hillshade and dem, STIC locations, watershed boundary, and stream network.
 #fb_map <- 
-ggplot()+
-  geom_spatraster(data = t(flip(hill)))
-
   ggplot()+
-  geom_spatraster(data = t(flip(hill)))+
+  geom_spatraster(data = hill_fb)+
   theme_void()+
   theme(legend.position = "")+
   scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
     new_scale_fill() +
-  geom_spatraster(data = t(flip(crop1)), alpha = 0.5)+
-    geom_sf(data = terra::spin(fb_outline, 90, 279933.5, 4869173), fill = NA, color = "#397367", alpha = 0.3, lwd = 2) +
-  geom_sf(data = terra::spin(fb_net, 90, 279933.5, 4869173), colour = "darkslategray3", lwd = 2) +
-    geom_sf(data = terra::spin(lcc_fb, 90, 279933.5, 4869173), colour = "midnightblue", pch = 19, size = 2) +
+  geom_spatraster(data = crop1, alpha = 0.5)+
+    geom_sf(data = fb_outline, fill = NA, color = "#397367", alpha = 0.3, lwd = 2) +
+  geom_sf(data = fb_net, colour = "darkslategray3", lwd = 2) +
+    geom_sf(data = lcc_fb, colour = "midnightblue", pch = 19, size = 2) +
   #geom_sf(data = fb_pour, colour = "black", pch = 8, size = 3) +
    scale_fill_hypso_c(palette = "dem_screen", limits = c(200, 1000))+
   theme(rect = element_rect(fill = "transparent", color = NA))+
   ggspatial::annotation_scale(location = 'tr', pad_x = unit(1, "cm"), 
                               pad_y = unit(1, "cm"))
   
-#rotated map
-  ggplot()+
-  theme_void()+
-  geom_sf(data = terra::spin(fb_outline, 90, 279933.5, 4869173), fill = NA, color = "#397367", alpha = 0.3, lwd = 2)+
-  geom_sf(data = terra::spin(fb_net, 90, 279933.5, 4869173), colour = "grey", lwd = 1) +
-geom_sf(data =  terra::spin(lcc_fb, 90, 279933.5, 4869173) %>% inner_join(ID_acc_fb, by = "ID"),
-        aes(fill = accuracy), size = 4, pch = 21) +
-     scale_fill_gradient(low = "white", high = "black")+
-
-  #scale_shape_manual(values = c(21, 24, 22))+
-  theme(rect = element_rect(fill = "transparent", color = NA)) +
-  facet_grid( ~ model)
 
 ```
 ```{r ZZ-map}
@@ -4112,36 +4398,35 @@ geom_density(aes(color = method, fill = method), alpha = 0.5)+
   facet_grid(shed~timescale)
 ```
 ```{r combine-and-plot-two}
+
+
+
 #fixing randomly generated sequence
 fixed_combined <- 
-rbind(general_graph(W3_IDs, "W3", methods = c("random"), two_opt = FALSE),
-      general_graph(W3_IDs, "W3", methods = c("cheapest_insertion"), two_opt = TRUE),
-      general_graph(FB_IDs, "FB", methods = c("random"), two_opt = FALSE),
-      general_graph(FB_IDs, "FB", methods = c("cheapest_insertion"), two_opt = TRUE),
-      general_graph(ZZ_IDs, "ZZ", methods = c("random"), two_opt = FALSE),
-      general_graph(ZZ_IDs, "ZZ", methods = c("cheapest_insertion"), two_opt = TRUE),
-      all_pk,
-      all_twi) 
-
-general_graph(W3_IDs, "W3", methods = c("cheapest_insertion"), two_opt = TRUE)
+rbind(all_pk,
+      all_twi, 
+      all_new,
+      #all_conc,
+      all_random
+      ) 
 
 four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
-
+five_colors <- c("#d68c45",  "#247BA0", "#A30B37", "#F0C808", "#2c6e49")
 #fixing names for legend, and factor levels
 
 fixed_combined %>% 
   ungroup() %>% 
-  mutate(method = case_when(method == "random" ~ "Random",
-                            method == "Flow Permanence" ~ "Proportion of Time Flowing",
-                            method == "cheapest_insertion" ~ "TSP Solution",
-                            method == "Topographic Wetness Index" ~ "Topographic Wetness Index")) %>% 
+  # mutate(method = case_when(method == "random" ~ "Random",
+  #                           method == "Flow Permanence" ~ "Proportion of Time Flowing",
+  #                           method == "cheapest_insertion" ~ "TSP Solution",
+  #                           method == "Topographic Wetness Index" ~ "Topographic Wetness Index")) %>%
   mutate(timescale = case_when(timescale == "30mins" ~ "30 Minute Frequency",
-                               timescale == "daily" ~ "Daily Average Flow State")) %>% 
+                               timescale == "daily" ~ "Daily Average Flow State")) %>%
   mutate(shed = fct_relevel(shed,
-                              c("W3", "FB", "ZZ"))) %>% 
-  mutate(method = fct_relevel(method, 
-                              c("TSP Solution",  "Proportion of Time Flowing", "Random",
-                                 "Topographic Wetness Index"))) %>% 
+                              c("W3", "FB", "ZZ"))) %>%
+  # mutate(method = fct_relevel(method,
+  #                             c("TSP Solution",  "Proportion of Time Flowing", "Random",
+  #                                "Topographic Wetness Index"))) %>%
   ggplot(aes(x = prop, y = after_stat(density))) +
 geom_density(aes(color = method, fill = method), alpha = 0.5)+
     stat_central_tendency(aes(color = method), type = "median", linetype = "dashed")+
@@ -4162,11 +4447,6 @@ geom_density(aes(color = method, fill = method), alpha = 0.5)+
   scale_y_continuous(expand = c(0, 0))+
   theme(panel.spacing = unit(1, "lines"))+
   facet_grid(shed~timescale)
-
-fixefixefixed_combined %>% 
-  filter(timescale == "30mins", 
-         shed == "W3",
-         method %in% c("cheapest_insertion", "Flow Permanence")) %>% print(n = 50)
 ```
 
 ```{r combine-and-plot-two}
@@ -5178,21 +5458,30 @@ hist_prep(routes_w3_random) %>%
 ## Figure 6: Hydrograph, colored by which sequence works the best
 NEED TO FIX COLORS
 ```{r}
+five_colors <- c("#d68c45",  "#247BA0", "#A30B37", "#F0C808", "#2c6e49")
+
+
 #plot the best at each timestep
+p_load(ggbreak)
 df_long_w3 %>% 
+  filter(model != "random_accuracy",
+         model != "cheap_accuracy",
+         model != "con_accuracy") %>% 
   group_by(datetime) %>% 
   filter(accuracy == max(accuracy)) %>% 
-  mutate(dup = as.character(n() > 1)) %>% ungroup()  %>% 
+  mutate(dup = as.character(n() > 1)) %>% ungroup()  %>%
   mutate(unique_sol = case_when(dup == TRUE ~ "z_tie",
-                                dup == FALSE ~ model)) %>% 
-inner_join(big_comb, by = "datetime") #%>% 
-  ggplot(aes(x = datetime, y = Q_mm_day, color = unique_sol, alpha = accuracy)) +
+                                dup == FALSE ~ model)) %>%
+inner_join(big_comb, by = "datetime") %>%
+  ggplot(aes(x = datetime, y = Q_mm_day, color = unique_sol)) +
   #geom_point() +
   geom_point(size = 1)+
   theme_classic()+
-  scale_color_manual(values = c(four_colors, "grey"))+
+  scale_color_manual(values = c(five_colors[1:3], "lightgrey"))+
   labs(title = "Most accurate model along hydrograph", y = "Discharge (mm/day)", x = "")+
-  facet_wrap(~ unique_sol)
+ # facet_wrap(~ unique_sol)+
+    scale_x_break(c(ymd_hms("2023-11-12 00:00:00"), ymd_hms("2024-05-20 00:00:00")))
+  
 
 ```
 
@@ -5200,8 +5489,8 @@ inner_join(big_comb, by = "datetime") #%>%
 ```{r W3}
 #trying to plot accuracy vs accuracy
 df_long2 <- df_summary_time_w3 %>%
-  select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
-  tidyr::pivot_longer(cols = c(cheap_accuracy, random_accuracy, twi_accuracy), 
+  select(datetime, cheap_accuracy, pk_accuracy, twi_accuracy, new_accuracy, con_accuracy) %>%
+  tidyr::pivot_longer(cols = c(twi_accuracy, new_accuracy, con_accuracy), 
                       names_to = "model", values_to = "accuracy") %>% 
     inner_join(w3_limbs, by = "datetime") %>% 
   mutate(shed = "W3")
@@ -5212,14 +5501,14 @@ df_long2 %>%
   ggplot()+
   geom_point(aes(x = pk_accuracy, 
                  y = accuracy, 
-                 size = Q_mm_day, shape = event_type, color = model),
+                 size = Q_mm_day, color = model),
              alpha = 0.5)+
-  scale_color_manual(values = c("#bb4430", "#231f20", "#f3dfa2"))+
+  scale_color_manual(values = five_colors)+
   geom_abline()+
   theme_minimal()+
   lims(y = c(0, 1),
        x = c(0, 1))+
-  facet_grid(event_type~model)
+  facet_grid(~model)
 ```
 ```{r FB}
 #trying to plot accuracy vs accuracy
@@ -6174,18 +6463,67 @@ rbind(W3_cheap %>% mutate(model = "cheapest"),
   facet_grid(rows = "model")
 
 #will it look better as a line?
-w3_explain <- rbind(W3_cheap %>% mutate(model = "cheapest"),
+#w3_explain <- 
+rbind(W3_cheap %>% mutate(model = "cheapest"),
       W3_pk_seq %>% mutate(model = "pk")) %>% #,
      # W3_random %>% mutate(model = "random"),
      # W3_twi_seq %>% mutate(model = "twi")) %>% 
   left_join(w3_topo_norm, by = "ID", relationship = "many-to-many") %>% 
   drop_na() %>%
-  mutate(shed = "W3")
-  ggplot() +
-  geom_smooth(aes(x = sequence, y = norm_value, color = name))+
-  facet_grid(~model, scales = "free_x")+
+  mutate(shed = "W3") %>% 
+  ggplot(aes(x = sequence, y = norm_value, color = name)) +
+  geom_smooth(method = 'lm', se = FALSE)+
+  geom_point()+
+  facet_grid(name~model, scales = "free_x")+
   theme_classic()
 ```
+```{r}
+# Perform regressions and get significance
+rbind(W3_cheap %>% mutate(model = "cheapest"),
+      W3_pk_seq %>% mutate(model = "pk")) %>% #,
+     # W3_random %>% mutate(model = "random"),
+     # W3_twi_seq %>% mutate(model = "twi")) %>% 
+  left_join(w3_topo_norm, by = "ID", relationship = "many-to-many") %>% 
+  as_tibble() %>% 
+group_by(model) %>% 
+  do(model = lm(sequence ~ norm_value, data = .)) #%>%
+  mutate(p_value = summary(model)$coefficients["x", "Pr(>|t|)"]) #%>%
+  mutate(significant = p_value < 0.05)
+
+W3_pk_seq %>% mutate(model = "cheapest") %>% 
+  left_join(w3_topo_norm, by = "ID", relationship = "many-to-many") %>% 
+  as_tibble() %>% 
+  filter(name == "uaa") %>% 
+  lm(sequence ~ norm_value, data = .) %>% summary()
+group_by(name) %>% 
+  summarise(summary(lm(sequence ~ norm_value, data = .))$r.squared)
+  do(model = lm(sequence ~ norm_value, data = .)) %>% print()
+  mutate(p_value = summary(model)$coefficients["x", "Pr(>|t|)"]) #%>%
+  mutate(significant = p_value < 0.05)
+  
+  
+  
+  
+models <- data %>%
+  group_by(group) %>%
+  do(model = lm(y ~ x, data = .)) %>%
+  mutate(p_value = summary(model)$coefficients["x", "Pr(>|t|)"]) %>%
+  mutate(significant = p_value < 0.05)
+
+# Merge significance information back to the original data
+data_with_significance <- left_join(data, models %>% select(group, significant), by = "group")
+
+# Plotting
+ggplot(data_with_significance, aes(x = x, y = y, color = group)) +
+  geom_point() +
+  geom_smooth(data = . %>% filter(significant), method = "lm", se = FALSE) + # Only plot significant lines
+  labs(title = "Trend Lines for Significant Relationships Only",
+       subtitle = "Based on p-value < 0.05 for slope",
+       x = "X-axis", y = "Y-axis") +
+  theme_minimal()
+```
+
+
 ```{r FB}
 
 FB_twi_seq <- fb_twi_sequence %>% 
@@ -6217,6 +6555,19 @@ fb_explain <- rbind(FB_cheap %>% mutate(model = "cheapest"),
   ggplot() +
   geom_smooth(aes(x = sequence, y = norm_value, color = name))+
   facet_grid(~model, scales = "free_x")+
+  theme_classic()
+  
+rbind(FB_cheap %>% mutate(model = "cheapest"),
+      FB_pk_seq %>% mutate(model = "pk")) %>% #,
+     # W3_random %>% mutate(model = "random"),
+     # W3_twi_seq %>% mutate(model = "twi")) %>% 
+  left_join(w3_topo_norm, by = "ID", relationship = "many-to-many") %>% 
+  drop_na() %>%
+  mutate(shed = "FB") %>% 
+  ggplot(aes(x = sequence, y = norm_value, color = name)) +
+  geom_smooth(method = 'lm', se = FALSE)+
+  geom_point()+
+  facet_grid(name~model, scales = "free_x")+
   theme_classic()
 ```
 ```{r ZZ}
@@ -6324,6 +6675,22 @@ rbind(df_long2 %>%
   geom_point(aes(x = number_of_nodes, y = pk_accuracy, color = state_change),
              size = 2, alpha = 0.5)+
   facet_wrap(~shed)
+```
+## Chains
+Plot that will show multiple chains beside each other, and highlight where they are different
+```{r}
+#Make dataframe to contain the locations of points
+rbind(#mutate(W3_cheap, method = "cheapest_insertion",x = 1),
+      mutate(W3_pk_seq, method = "pk", x = 1),
+      #mutate(convert_to_IDseq(W3_random), method = "random", x = 3),
+      mutate(w3_twi_sequence, method = "twi", x = 2),
+      mutate(convert_to_IDseq(new_seq_w3), method = "new", x = 3)
+      #mutate(convert_to_IDseq(opt_routes_w3), method = "con", x = 6)
+      ) %>% 
+  ggplot()+
+  geom_point(aes(x = x, y = sequence, color = ID), size = 10)+
+  geom_text(aes(x = x, y = sequence, label = ID), color = "white")+
+  labs()
 ```
 
 ## Table 1: Topographic Metrics
@@ -6522,8 +6889,11 @@ all_methods_acc <- many_chains
 ```{r accuracy-W3}
 w3_acc <- rbind(produce_metrics(W3_cheap, "W3", "cheapest_insertion"),
       produce_metrics(W3_pk_seq, "W3", "pk"),
-      produce_metrics(W3_random, "W3", "random"),
-      produce_metrics(w3_twi_sequence, "W3", "twi")
+      produce_metrics(convert_to_IDseq(W3_random), "W3", "random"),
+      produce_metrics(w3_twi_sequence, "W3", "twi"),
+      produce_metrics(convert_to_IDseq(new_seq_w3), "W3", "new"),
+      produce_metrics(convert_to_IDseq(opt_routes_w3), "W3", "con")
+
       )
 kable(w3_acc, digits = 2)
 
@@ -6531,8 +6901,10 @@ kable(w3_acc, digits = 2)
 ```{r accuracy-FB}
 fb_acc <- rbind(produce_metrics(FB_cheap, "FB", "cheapest_insertion"),
       produce_metrics(FB_pk_seq, "FB", "pk"),
-      produce_metrics(FB_random, "FB", "random"),
-      produce_metrics(fb_twi_sequence, "FB", "twi")
+      produce_metrics(convert_to_IDseq(FB_random), "FB", "random"),
+      produce_metrics(fb_twi_sequence, "FB", "twi"),
+      produce_metrics(convert_to_IDseq(new_seq_fb), "FB", "new"),
+      produce_metrics(convert_to_IDseq(opt_routes_fb), "FB", "con")
       )
 kable(fb_acc, digits = 2)
 
@@ -6540,9 +6912,14 @@ kable(fb_acc, digits = 2)
 ```{r accuracy-ZZ}
 zz_acc <- rbind(produce_metrics(ZZ_cheap, "ZZ", "cheapest_insertion"),
       produce_metrics(ZZ_pk_seq, "ZZ", "pk"),
-      produce_metrics(ZZ_random, "ZZ", "random"),
-      produce_metrics(zz_twi_sequence, "ZZ", "twi")
+      produce_metrics(convert_to_IDseq(ZZ_random), "ZZ", "random"),
+      produce_metrics(zz_twi_sequence, "ZZ", "twi"),
+      produce_metrics(convert_to_IDseq(new_seq_zz), "ZZ", "new"),
+      produce_metrics(convert_to_IDseq(opt_routes_zz), "ZZ", "con")
       )
+
+kable(zz_acc, digits = 2)
+
 kable(rbind(w3_acc, fb_acc, zz_acc), digits = 2)
 
 ```
