@@ -3006,7 +3006,7 @@ zz_twi_sequence <- zz_twi %>%
 # Defining New Sequence- average prop value as parent node
 Calculate new sequence for figure 5:
 ```{r combine}
-new_seq_w3 <- 
+#new_seq_w3 <- 
   W3_all_combos %>% 
   filter(timescale == "30mins") %>% 
   ungroup() %>% 
@@ -3017,7 +3017,7 @@ new_seq_w3 <-
   mutate(up = as.numeric(substr(down, 3, 4)),
          down = lag(up)) %>% 
   select(down, up) %>% 
-  drop_na()
+  drop_na() 
 
 new_seq_fb <- 
   FB_all_combos %>% 
@@ -3650,6 +3650,8 @@ crop1 <- crop(m1, ext(c(xbounds, ybounds)))
 #watershed boundary
 w3_shed <- "./w3_dems/w3_shed.tif"
 w3_outline <- as.polygons(rast(w3_shed), extent=FALSE)
+plot(w3_outline)
+expanse(w3_outline)
 
 #w3 network- thing I need to change
 #read in shapefile of stream converted in ARC
@@ -3678,7 +3680,7 @@ w3_net <- vect("./carrieZigZag/w3_network.shp")
 #writeVector(w3_net, "./seismic_map_exports/network.shp")
 
 plot(w3_net)
-
+sum(perim(w3_net))
 
 ggplot()+
   geom_spatraster(data = hill)+
@@ -5475,13 +5477,14 @@ Plot that will show multiple chains beside each other, and highlight where they 
 rbind(#mutate(W3_cheap, method = "cheapest_insertion",x = 1),
       mutate(W3_pk_seq, method = "pk", x = 1),
       #mutate(convert_to_IDseq(W3_random), method = "random", x = 3),
-      mutate(w3_twi_sequence, method = "twi", x = 2),
-      mutate(convert_to_IDseq(new_seq_w3), method = "new", x = 3)
+       mutate(convert_to_IDseq(new_seq_w3), method = "new", x = 2),
+      mutate(w3_twi_sequence, method = "twi", x = 3)
+     
       #mutate(convert_to_IDseq(opt_routes_w3), method = "con", x = 6)
       ) %>% 
   ggplot()+
-  geom_point(aes(x = x, y = sequence, color = ID), size = 10)+
-  geom_text(aes(x = x, y = sequence, label = ID), color = "white")+
+  geom_point(aes(x = x, y = sequence), size = 5)+
+  geom_text(aes(x = x, y = sequence, label = ID), color = "white", size = 2)+
   labs()
 ```
 
@@ -6374,9 +6377,22 @@ W3_rot / FB_rot / (ZZ_rot)
 
 
 ## Table 1: Topographic Metrics
-```{r}
-#print topo metrics calculated in earlier section
+Drainage densities, drainage area, elevation range, measured expansion coefficient
 
+drainage density is just stream length (m) divided by area of shed (m^2)
+```{r drainage-density}
+## W3
+#determine total stream length
+length_w3 <- sum(perim(w3_net))/1000 #m
+#determine watershed area
+area_w3 <- expanse(w3_outline)/(1000 * 1000) #m^2
+
+length_w3 / area_w3
+#end up with a drainage density a lot larger than what Carrie reported and calculated
+
+## FB
+
+## ZZ
 ```
 
 ## Table 2: Accuracy of models
@@ -7365,4 +7381,90 @@ all_pk <- rbind(calc_props(routes_w3, "W3"),
   mutate("method" = "Flow Permanence")
 ```
 
+
+Exploring more ways to try and find a sequence
+```{r}
+# Example data: binary matrix (time x nodes)
+set.seed(123)
+X <- matrix(rbinom(1000, 1, 0.3), ncol = 5)  # 1000 timesteps, 5 nodes
+colnames(X) <- paste0("Node", 1:5)
+
+# Conditional probability: P(Node j = 1 at t+1 | Node i = 1 at t)
+cond_prob <- function(i, j, lag = 1) {
+  xi <- X[1:(nrow(X)-lag), i]
+  xj <- X[(1+lag):nrow(X), j]
+  mean(xj[xi == 1])
+}
+
+cond_prob(1, 2)  # P(Node2(t+1) = 1 | Node1(t) = 1)
+
+```
+```{r}
+#calculating cross correlation
+ccf(X[,1], X[,2], lag.max = 10, main = "Cross-correlation Node1 vs Node2")
+
+```
+```{r}
+p_load(arulesSequences)
+
+# Convert to transactions: each time step = sequence of active nodes
+events <- apply(X, 1, function(row) which(row == 1))
+seqdata <- do.call(rbind, lapply(seq_along(events), function(t) {
+  data.frame(
+    sequenceID = t,
+    eventID = 1,
+    size = length(events[[t]]),
+    items = paste0("Node", events[[t]])
+  )
+}))
+
+seqs <- as(seqdata, "transactions")
+rules <- cspade(seqs, parameter = list(support = 0.01, maxlen = 3))
+inspect(rules[1:10])
+
+```
+```{r}
+p_load(depmixS4)
+
+# Fit HMM with 2 hidden states to one node’s series
+mod <- depmix(response = Node1 ~ 1, data = data.frame(Node1 = X[,1]), nstates = 2, family = binomial())
+fit <- fit(mod)
+summary(fit)
+
+```
+
+```{r}
+data_mat <- 
+input_w3 %>% 
+  dplyr::select(datetime, ID, binary) %>% 
+  mutate(binary = as.numeric(binary)) %>% 
+  pivot_wider(names_from = ID, values_from = binary) %>% 
+  dplyr::select(-datetime) %>% 
+  drop_na() %>% 
+  data.matrix()
+
+ccf(data_mat[,2], data_mat[,5], lag.max = 1500, main = "Cross-correlation Node1 vs Node2")
+
+```
+
+Train an LTSM
+```{r}
+p_load(keras)
+
+# Install TensorFlow backend if you don’t have it already
+keras::install_keras() 
+
+
+set.seed(123)
+# Example data: 1000 timesteps, 5 nodes
+X <- matrix(rbinom(5000, 1, 0.3), ncol = 5)
+
+timesteps <- nrow(X)
+nodes <- ncol(X)
+
+# Parameters
+seq_len <- 10  # length of input sequence
+n_samples <- timesteps - seq_len
+
+```
 
