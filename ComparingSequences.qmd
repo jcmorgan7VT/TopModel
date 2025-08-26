@@ -25,6 +25,11 @@ p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly
        maptools)
 #whitebox::install_whitebox()
 
+
+p_load(conflicted)
+    conflict_prefer("select", "dplyr")
+
+
 #reading in final format data for summer 23
 data_23 <- read_csv("./DataForMary/HB_stic.csv")
 #reading in final format data for summer 24
@@ -42,7 +47,7 @@ data_24$mins <- minute(data_24$datetime)
 bind23 <- data_23 %>% 
   select(datetime, ID, wshed, binary, mins)
 bind24 <- data_24 %>% 
-  select(datetime, number, wshed, binary, mins) %>% 
+  dplyr::select(datetime, number, wshed, binary, mins) %>% 
   rename("ID" = number)
 ```
 
@@ -69,14 +74,14 @@ ZZ_IDs <- intersect(zz_deployed24, zz_deployed23)
 
 
 bind24 <- data_24 %>% 
-  select(datetime, number, wshed, binary, mins) %>% 
+  dplyr::select(datetime, number, wshed, binary, mins) %>% 
   rename("ID" = number)%>% 
   filter(mins %in% c(0, 30))
 
 
 bind23 <- data_23 %>% 
   filter(ID %in% intersect(bind24$ID, data_23$ID)) %>% 
-  select(datetime, ID, wshed, binary, mins) %>% 
+  dplyr::select(datetime, ID, wshed, binary, mins) %>% 
   filter(mins %in% c(0, 30))
 
 #filter by each watershed, then recombine at the end
@@ -3465,21 +3470,228 @@ comparison_long_w3 <-
 #final plot
 
 #plot of correct, ommission, and commission through time
+#plot that works
 comparison_long_w3 %>% 
   filter(#name != "random_eval",
          name != "cheapest_eval",
-         name != "con_eval") %>% 
+         name != "con_eval",
+         name != "random_eval") %>% 
   mutate(day_of_year = yday(datetime)
   ) %>% 
-  mutate(total = as.numeric(length(value))) %>% 
+  mutate(value = fct_relevel(value, c("correct", "omission", "commission"))) %>% 
   ggplot() +
   geom_histogram(aes(x = day_of_year, fill = value), binwidth = 1, na.rm = TRUE)+
+  scale_fill_manual(values = c("grey", "green", "orange"))+
   facet_grid(name~year)
 
+#histogram where I pre-calculate the total number per day of the year, and what proportion that is of the total.
+##then the bars will be the same h eight
+test <- comparison_long_w3 %>% 
+  filter(#name != "random_eval",
+         name != "cheapest_eval",
+         name != "con_eval",
+         name != "random_eval") %>% 
+  mutate(day_of_year = yday(datetime)
+  ) %>% 
+  mutate(value = fct_relevel(value, c("correct", "omission", "commission"))) %>% 
+  group_by(datetime, name) %>% 
+  mutate(total = length(value)) %>% 
+  group_by(datetime, name, value) %>% 
+  mutate(count = length(value)) %>% unique() #%>% 
 
 
+test2 <- test %>%
+  ungroup() %>% 
+  mutate(prop = count/total) %>% 
+  mutate(value = fct_relevel(value, c("omission", "correct", "commission")))
+
+  ggplot(data = test2) +
+  geom_bar(aes(x = (day_of_year), fill = value, y = prop), na.rm = TRUE, position="fill", stat="identity", width = 1)+
+  scale_fill_manual(values = c("green","grey",  "orange"))+
+  facet_grid(name~year)
+
+                 
 
 ```
+
+```{r old-plot-presence/absence-with-discharge}
+
+#d <- 1
+#start <- ymd_hms(paste0(crossed_up$dry_date[d]," 00:00:00"))
+#stop <- ymd_hms(paste0(crossed_up$wet_date[d]," 00:00:00"))
+
+
+test_IDS <- input_w3 #%>% 
+    filter(datetime > start & datetime < stop)
+
+remainder <- unique(test_IDS$ID)
+
+pks_ordered <- pks_w3 %>% 
+filter(ID %in% remainder) %>% 
+  arrange(desc(pk)) %>% 
+  rowid_to_column("pk_order")
+
+q_23_plotting <- q_23_f %>% 
+  rbind(q_24_f) %>% 
+    #filter(DATETIME > start & DATETIME < stop) %>% 
+  rename("datetime" = DATETIME)
+
+q_23_plotting <- q_23_f %>% 
+    #filter(DATETIME > start & DATETIME < stop) %>% 
+  rename("datetime" = DATETIME)
+q_23_plotting %>% 
+ggplot(aes(x  = datetime, y = Q_mm_day))+
+  geom_line()+
+  labs(title = "Discharge from W3, July to Nov 2023",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()
+
+
+test <- input_w3 %>% 
+    #filter(datetime > start & datetime < stop) %>% 
+  #filter(ID == 17)
+  #filter(ID %in% W3_IDs) %>% 
+  left_join(q_23_plotting, by = "datetime") %>% 
+  left_join(pks_ordered, by = "ID")
+sec2 <- with(test, train_sec(pk_order, Q_mm_day))
+
+test %>% 
+  ggplot(aes(x = datetime))+
+  geom_tile(aes(y = (pk_order), fill = as.character(binary)))+
+      geom_line(aes(y = sec2$fwd(Q_mm_day)), color = "white")+
+  ylab("Supposed activation order")+
+  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Instantaneous Q (mm/day)")) +
+  #facet_grid(~name, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c(0, 1),
+                    labels = c("Dry", "Wet"),
+                    name = ""
+                    )+
+  labs(title = "Very dry to very wet",
+       subtitle = "W3, 7/20 - 7/22, 2023",
+       x = "")+
+scale_x_continuous(breaks=c(ymd_hms("2023-07-20 00:00:00"),
+                            ymd_hms("2023-07-21 00:00:00"),
+                            ymd_hms("2023-07-22 00:00:00")),
+                   labels = c("7/20/23",
+                              "7/21/23",
+                              "7/22/23"))+
+  theme_classic()+
+    theme(legend.position="right")
+
+#add hydrograph to plot
+crossed_up
+```
+
+Combining these two ideas
+```{r successfully graphed both accuracy over time and discharge}
+test <- comparison_long_w3 %>% 
+  filter(#name != "random_eval",
+         name != "cheapest_eval",
+         name != "con_eval",
+         name != "random_eval") %>% 
+  mutate(day_of_year = yday(datetime)
+  ) %>% 
+  mutate(value = fct_relevel(value, c("correct", "omission", "commission"))) %>% 
+  group_by(datetime, name) %>% 
+  mutate(total = length(value)) %>% 
+  group_by(datetime, name, value) %>% 
+  mutate(count = length(value)) %>% unique() #%>% 
+
+
+
+test2 <- test %>%
+  ungroup() %>% 
+  mutate(prop = count/total) %>% 
+  mutate(value = fct_relevel(value, c("correct", "omission", "commission"))) %>% 
+  left_join(rbind(q_23_bind, q_24_bind), by = "datetime")
+
+sec2 <- with(test2, train_sec(prop, Q_mm_day))
+
+#Plot with both accuracy and discharge, very cooL!
+test2 %>% 
+  ggplot(aes(x = day_of_year)) +
+  geom_bar(aes(fill = value, y = prop), na.rm = TRUE, position="fill", stat="identity", width = 1)+
+  scale_fill_manual(values = c("grey", "green", "orange"))+
+  geom_line(aes(y = sec2$fwd(Q_mm_day)), color = "gray40")+
+  ylab("Accuracy")+
+  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Instantaneous Q (mm/day)")) +
+  facet_grid(name~year)
+
+test2 %>% 
+  ggplot(aes(x = datetime)) +
+  geom_bar(aes(fill = value, y = prop),  position="fill", stat="identity", na.rm = TRUE)+
+  scale_fill_manual(values = c("grey", "green", "orange"))+
+  geom_line(aes(y = sec2$fwd(Q_mm_day)), color = "gray40")+
+  ylab("Accuracy")+
+  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Instantaneous Q (mm/day)")) +
+  theme_classic()+
+  facet_grid(rows = "name")+
+  scale_x_break(c(ymd_hms("2023-11-12 00:00:00"), ymd_hms("2024-05-20 00:00:00")))+
+  scale_x_continuous(
+    #breaks = as.numeric(pretty(df$date)),
+    labels = function(datetime) as_datetime(datetime, tz = "UTC")
+  )
+
+# Example: Number of seconds
+    seconds_since_epoch <- 1678886400
+
+    # Convert to POSIXct using lubridate's as_datetime
+    datetime_object_lub <- as_datetime(seconds_since_epoch, tz = "UTC")
+
+    # Print the result
+    print(datetime_object_lub)
+```
+
+Now add a bar/different color for when it is the best sequence!
+```{r}
+five_colors <- c("#d68c45",  "#247BA0", "#A30B37", "#F0C808", "#2c6e49")
+
+
+#plot the best at each timestep
+p_load(ggbreak)
+unique_maxi <- 
+  df_long_w3 %>% 
+  filter(model != "random_accuracy",
+         model != "cheap_accuracy",
+         model != "con_accuracy") %>% 
+  group_by(datetime) %>% 
+  filter(accuracy == max(accuracy)) %>% 
+  mutate(dup = as.character(n() > 1)) %>% ungroup()  %>%
+  mutate(unique_sol = case_when(dup == TRUE ~ "z_tie",
+                                dup == FALSE ~ model)) %>%
+  filter(dup == FALSE) %>% 
+  mutate(name = case_when(model == "cheap_accuracy" ~ "cheap_eval",
+                          model == "pk_accuracy" ~ "pk_eval",
+                          model == "new_accuracy" ~ "new_eval")) #%>% 
+inner_join(big_comb, by = "datetime") %>%
+  ggplot(aes(x = datetime, y = Q_mm_day, color = model)) +
+  #geom_point() +
+  geom_point(size = 1)+
+  theme_classic()+
+  scale_color_manual(values = c(five_colors[1:3], "lightgrey"))+
+  labs(title = "Most accurate model along hydrograph", y = "Discharge (mm/day)", x = "")+
+  facet_wrap(~ model)+
+    scale_x_break(c(ymd_hms("2023-11-12 00:00:00"), ymd_hms("2024-05-20 00:00:00")))
+  
+test2 %>% 
+  left_join(unique_maxi, by = c("datetime", "name")) %>% 
+  ggplot(aes(x = datetime)) +
+  geom_bar(aes(fill = value, y = prop),  position="fill", stat="identity", na.rm = TRUE)+
+    scale_fill_manual(values = c("grey", "green", "orange"))+
+#new_scale_fill()+
+  geom_point(aes(y= 0), alpha = 0.3, na.rm = TRUE)+
+  geom_line(aes(y = sec2$fwd(Q_mm_day)), color = "gray40")+
+  ylab("Accuracy")+
+  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Instantaneous Q (mm/day)")) +
+  facet_grid(rows = "name")
+
+```
+
+Third plot idea- color discharge by the proportion of network that is flowing
+
 ```{r FB}
 #chains used in graph theory solutions
 FB_cheap <- chain_solution(FB_IDs, "FB", methods = "cheapest_insertion")
@@ -5071,6 +5283,13 @@ changing_dates <-
 
 `%not_in%` <- purrr::negate(`%in%`)
 
+w3_wetness_changing <- test %>% 
+  ungroup() %>% 
+  select(datetime) %>% unique() %>% 
+filter(datetime %not_in% changing_dates$datetime) %>% 
+  mutate(status = "no change") %>% 
+  bind_rows(changing_dates)
+
 #bar of total timesteps
 w3_bar_ready <- test %>% 
   ungroup() %>% 
@@ -5082,6 +5301,8 @@ filter(datetime %not_in% changing_dates$datetime) %>%
   summarise(count = length(status)) %>% 
   mutate(shed = "W3")
   #ungroup() %>% 
+
+w3_bar_ready
 
 w3_bar_ready %>% 
   ggplot(aes(x = shed, y = count/sum(count), fill = status))+
@@ -5421,6 +5642,8 @@ test2 <- test %>%
 return(test2)
 }
 
+hist_prep(routes_w3_twi)
+
 hist_prep(routes_w3_twi) %>%
   ungroup() %>% 
   filter(category != "no_change") %>% 
@@ -5468,6 +5691,124 @@ hist_prep(routes_w3_random) %>%
   mutate(shed = "W3" ) %>% 
   ggplot(aes(x = shed, y = count/sum(count), fill = category))+
   geom_histogram(stat = "identity")
+```
+
+
+### New graph
+Plot a grid, of sequential wetting and drying, "the full graph"
+```{r}
+W3_all_combos %>% 
+  ggplot(aes(x = down, y = up, fill = prop))+
+    geom_tile(color="white") +
+    scale_fill_viridis_c(limits=c(0,1)) +
+    labs(x="Parent", y="Child", fill="P(i before j)", title="Event precedence matrix") +
+    theme_minimal()
+
+FB_all_combos %>% 
+  ggplot(aes(x = down, y = up, fill = prop))+
+    geom_tile(color="white") +
+    scale_fill_viridis_c(limits=c(0,1)) +
+    labs(x="Parent", y="Child", fill="P(i before j)", title="Event precedence matrix") +
+    theme_minimal()
+
+ZZ_all_combos %>% 
+  ggplot(aes(x = down, y = up, fill = prop))+
+    geom_tile(color="white") +
+    scale_fill_viridis_c(limits=c(0,1)) +
+    labs(x="Parent", y="Child", fill="P(i before j)", title="Event precedence matrix") +
+    theme_minimal()
+
+```
+Make these plots again, but order them by proportion of time flowing sequence
+
+```{r}
+w3_pk_seq2 <- 
+  pks_w3 %>% 
+    filter(ID %in% W3_IDs) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(sequence = seq(1, 26, 1))
+
+w3_grid <- W3_all_combos %>% 
+  mutate(up = as.numeric(substr(up, 3,4)),
+         down = as.numeric(substr(down, 3,4))) %>% 
+  filter(timescale == "30mins") %>% 
+  select(up, down, prop) %>% 
+    ungroup() %>% 
+  rename(ID = up) %>% 
+  left_join(w3_pk_seq2, by = "ID") %>% 
+  rename(child = ID,
+         ID = down,
+         child_sequence = sequence) %>% 
+  left_join(w3_pk_seq2, by = "ID") %>% 
+  rename(parent = ID, 
+         parent_sequence = sequence) %>% 
+  select(child, parent, child_sequence, parent_sequence, prop) %>% 
+  ggplot(aes(x = parent_sequence, y = child_sequence, fill = prop))+
+    geom_tile(color="white") +
+    scale_fill_viridis_c(limits=c(0,1)) +
+    labs(x="Parent", y="Child", fill="Prop", title="W3 sequential behavior matrix") +
+    theme_minimal()+
+  theme(legend.position = "none")
+  
+####### FB
+fb_pk_seq2 <- 
+  pks_fb %>% 
+    filter(ID %in% FB_IDs) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(sequence = seq(1, 24, 1))
+
+fb_grid <- FB_all_combos %>% 
+  mutate(up = as.numeric(substr(up, 3,4)),
+         down = as.numeric(substr(down, 3,4))) %>% 
+  filter(timescale == "30mins") %>% 
+  select(up, down, prop) %>% 
+    ungroup() %>% 
+  rename(ID = up) %>% 
+  left_join(fb_pk_seq2, by = "ID") %>% 
+  rename(child = ID,
+         ID = down,
+         child_sequence = sequence) %>% 
+  left_join(fb_pk_seq2, by = "ID") %>% 
+  rename(parent = ID, 
+         parent_sequence = sequence) %>% 
+  select(child, parent, child_sequence, parent_sequence, prop) %>% 
+  ggplot(aes(x = parent_sequence, y = child_sequence, fill = prop))+
+    geom_tile(color="white") +
+    scale_fill_viridis_c(limits=c(0,1)) +
+    labs(x="Parent", y="Child", fill="Prop", title="FB sequential behavior matrix") +
+    theme_minimal()+
+  theme(legend.position = "none")
+
+
+###### ZZ
+zz_pk_seq2 <- 
+  pks_zz %>% 
+    filter(ID %in% ZZ_IDs) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(sequence = seq(1, 24, 1))
+
+zz_grid <- ZZ_all_combos %>% 
+  mutate(up = as.numeric(substr(up, 3,4)),
+         down = as.numeric(substr(down, 3,4))) %>% 
+  filter(timescale == "30mins") %>% 
+  select(up, down, prop) %>% 
+    ungroup() %>% 
+  rename(ID = up) %>% 
+  left_join(zz_pk_seq2, by = "ID") %>% 
+  rename(child = ID,
+         ID = down,
+         child_sequence = sequence) %>% 
+  left_join(zz_pk_seq2, by = "ID") %>% 
+  rename(parent = ID, 
+         parent_sequence = sequence) %>% 
+  select(child, parent, child_sequence, parent_sequence, prop) %>% 
+  ggplot(aes(x = parent_sequence, y = child_sequence, fill = prop))+
+    geom_tile(color="white") +
+    scale_fill_viridis_c(limits=c(0,1)) +
+    labs(x="Parent", y="Child", fill="Prop", title="ZZ sequential behavior matrix") +
+    theme_minimal()
+
+w3_grid + fb_grid + zz_grid
 ```
 
 ## Figure 6: Chains
@@ -6560,6 +6901,114 @@ return(metrics_df)
 produce_metrics(ZZ_cheap, "ZZ", "cheapest_insertion")
 produce_metrics(W3_cheap, "W3", "cheapest_insertion")
 
+#function to calculate accuracy just when system wetness is changing
+w3_wetness_changing
+
+#second produce metrics, but only for times when there are changes in state in nodes
+produce_metrics2 <- function(chain, shed, method){
+# chain <- ZZ_cheap
+# shed <- "ZZ"
+# method = "cheapest_insertion"
+# calculate the number of flowing nodes at each timestep
+  if(shed == "W3"){
+    number_activated <-
+      input_w3 %>%
+      group_by(datetime) %>%
+      select(-c(wshed, mins)) %>%
+      filter(binary == 1) %>%
+      summarise(number_flowing = length(binary))
+  } 
+  else if(shed == "FB"){
+    number_activated <-
+      input_fb %>%
+      group_by(datetime) %>%
+      select(-c(wshed, mins)) %>%
+      filter(binary == 1) %>%
+      summarise(number_flowing = length(binary))
+  }
+  else if(shed == "ZZ"){
+    number_activated <-
+      input_zz %>%
+      group_by(datetime) %>%
+      select(-c(wshed, mins)) %>%
+      filter(binary == 1) %>%
+      summarise(number_flowing = length(binary))
+  }
+
+#make a dataframe where each row is a date, with a list of the active or inactive nodes according to a hierarchy
+
+  model_result <- calc_model_result(chain$ID, shed)
+
+`%not_in%` <- purrr::negate(`%in%`)  
+#combine all model results
+  if(shed == "W3"){
+    comparison <- input_w3 %>%
+      filter(mins %in% c(0, 30)) %>%
+      left_join(model_result, by = c("datetime", "ID")) %>%
+      left_join(w3_wetness_changing, by = "datetime") %>% 
+      filter(status == "changing") %>% 
+      select(-wshed, -mins) %>%
+      drop_na()
+  } 
+  else if(shed == "FB"){
+    comparison <- input_fb %>%
+      filter(mins %in% c(0, 30)) %>%
+      left_join(model_result, by = c("datetime", "ID")) %>%
+      select(-wshed, -mins) %>%
+      drop_na()
+  }
+  else if(shed == "ZZ"){
+    comparison <- input_zz %>%
+      filter(mins %in% c(0, 30)) %>%
+      left_join(model_result, by = c("datetime", "ID")) %>%
+      select(-wshed, -mins) %>%
+      drop_na()
+  }
+
+
+#chat gpt method to compare them
+get_eval_label <- function(true, pred) {
+  if (true == 1 && pred == 1) return("correct")
+  if (true == 0 && pred == 0) return("correct")
+  if (true == 1 && pred == 0) return("omission")
+  if (true == 0 && pred == 1) return("commission")
+}
+#get_eval_label(0,0)
+#apply get_eval function to each model run
+comparison$pred_eval <- mapply(get_eval_label, 
+                                   comparison$binary, 
+                                   comparison$pred_out)
+
+# ---- STEP 3: Define helper function to extract performance metrics ----
+get_metrics <- function(pred, true) {
+  cm <- confusionMatrix(factor(pred), factor(true), positive = "1")
+  data.frame(
+    Accuracy = cm$overall["Accuracy"],
+    Kappa = cm$overall["Kappa"],
+    Sensitivity = cm$byClass["Sensitivity"],
+    Specificity = cm$byClass["Specificity"],
+    Precision = cm$byClass["Precision"],
+    F1 = cm$byClass["F1"]
+  )
+}
+
+# ---- STEP 4: Summarize performance for all models ----
+metrics_df <- tibble(get_metrics(comparison$pred_out, comparison$binary)) %>% 
+  mutate(shed = shed,
+         method = method)
+#output <- list(metrics = metrics_df, sequence = ZZ_cheap)
+#make data long for final plot
+return(metrics_df)
+}
+
+# THERE IS NOT A BIG DIFFERENCE IN accuracy of the models when system wetness is changing I think
+produce_metrics(W3_cheap, "W3", "cheapest_insertion")
+produce_metrics2(W3_cheap, "W3", "cheapest_insertion")
+
+
+produce_metrics(W3_pk_seq, "W3", "pk")
+produce_metrics2(W3_pk_seq, "W3", "pk")
+
 ```
 ```{r accuracy-function-testing-every-method}
 methods
@@ -7382,7 +7831,7 @@ all_pk <- rbind(calc_props(routes_w3, "W3"),
 ```
 
 
-Exploring more ways to try and find a sequence
+Exploring more ways to try and find a sequence- all from chat gpt, of medium to low usefulness
 ```{r}
 # Example data: binary matrix (time x nodes)
 set.seed(123)
@@ -7435,12 +7884,12 @@ summary(fit)
 
 ```{r}
 data_mat <- 
-input_w3 %>% 
+input_w3 %>%
   dplyr::select(datetime, ID, binary) %>% 
   mutate(binary = as.numeric(binary)) %>% 
   pivot_wider(names_from = ID, values_from = binary) %>% 
-  dplyr::select(-datetime) %>% 
-  drop_na() %>% 
+  dplyr::select(-datetime) %>%
+ drop_na() %>% 
   data.matrix()
 
 ccf(data_mat[,2], data_mat[,5], lag.max = 1500, main = "Cross-correlation Node1 vs Node2")
@@ -7452,12 +7901,13 @@ Train an LTSM
 p_load(keras)
 
 # Install TensorFlow backend if you don’t have it already
-keras::install_keras() 
+#keras::install_keras() 
 
 
 set.seed(123)
 # Example data: 1000 timesteps, 5 nodes
 X <- matrix(rbinom(5000, 1, 0.3), ncol = 5)
+X <- data_mat
 
 timesteps <- nrow(X)
 nodes <- ncol(X)
@@ -7466,5 +7916,676 @@ nodes <- ncol(X)
 seq_len <- 10  # length of input sequence
 n_samples <- timesteps - seq_len
 
+X_train <- array(0, dim = c(n_samples, seq_len, nodes))
+y_train <- array(0, dim = c(n_samples, nodes))
+
+for (i in 1:n_samples) {
+  X_train[i,,] <- X[i:(i+seq_len-1), ]
+  y_train[i,]  <- X[i+seq_len, ]
+}
+
+dim(X_train)  # (samples, timesteps, features)
+dim(y_train)  # (samples, features)
+
+
+#define model
+model <- keras_model_sequential() %>%
+  layer_lstm(units = 32, input_shape = c(seq_len, nodes), return_sequences = FALSE) %>%
+  layer_dense(units = nodes, activation = "sigmoid")  # sigmoid for binary outputs
+
+model %>% compile(
+  optimizer = "adam",
+  loss = "binary_crossentropy",
+  metrics = c("accuracy")
+)
+
+summary(model)
+
+history <- model %>% fit(
+  X_train, y_train,
+  epochs = 20,
+  batch_size = 32,
+  validation_split = 0.2
+)
+
+plot(history)
+
+#make predictions
+preds <- model %>% predict(X_train[1:5,,])
+preds_binary <- ifelse(preds > 0.5, 1, 0)
+
+print(preds_binary)
+
+
 ```
+
+```{r}
+influence_matrix <- matrix(0, nrow = nodes, ncol = nodes,
+                           dimnames = list(colnames(X), colnames(X)))
+
+for (i in 1:nodes) {
+  for (j in 1:nodes) {
+    if (i != j) {
+      # Take some input sequence
+      seq_input <- X_train[1,,]
+      
+      # Baseline prediction
+      base_pred <- predict(model, array(seq_input, dim = c(1, seq_len, nodes)))
+      
+      # Mask node i
+      masked_input <- seq_input
+      masked_input[,i] <- 0
+      masked_pred <- predict(model, array(masked_input, dim = c(1, seq_len, nodes)))
+      
+      # Influence score: drop in prediction probability for node j
+      influence_matrix[i,j] <- base_pred[1,j] - masked_pred[1,j]
+    }
+  }
+}
+
+influence_matrix
+
+
+net_influence <- rowSums(influence_matrix) - colSums(influence_matrix)
+order_nodes <- order(net_influence, decreasing = TRUE)
+
+activation_order <- colnames(X)[order_nodes]
+activation_order
+
+
+routes <-  tibble(ID = as.numeric(activation_order)) %>%
+  mutate(sequence = seq(1, length(activation_order), 1)) %>% 
+  drop_na() 
+
+# actually determining how often the nodes follow proportion of time flowing sequence
+props <- calc_props(routes, "W3")
+conflicts_prefer(dplyr::filter)
+
+props <- props %>% 
+  filter(timescale == "30mins")
+
+hist(props$prop)
+
+calc_model_result(W3_cheap$ID, "W3") %>% rename("cheapest" = pred_out)
+
+produce_metrics(routes, "W3", "LTSM")
+
+```
+
+Maybe can use the matrix for graph theory stuff?
+
+```{r}
+# Example: build directed weighted graph from adjacency matrix
+adj <- influence_matrix  # toy 5x5
+#diag(adj) <- 0
+g <- graph_from_adjacency_matrix(adj, mode = "directed", weighted = TRUE)
+
+# Centrality measures
+strength_out <- strength(g, mode = "out")   # influence exerted
+strength_in  <- strength(g, mode = "in")    # influence received
+pagerank_vals <- page_rank(g, weights = E(g)$weight)$vector
+
+# Communities
+communities <- cluster_walktrap(as.undirected(g, mode = "collapse", weighted = TRUE))
+membership(communities)
+
+# Cycle detection
+is_dag(g)  # TRUE if graph is acyclic
+scc <- components(g, mode = "strong")  # strongly connected components
+
+# Plot graph
+plot(g, edge.width = E(g)$weight*5, vertex.size = 30,
+     vertex.label = V(g)$name, layout = layout_with_fr)
+
+
+topo <- topo_sort(g, mode = "out")
+as_ids(topo)
+
+```
+
+```{r}
+# Stream Network Wetting Sequence Toolkit (R)
+# ------------------------------------------
+#
+# What this file provides
+# 1) Inference of a pairwise event precedence matrix from binary (dry=0 / wet=1) time series per node.
+# 2) Conversion of that precedence matrix into an asymmetric cost matrix for sequencing.
+# 3) Solvers to find a minimum-cost *Hamiltonian path* (free start & end) under an asymmetric cost model:
+#    - (A) Exact Held–Karp dynamic program (works up to ~20–22 nodes)
+#    - (B) Heuristic fallback for larger n (greedy + 2-opt)
+#    - (C) Optional integration with the TSP package if you prefer Concorde/heuristics
+# 4) Visualizations: precedence heatmap and graph with ranked wetting order.
+#
+# How to use quickly
+# - If you already have an asymmetric cost matrix C (n x n), call:
+#     res <- optimal_sequence_from_cost(C)
+#   which returns list(order=..., cost=...).
+# - If you instead have binary time series X (n x T), call:
+#     P <- event_precedence_matrix(X)
+#     C <- cost_from_precedence(P, eps=1e-6, transform="neglog")
+#     res <- optimal_sequence_from_cost(C)
+# - Visualize with:
+#     plot_precedence_heatmap(P)
+#     plot_ranked_graph(C, res$order)
+#
+# Dependencies
+# - Required: none beyond base R & stats
+# - Recommended: ggplot2, igraph, ggraph, TSP (optional)
+#   Install if needed: install.packages(c("ggplot2", "igraph", "ggraph", "TSP"))
+
+suppressWarnings({
+  quietly_require <- function(pkg){ if (!requireNamespace(pkg, quietly=TRUE)) FALSE else TRUE }
+  HAS_GG  <- quietly_require("ggplot2")
+  HAS_IG  <- quietly_require("igraph")
+  HAS_GGR <- quietly_require("ggraph")
+  HAS_TSP <- quietly_require("TSP")
+})
+
+# ---------------------------------------------------------------------
+# Part 1. From binary time series -> Pairwise precedence matrix P
+# ---------------------------------------------------------------------
+# P[i,j] = fraction of observed wetting events where node i activates before node j
+# (ties split as 0.5 unless tie_half_credit=FALSE)
+
+rising_edges <- function(x){
+  # return indices t where 0->1 transition occurs at time t (1-based)
+  if (length(x) < 2) return(integer(0))
+  which(x[-length(x)]==0 & x[-1]==1) + 1
+}
+
+event_precedence_matrix <- function(binary_times, at_value = 1L, tie_half_credit = TRUE){
+  X <- as.matrix(binary_times)
+  if (!all(X %in% c(0L,1L))) stop("binary_times must contain only 0/1 values")
+  n <- nrow(X); Tt <- ncol(X)
+  rises <- lapply(seq_len(n), function(i) rising_edges(X[i,]))
+  all_events <- sort(unique(unlist(rises)))
+  if (length(all_events)==0){
+    # fallback: single global event near first 1 anywhere
+    first1 <- apply(X, 1, function(v){ w <- which(v==at_value); if(length(w)) min(w) else Inf })
+    if (all(is.infinite(first1))) stop("No wetting (1) observed in any node.")
+    all_events <- min(first1)
+  }
+  wins <- matrix(0, n, n)
+  counts <- matrix(0, n, n)
+  for (t0 in all_events){
+    act <- rep(Inf, n)
+    for (i in seq_len(n)){
+      r <- rises[[i]]
+      if (length(r)){
+        k <- findInterval(t0, r) + 1  # first rising >= t0
+        if (k>=1 && k<=length(r)) act[i] <- r[k]
+      }
+    }
+    valid <- which(is.finite(act))
+    if (length(valid) < 2) next
+    for (ii in seq_along(valid)) for (jj in seq_along(valid)){
+      i <- valid[ii]; j <- valid[jj]
+      if (i==j) next
+      if (act[i] < act[j]) { wins[i,j] <- wins[i,j] + 1; counts[i,j] <- counts[i,j] + 1 }
+      else if (act[i] > act[j]) { wins[j,i] <- wins[j,i] + 1; counts[i,j] <- counts[i,j] + 1 }
+      else {
+        if (tie_half_credit){ wins[i,j] <- wins[i,j] + 0.5; wins[j,i] <- wins[j,i] + 0.5 }
+        counts[i,j] <- counts[i,j] + 1
+      }
+    }
+  }
+  P <- matrix(0.5, n, n)
+  diag(P) <- 0.5
+  for (i in seq_len(n)) for (j in seq_len(n)){
+    if (i==j) next
+    denom <- wins[i,j] + wins[j,i]
+    if (denom > 0) P[i,j] <- wins[i,j] / denom else P[i,j] <- 0.5
+  }
+  rownames(P) <- colnames(P) <- rownames(binary_times)
+  P
+}
+
+cost_from_precedence <- function(P, eps=1e-6, transform=c("neglog","one_minus")){
+  transform <- match.arg(transform)
+  if (transform=="neglog") C <- -log(pmax(P, eps)) else C <- 1 - P
+  diag(C) <- Inf
+  C
+}
+
+# ---------------------------------------------------------------------
+# Part 2. Minimum-cost Hamiltonian PATH for asymmetric costs
+# ---------------------------------------------------------------------
+# (A) Exact Held–Karp DP (works up to ~20–22 nodes). Returns optimal order & cost.
+
+optimal_sequence_from_cost <- function(C){
+  C <- as.matrix(C); n <- nrow(C)
+  if (n != ncol(C)) stop("C must be square")
+  if (any(is.na(C))) stop("C contains NA")
+  if (n > 22) return(optimal_sequence_heuristic(C))
+  # dp is a named list keyed by "mask|j"
+  key <- function(mask, j) paste(mask, j, sep="|")
+  full <- bitwShiftL(1L, n) - 1L
+  dp <- new.env(parent=emptyenv()); prev <- new.env(parent=emptyenv())
+  for (j in 1:n){ assign(key(bitwShiftL(1L, j-1L), j), 0, envir=dp); assign(key(bitwShiftL(1L, j-1L), j), NA_integer_, envir=prev) }
+  for (mask in 1:full){
+    for (j in 1:n){
+      if (bitwAnd(mask, bitwShiftL(1L, j-1L))==0L) next
+      kj <- key(mask,j); base <- get0(kj, envir=dp, ifnotfound=Inf)
+      if (!is.finite(base)) next
+      not_in <- bitwXor(mask, full)
+      k <- 1L
+      while (not_in>0L){
+        lsb <- bitwAnd(not_in, -not_in)
+        k <- as.integer(log(lsb, base=2)) + 1L
+        not_in <- not_in - lsb
+        new_mask <- bitwOr(mask, bitwShiftL(1L, k-1L))
+        nk <- key(new_mask, k)
+        cand <- base + C[j,k]
+        if (cand < get0(nk, envir=dp, ifnotfound=Inf)){
+          assign(nk, cand, envir=dp); assign(nk, j, envir=prev)
+        }
+      }
+    }
+  }
+  # choose best end
+  best_cost <- Inf; best_end <- NA_integer_
+  for (j in 1:n){ v <- get0(key(full,j), envir=dp, ifnotfound=Inf); if (v < best_cost){ best_cost <- v; best_end <- j } }
+  # reconstruct
+  order <- integer(0); mask <- full; j <- best_end
+  repeat{
+    order <- c(j, order)
+    pj <- get0(key(mask,j), envir=prev, ifnotfound=NA_integer_)
+    if (is.na(pj)) break
+    mask <- bitwXor(mask, bitwShiftL(1L, j-1L)); j <- pj
+  }
+  list(order=order, cost=best_cost)
+}
+
+# (B) Heuristic for larger n: greedy insertion + 2-opt (direction-aware for ATSP via arc swaps)
+optimal_sequence_heuristic <- function(C){
+  n <- nrow(C)
+  rem <- seq_len(n)
+  path <- rem[which.min(rowSums(C, na.rm=TRUE))]  # start from node with smallest outgoing sum
+  rem <- setdiff(rem, path)
+  while (length(rem)){
+    best <- NULL; best_delta <- Inf; best_pos <- NA_integer_
+    for (v in rem){
+      for (pos in 0:length(path)){
+        if (pos==0) delta <- C[v, path[1]] else if (pos==length(path)) delta <- C[path[length(path)], v] else delta <- C[path[pos], v] + C[v, path[pos+1]] - C[path[pos], path[pos+1]]
+        if (delta < best_delta){ best_delta <- delta; best <- v; best_pos <- pos }
+      }
+    }
+    if (best_pos==0) path <- c(best, path) else if (best_pos==length(path)) path <- c(path, best) else path <- c(path[1:best_pos], best, path[(best_pos+1):length(path)])
+    rem <- setdiff(rem, best)
+  }
+  improve <- TRUE
+  path_cost <- function(p){ sum(mapply(function(a,b) C[a,b], p[-length(p)], p[-1])) }
+  cur <- path; curc <- path_cost(cur)
+  while (improve){
+    improve <- FALSE
+    for (i in 1:(n-2)) for (k in (i+1):(n-1)){
+      a<-cur[i]; b<-cur[i+1]; c<-cur[k]; d<-cur[k+1]
+      delta <- (C[a,c] + C[b,d]) - (C[a,b] + C[c,d])
+      if (delta < -1e-12){ cur <- c(cur[1:i], c, rev(cur[(i+1):k]), d, cur[(k+2):n]); curc <- curc + delta; improve <- TRUE }
+    }
+  }
+  list(order=cur, cost=curc)
+}
+
+# (C) Optional: use TSP package (if installed) to get a path via dummy city trick
+optimal_sequence_TSP <- function(C){
+  if (!HAS_TSP) stop("Package 'TSP' not installed")
+  AT <- TSP::ATSP(C)
+  # Convert to symmetric TSP and insert a dummy city, then cut at dummy to get a path
+  ST <- TSP::as.TSP(AT)
+  ST2 <- TSP::insert_dummy(ST, label="DUMMY", method="median")
+  sol <- TSP::solve_TSP(ST2, method = if ("concorde" %in% TSP::list_available_solvers()) "concorde" else "nearest_insertion")
+  path <- TSP::cut_tour(sol, at = "DUMMY")
+  labs <- TSP::labels(path)
+  # map labels back to ATSP city indices
+  # The conversion doubles cities; keep original names that match rownames(C)
+  idx <- match(rownames(C), labs)
+  idx <- idx[!is.na(idx)]
+  # Build order by visiting labels in 'labs' that are in rownames(C)
+  ord <- which(labs %in% rownames(C))
+  order_names <- labs[ord]
+  order <- match(order_names, rownames(C))
+  cost <- sum(C[cbind(order[-length(order)], order[-1])])
+  list(order=order, cost=cost)
+}
+
+# ---------------------------------------------------------------------
+# Part 3. Diagnostics: rank quality vs observed events
+# ---------------------------------------------------------------------
+# For each event, compute Spearman/Kendall between activation times and a proposed order.
+
+rank_diagnostics <- function(binary_times, order){
+  X <- as.matrix(binary_times); n <- nrow(X)
+  rises <- lapply(seq_len(n), function(i) rising_edges(X[i,]))
+  all_events <- sort(unique(unlist(rises)))
+  if (!length(all_events)) return(data.frame(event=integer(0), kendall=numeric(0), spearman=numeric(0)))
+  res <- lapply(all_events, function(t0){
+    act <- rep(Inf, n)
+    for (i in seq_len(n)){
+      r <- rises[[i]]; if (length(r)){ k <- findInterval(t0, r)+1; if (k>=1 && k<=length(r)) act[i] <- r[k] }
+    }
+    valid <- is.finite(act)
+    if (sum(valid) < 3) return(c(kendall=NA_real_, spearman=NA_real_))
+    # lower rank value means earlier in order
+    ord_rank <- match(seq_len(n), order)
+    kendall <- suppressWarnings(cor(act[valid], ord_rank[valid], method="kendall"))
+    spearman <- suppressWarnings(cor(act[valid], ord_rank[valid], method="spearman"))
+    c(kendall=kendall, spearman=spearman)
+  })
+  M <- do.call(rbind, res)
+  data.frame(event = all_events, kendall = M[,1], spearman = M[,2])
+}
+
+# ---------------------------------------------------------------------
+# Part 4. Visualizations
+# ---------------------------------------------------------------------
+
+plot_precedence_heatmap <- function(P){
+  if (!HAS_GG) { warning("ggplot2 not installed; using base image()"); return({ image(P[nrow(P):1,], axes=FALSE, main="Precedence P(i->j)"); box() }) }
+  df <- as.data.frame(as.table(P))
+  names(df) <- c("i","j","val")
+  ggplot2::ggplot(df, ggplot2::aes(x=j, y=i, fill=val)) +
+    ggplot2::geom_tile(color="white") +
+    ggplot2::scale_fill_viridis_c(limits=c(0,1)) +
+    ggplot2::labs(x="j", y="i", fill="P(i before j)", title="Event precedence matrix") +
+    ggplot2::theme_minimal()
+}
+
+plot_ranked_graph <- function(C, order, k_edges = 3){
+  if (!HAS_IG){ warning("igraph not installed; skipping plot"); return(invisible(NULL)) }
+  n <- nrow(C); nm <- if(is.null(rownames(C))) as.character(seq_len(n)) else rownames(C)
+  G <- igraph::graph_from_adjacency_matrix(C, mode="directed", weighted=TRUE, diag=FALSE)
+  # emphasize along-path edges
+  path_e <- matrix(c(order[-length(order)], order[-1]), ncol=2)
+  E(G)$color <- "grey80"; E(G)$width <- 1
+  for (i in seq_len(nrow(path_e))){
+    e <- igraph::get.edge.ids(G, vp=as.vector(path_e[i,]))
+    if (e>0){ E(G)$color[e] <- "red"; E(G)$width[e] <- 2.5 }
+  }
+  V(G)$label <- nm
+  V(G)$color <- "steelblue"
+  V(G)$size <- 12
+  V(G)$rank <- match(seq_len(n), order)
+  lay <- igraph::layout_with_sugiyama(G)$layout
+  plot(G, layout=lay, main="Ranked wetting path (red edges)")
+}
+
+# ---------------------------------------------------------------------
+# Part 5. Small worked example
+# ---------------------------------------------------------------------
+if (identical(Sys.getenv("RUN_WETSEQ_EXAMPLE"), "1")){
+  set.seed(1)
+  n <- 6; Tt <- 50
+  # Simulate staggered wetting in blocks
+  true_order <- sample(n)
+  X <- matrix(0L, n, Tt)
+  for (evt in c(10, 30)){
+    delays <- sort(sample(0:5, n, replace=TRUE))
+    X[cbind(seq_len(n), pmin(Tt, evt + delays))] <- 1L
+    for (i in seq_len(n)) for (t in (evt+delays[i]):min(Tt, evt+delays[i]+5)) X[i,t] <- 1L
+  }
+  rownames(X) <- paste0("N", seq_len(n))
+  P <- event_precedence_matrix(X)
+  C <- cost_from_precedence(P, transform="neglog")
+  res <- optimal_sequence_from_cost(C)
+  print(list(order=rownames(X)[res$order], cost=res$cost))
+  if (HAS_GG) print(plot_precedence_heatmap(P))
+  if (HAS_IG) plot_ranked_graph(C, res$order)
+}
+
+
+#New stuff
+# --- Pairwise counts/tests
+pairwise_event_counts <- function(binary_times){
+  X <- as.matrix(binary_times); n <- nrow(X)
+  rising_edges <- function(x) if (length(x)<2) integer(0) else which(x[-length(x)]==0 & x[-1]==1)+1
+  rises <- lapply(seq_len(n), function(i) rising_edges(X[i,]))
+  all_events <- sort(unique(unlist(rises)))
+  stopifnot(length(all_events) > 0)
+  W <- matrix(0L,n,n); L <- matrix(0L,n,n); TIE <- matrix(0L,n,n)
+  for (t0 in all_events){
+    act <- rep(Inf,n)
+    for (i in seq_len(n)){
+      r <- rises[[i]]; if (length(r)){ k <- findInterval(t0, r)+1; if (k>=1 && k<=length(r)) act[i] <- r[k] }
+    }
+    for (i in seq_len(n)) for (j in seq_len(n)){
+      if (i==j || !is.finite(act[i]) || !is.finite(act[j])) next
+      if (act[i] < act[j]) W[i,j] <- W[i,j] + 1L
+      else if (act[i] > act[j]) L[i,j] <- L[i,j] + 1L
+      else TIE[i,j] <- TIE[i,j] + 1L
+    }
+  }
+  labs <- rownames(binary_times); rownames(W)<-colnames(W)<-labs
+  rownames(L)<-colnames(L)<-labs; rownames(TIE)<-colnames(TIE)<-labs
+  list(wins=W, losses=L, ties=TIE)
+}
+
+pairwise_precedence_tests <- function(binary_times, alpha=0.05, conf.level=0.95){
+  cnt <- pairwise_event_counts(binary_times); W<-cnt$wins; L<-cnt$losses
+  n <- nrow(W); labs <- rownames(W); out <- list()
+  for (i in seq_len(n)) for (j in seq_len(n)) if (i!=j){
+    s <- W[i,j]; r <- L[i,j]; nn <- s+r
+    if (nn>0){
+      bt <- suppressWarnings(binom.test(s, nn, 0.5, conf.level=conf.level))
+      out[[length(out)+1]] <- data.frame(
+        i=labs[i], j=labs[j], s=s, r=r, n=nn,
+        phat = s/nn, p_two_sided = bt$p.value,
+        ci_low = bt$conf.int[1], ci_high = bt$conf.int[2]
+      )
+    }
+  }
+  do.call(rbind, out)
+}
+
+precedence_graph <- function(binary_times, alpha=0.05){
+  tests <- pairwise_precedence_tests(binary_times, alpha)
+  keep <- subset(tests, phat>0.5 & p_two_sided < alpha)
+  if (!requireNamespace("igraph", quietly=TRUE)) return(list(graph=NULL, edges=keep, tests=tests))
+  g <- igraph::graph_from_data_frame(keep[,c("i","j")], directed=TRUE)
+  list(graph=g, edges=keep, tests=tests)
+}
+
+# ---------------------------------------------------------------------
+# Part 3. Diagnostics: statistical evidence that "earlier" nodes activate first
+# ---------------------------------------------------------------------
+# This section addresses: "how can I know that a node earlier in the sequence
+# actually tends to activate before a node later in the sequence?"
+#
+# We provide three types of checks:
+# 1. Pairwise consistency: for each pair (i,j), how often does i activate before j.
+# 2. Event-level correlation: for each wetting event, compute correlation between
+#    observed activation times and the proposed rank order.
+# 3. Order confidence: binomial test for each adjacent pair in the proposed order
+#    (plus first vs last).
+
+pairwise_consistency <- function(binary_times, order){
+  P <- event_precedence_matrix(binary_times)
+  n <- length(order)
+  out <- matrix(NA, n, n, dimnames=list(order, order))
+  for (ii in seq_len(n)) for (jj in seq_len(n)){
+    if (ii==jj) next
+    i <- order[ii]; j <- order[jj]
+    out[ii,jj] <- P[i,j]
+  }
+  out
+}
+
+rank_diagnostics <- function(binary_times, order){
+  X <- as.matrix(binary_times); n <- nrow(X)
+  rises <- lapply(seq_len(n), function(i) rising_edges(X[i,]))
+  all_events <- sort(unique(unlist(rises)))
+  if (!length(all_events)) return(data.frame(event=integer(0), kendall=numeric(0), spearman=numeric(0)))
+  res <- lapply(all_events, function(t0){
+    act <- rep(Inf, n)
+    for (i in seq_len(n)){
+      r <- rises[[i]]; if (length(r)){ k <- findInterval(t0, r)+1; if (k>=1 && k<=length(r)) act[i] <- r[k] }
+    }
+    valid <- is.finite(act)
+    if (sum(valid) < 3) return(c(kendall=NA_real_, spearman=NA_real_))
+    ord_rank <- match(seq_len(n), order)
+    kendall <- suppressWarnings(cor(act[valid], ord_rank[valid], method="kendall"))
+    spearman <- suppressWarnings(cor(act[valid], ord_rank[valid], method="spearman"))
+    c(kendall=kendall, spearman=spearman)
+  })
+  M <- do.call(rbind, res)
+  data.frame(event = all_events, kendall = M[,1], spearman = M[,2])
+}
+
+# ---------------------------------------------------------------------
+# New: Order confidence testing
+# ---------------------------------------------------------------------
+order_confidence <- function(binary_times, order){
+  # reuse event precedence counts
+  cnt <- event_precedence_matrix(binary_times)
+  nm <- rownames(cnt)
+  stopifnot(length(order)>=2)
+  adjacent <- lapply(seq_len(length(order)-1), function(k){
+    a <- order[k]; b <- order[k+1]
+    s <- cnt[a,b]; r <- cnt[b,a]; nn <- s+r
+    if (nn>0){
+      bt <- suppressWarnings(binom.test(s, nn, 0.5))
+      data.frame(pair = sprintf("%s -> %s", a, b), phat = s/nn,
+                 ci_low = bt$conf.int[1], ci_high = bt$conf.int[2],
+                 p_two_sided = bt$p.value, n = nn)
+    } else {
+      data.frame(pair = sprintf("%s -> %s", a, b), phat = NA,
+                 ci_low = NA, ci_high = NA, p_two_sided = NA, n = 0)
+    }
+  })
+  adjacent <- do.call(rbind, adjacent)
+  a <- order[1]; b <- order[length(order)]; s <- cnt[a,b]; r <- cnt[b,a]; nn <- s+r
+  if (nn>0){
+    bt <- suppressWarnings(binom.test(s, nn, 0.5))
+    firstlast <- data.frame(first=a, last=b, phat=s/nn, ci_low=bt$conf.int[1],
+                            ci_high=bt$conf.int[2], p_two_sided=bt$p.value, n=nn)
+  } else {
+    firstlast <- data.frame(first=a, last=b, phat=NA, ci_low=NA, ci_high=NA,
+                            p_two_sided=NA, n=0)
+  }
+  list(adjacent=adjacent, first_vs_last=firstlast)
+}
+
+# ---------------------------------------------------------------------
+# Interpretation tips
+# ---------------------------------------------------------------------
+# - pairwise_consistency(): If your sequence is correct, entries above the diagonal
+#   should mostly be >0.5 (earlier nodes precede later ones in data).
+# - rank_diagnostics(): Kendall/Spearman near +1 means strong agreement between
+#   the proposed global order and actual event timings.
+# - order_confidence(): For each adjacent pair, check phat (fraction of times the
+#   earlier node wets first), CI, and p-value. Also check first vs last for a
+#   strong sanity check.
+
+
+order_violations <- function(binary_times, order){
+  cnt <- pairwise_event_counts(binary_times); W<-cnt$wins; L<-cnt$losses
+  n <- length(order); viol <- 0; total <- 0
+  for (a in 1:(n-1)) for (b in (a+1):n){
+    i<-order[a]; j<-order[b]; s<-W[i,j]; r<-L[i,j]
+    if (s+r>0){ total <- total+1; if (s/(s+r) <= 0.5) viol <- viol+1 }
+  }
+  list(violations=viol, total_pairs=total, rate=if(total>0) viol/total else NA_real_)
+}
+
+```
+```{r}
+#create matrix for input
+w3_matrix <- 
+  filter(data_23, wshed == "W3") %>%
+  filter(datetime >= ymd_hms("2023-07-22 18:00:00"),
+         datetime <= ymd_hms("2023-09-18 11:00:00")) %>% 
+    #filter(is.na(binary))
+  select(datetime, ID, binary) %>% 
+  #drop_na() %>% 
+  #drop_na() %>% 
+  pivot_wider(names_from = datetime, values_from = binary) #%>% 
+w3_matrix2 <- longest_complete_chunk %>% 
+  #drop_na() %>% View()
+  select(-ID) %>%
+  data.matrix()# %>% View()
+
+P <- event_precedence_matrix(w3_matrix2)                 # pairwise P(i before j)
+C <- cost_from_precedence(P, transform = "neglog")
+res <- optimal_sequence_from_cost(C)
+
+plot_precedence_heatmap(P)
+plot_ranked_graph(C, res$order)
+
+# You already have: X, res$order from the optimization
+conf <- order_confidence(w3_matrix2, res$order)
+conf$adjacent          # per-adjacent-pair support (phat, CI, p-value)
+conf$first_vs_last     # strongest check: earliest vs latest
+
+order_violations(X, res$order)   # fraction of pairwise contradictions
+
+pg <- precedence_graph(X, alpha=0.05)
+pg$edges                # only statistically supported directions
+# If igraph installed:
+# plot(pg$graph, vertex.size=20, edge.arrow.size=0.4)
+
+
+# Example: 3 nodes × 10 time steps
+X <- matrix(c(
+  # Node A: wets early
+  0,0,1,1,1,1,1,1,1,1,
+  # Node B: wets later
+  0,0,0,0,1,1,1,1,1,1,
+  # Node C: wets last
+  0,0,0,0,0,0,1,1,1,1
+), nrow=3, byrow=TRUE)
+
+rownames(X) <- c("A","B","C")
+
+# Suppose we hypothesize the order A -> B -> C
+order <- c("A","B","C")
+
+# --- Pairwise consistency ---
+pc <- pairwise_consistency(X, order)
+print(pc)
+
+# --- Rank diagnostics ---
+rd <- rank_diagnostics(X, order)
+print(rd)
+
+# --- Order confidence tests ---
+oc <- order_confidence(X, order)
+print(oc$adjacent)
+print(oc$first_vs_last)
+
+```
+
+```{r}
+find_largest_complete_chunk <- function(data) {
+  # 1. Identify complete rows
+  complete_rows <- complete.cases(data)
+  
+  # 2. Use rle() to find consecutive sequences
+  rle_result <- rle(complete_rows)
+  
+  # 3. Find the longest complete chunk and its position
+  complete_runs_lengths <- rle_result$lengths[rle_result$values]
+  if (length(complete_runs_lengths) == 0) {
+    message("No complete chunks found.")
+    return(NULL)
+  }
+  max_length <- max(complete_runs_lengths)
+  max_index_in_rle <- which(rle_result$values)[which.max(complete_runs_lengths)]
+  
+  # Calculate the starting row of the longest chunk
+  start_row <- sum(rle_result$lengths[1:(max_index_in_rle - 1)]) + 1
+  
+  # 4. Extract and return the chunk
+  data[start_row:(start_row + max_length - 1), ]
+}
+
+# Run the function on your data frame
+longest_complete_chunk <- find_largest_complete_chunk(w3_matrix)
+print(longest_complete_chunk)
+#   id value_a value_b
+# 4  4       4       4
+# 5  5       5       5
+# 6  6       7       6
+
+```
+
 
