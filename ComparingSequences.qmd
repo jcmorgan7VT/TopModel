@@ -22,7 +22,7 @@ Formatted, should contain everything needed for current analysis. Have not check
 #loading packages
 library(pacman)
 p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,ggnewscale, sf, elevatr, patchwork, ggspatial, zoo, igraph, TSP, ggnetwork, #intergraph, ggpubr, knitr, #purrr, spatialEco, 
-       hydroEvents,
+       hydroEvents,ggbreak,
        maptools)
 #whitebox::install_whitebox()
 
@@ -757,7 +757,8 @@ processed_fb_stage_23 <- FB_water %>%
   mutate(minutes = minute(DATETIME)) %>% 
   filter(minutes %in% c(0, 30)) %>% 
   mutate(roll_mean = rollapply(stage_cm ,48,mean,align='center',fill=NA)) %>% 
-  drop_na() %>% mutate(Q = roll_mean * fb_stage_Q_model$coefficients[2] +  fb_stage_Q_model$coefficients[1])
+  drop_na() %>%  mutate(Q = roll_mean * fb_stage_Q_model$coefficients[2] +  fb_stage_Q_model$coefficients[1])
+
 
 processed_fb_stage %>% 
   ggplot(aes(x = DATETIME, y = Q))+
@@ -927,6 +928,9 @@ dilutions %>%
   theme_classic()
 
 fb_stage_Q_model <- lm(dilutions$discharge ~ dilutions$roll_mean)
+#try exponential model
+model_exp <- lm(log(dilutions$discharge)~ log(dilutions$roll_mean))
+summary(model_exp)
 
 
 processed_fb_stage_24 <- FB_water %>% 
@@ -939,6 +943,18 @@ processed_fb_stage_24 <- FB_water %>%
   mutate(roll_mean = rollapply(stage_cm ,48,mean,align='center',fill=NA)) %>% 
   drop_na() %>% 
   mutate(Q = roll_mean * fb_stage_Q_model$coefficients[2] +  fb_stage_Q_model$coefficients[1])
+
+#exponential equation
+processed_fb_stage_24 <- FB_water %>% 
+  left_join(FB_air, by = "DATETIME") %>% 
+  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
+  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
+    filter(DATETIME <= ymd_hms("2024-08-06 10:30:00 UTC")) %>% 
+  mutate(minutes = minute(DATETIME)) %>% 
+  filter(minutes %in% c(0, 30)) %>% 
+  mutate(roll_mean = rollapply(stage_cm ,48,mean,align='center',fill=NA)) %>% 
+  drop_na() %>% 
+  mutate(Q = exp(log(roll_mean) * model_exp$coefficients[2] +  model_exp$coefficients[1]))
 
 processed_fb_stage %>% 
   ggplot(aes(x = DATETIME, y = Q))+
@@ -3725,7 +3741,7 @@ comparison_w3 <- input_w3 %>%
     left_join(random_model_w3, by = c("datetime", "ID")) %>% 
   left_join(twi_model_w3, by = c("datetime", "ID")) %>% 
   left_join(new_model_w3, by = c("datetime", "ID")) %>% 
-    left_join(con_model_w3, by = c("datetime", "ID")) %>% 
+    #left_join(con_model_w3, by = c("datetime", "ID")) %>% 
   select(-wshed, -mins) %>% 
   drop_na()
 
@@ -3735,7 +3751,7 @@ comparison_w3$pk_eval <- mapply(get_eval_label, comparison_w3$binary, comparison
 comparison_w3$random_eval <- mapply(get_eval_label, comparison_w3$binary, comparison_w3$random)
 comparison_w3$twi_eval <- mapply(get_eval_label, comparison_w3$binary, comparison_w3$twi)
 comparison_w3$new_eval <- mapply(get_eval_label, comparison_w3$binary, comparison_w3$new)
-comparison_w3$con_eval <- mapply(get_eval_label, comparison_w3$binary, comparison_w3$concorde)
+#comparison_w3$con_eval <- mapply(get_eval_label, comparison_w3$binary, comparison_w3$concorde)
 
 
 
@@ -3765,7 +3781,7 @@ df_summary_time_w3 <- comparison_w3 %>%
     twi_correct = sum(twi_eval == "correct"),
     new_correct = sum(new_eval == "correct"),
       new_correct = sum(new_eval == "correct"),
-    con_correct = sum(con_eval == "correct"),
+    #con_correct = sum(con_eval == "correct"),
 
 
     total = n(),
@@ -3773,8 +3789,8 @@ df_summary_time_w3 <- comparison_w3 %>%
     pk_accuracy = pk_correct / total,
     random_accuracy = random_correct / total,
     twi_accuracy = twi_correct / total,
-    new_accuracy = new_correct / total,
-    con_accuracy = con_correct / total
+    new_accuracy = new_correct / total#,
+    #con_accuracy = con_correct / total
 
 
   )
@@ -3782,7 +3798,7 @@ df_summary_time_w3 <- comparison_w3 %>%
 df_long_w3 <- df_summary_time_w3 %>%
   select(datetime, contains("accuracy")) %>% 
   tidyr::pivot_longer(cols = c(cheap_accuracy, pk_accuracy, 
-                               random_accuracy, twi_accuracy, new_accuracy, con_accuracy), 
+                               random_accuracy, twi_accuracy, new_accuracy),#, con_accuracy), 
                       names_to = "model", values_to = "accuracy")
 
 #make data long for final plot
@@ -3975,7 +3991,6 @@ five_colors <- c("#d68c45",  "#247BA0", "#A30B37", "#F0C808", "#2c6e49")
 
 
 #plot the best at each timestep
-p_load(ggbreak)
 unique_maxi <- 
   df_long_w3 %>% 
   filter(model != "random_accuracy",
@@ -4088,7 +4103,7 @@ FB_random <- tibble(ID = sample(FB_IDs),
 #applying evaluation model using different sequences
 cheap_model_fb <- calc_model_result(FB_cheap$ID, "FB") %>% rename("cheapest" = pred_out)
 pk_model_fb <- calc_model_result(FB_pk_seq$ID, "FB") %>% rename("pk" = pred_out)
-random_model_fb <- calc_model_result(FB_random$ID, "FB") %>% rename("random" = pred_out)
+random_model_fb <- calc_model_result(FB_random$down, "FB") %>% rename("random" = pred_out)
 twi_model_fb <- calc_model_result(fb_twi_sequence$ID, "FB") %>% rename("twi" = pred_out)
 new_model_fb <- calc_model_result(new_seq_fb$down, "FB") %>% rename("new" = pred_out)
 
@@ -6330,9 +6345,128 @@ scale_color_identity()+
 
 ```
 
+New version, where the difference in accuracy has to be greater than some threshold
+```{r}
+
+
+#plot the best at each timestep
+#df <- 
+  df_long_w3 %>% 
+  filter(model != "random_accuracy",
+         model != "cheap_accuracy",
+         model != "con_accuracy",
+         model != "twi_accuracy") %>% 
+  group_by(datetime) %>% 
+  mutate(max_accuracy = max(accuracy),
+         diff_in_acc = max_accuracy - accuracy) %>% 
+  filter(diff_in_acc >= 0.05) #%>%
+  mutate(dup = as.character(n() > 1)) %>% ungroup()  %>%
+  mutate(unique_sol = case_when(dup == TRUE ~ "z_tie",
+                                dup == FALSE ~ model)) %>%
+inner_join(big_comb, by = "datetime") #%>%
+  
+  library(dplyr)
+threshold <- 0.05
+#df_best <- 
+  df_long_w3 %>% 
+  filter(model != "random_accuracy",
+         model != "cheap_accuracy",
+         model != "con_accuracy")  %>% #View()
+    # your 0.05 rule
+  group_by(datetime) %>%
+  summarise(
+    top_acc   = max(accuracy, na.rm = TRUE),
+    n_top     = sum(accuracy >= top_acc - 1e-12),            # how many hit the top
+    top_model = model[which.max(accuracy)][1],
+    accs      = list(sort(unique(accuracy), decreasing = TRUE)),
+    .groups   = "drop"
+  ) %>%
+  rowwise() %>%
+  mutate(
+    second_acc = ifelse(length(accs) >= 2, accs[2], -Inf),   # second distinct max
+    margin     = top_acc - second_acc,
+    winner     = ifelse(n_top == 1 & margin >= threshold, top_model, "tie")
+  ) %>%
+  ungroup() %>%
+  select(datetime, winner, max_acc = top_acc) %>% 
+    inner_join(big_comb, by = "datetime") %>%
+ggplot(aes(x = datetime, y = log(Q_mm_day), color = winner)) +
+  geom_point(size = 1) +
+  theme_classic() +
+  scale_fill_manual(values = c("#d68c45", "#247BA0", "lightgrey",  "#2c6e49")) +
+  scale_color_manual(values = c("#d68c45", "#247BA0", "lightgrey",  "#2c6e49")) +
+  labs(
+    title = "Model at least 5% more accurate than other models, W3, Log Y",
+    y = "Discharge (mm/day)",
+    x = ""
+  ) +
+  scale_x_break(c(ymd_hms("2023-11-12 00:00:00"),
+                  ymd_hms("2024-05-20 00:00:00"))) +
+  scale_x_datetime(
+    date_labels = "%b %Y",   # or "%b %Y" for shorter labels
+    date_breaks = "1 month",    # adjust to taste
+    timezone = "UTC"
+  )+ theme(#legend.position = "bottom",
+           axis.ticks.x.top = element_blank(),
+        axis.text.x.top  = element_blank(),
+        axis.line.x.top = element_blank())
+
+```
+
+
+
 FB
 ```{r}
-all_fb_Q
+all_fb_Q <- all_fb_Q %>% 
+  rename(datetime = DATETIME,
+         Q_mm_day = Q)
+
+  threshold <- 0.05
+#df_best <- 
+  df_long_fb %>% 
+  filter(model != "random_accuracy",
+         model != "cheap_accuracy",
+         model != "con_accuracy")  %>% #View()
+    # your 0.05 rule
+  group_by(datetime) %>%
+  summarise(
+    top_acc   = max(accuracy, na.rm = TRUE),
+    n_top     = sum(accuracy >= top_acc - 1e-12),            # how many hit the top
+    top_model = model[which.max(accuracy)][1],
+    accs      = list(sort(unique(accuracy), decreasing = TRUE)),
+    .groups   = "drop"
+  ) %>%
+  rowwise() %>%
+  mutate(
+    second_acc = ifelse(length(accs) >= 2, accs[2], -Inf),   # second distinct max
+    margin     = top_acc - second_acc,
+    winner     = ifelse(n_top == 1 & margin >= threshold, top_model, "tie")
+  ) %>%
+  ungroup() %>%
+  select(datetime, winner, max_acc = top_acc) %>% 
+    inner_join(all_fb_Q, by = "datetime") %>%
+ggplot(aes(x = datetime, y = (Q_mm_day), color = winner)) +
+  geom_point(size = 1) +
+  theme_classic() +
+  scale_fill_manual(values = c("#d68c45", "#247BA0", "lightgrey",  "#2c6e49")) +
+  scale_color_manual(values = c("#d68c45", "#247BA0", "lightgrey",  "#2c6e49")) +
+  labs(
+    title = "Model at least 5% more accurate than other models, FB",
+    y = "Discharge (L/s)",
+    x = ""
+  ) +
+  scale_x_break(c(ymd_hms("2023-11-12 00:00:00"),
+                  ymd_hms("2024-05-20 00:00:00"))) +
+  scale_x_datetime(
+    date_labels = "%b %Y",   # or "%b %Y" for shorter labels
+    date_breaks = "1 month",    # adjust to taste
+    timezone = "UTC"
+  )+ theme(#legend.position = "bottom",
+           axis.ticks.x.top = element_blank(),
+        axis.text.x.top  = element_blank(),
+        axis.line.x.top = element_blank())
+  
+# to convert from L/s to mm/day, I need to know the watershed area of FB
 ```
 
 
