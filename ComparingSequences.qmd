@@ -3469,15 +3469,11 @@ input_w3 %>%
   # mutate("downstream" = lag(binary),
   #        "following" = downstream - binary) %>% 
   #filter(following != -1) %>% 
-  filter(datetime == "2023-07-15 19:00:00") %>% View()
+  filter(datetime == "2023-07-15 19:00:00") #%>% View()
    # summarise(count_non = length(following)) %>% View()
 
 
 #make a dataframe where each row is a date, with a list of the active or inactive nodes according to a hierarchy
-number_activated %>% mutate(all_nodes = W3_pk_seq$ID)
-
-
-
 number_activated <- 
   input_w3 %>% 
   left_join(W3_cheap, by = "ID") %>%
@@ -3488,6 +3484,11 @@ number_activated <-
       #filter(binary == 1) %>% 
     summarise(number_flowing = length(binary[binary == 1]),
             deployed = list(unique(ID))) #%>% View()
+
+number_activated
+number_activated %>% mutate(all_nodes = W3_pk_seq$ID)
+
+
 
 W3_pk_seq$ID[W3_pk_seq$ID %in% unlist(number_activated$deployed[1])]
 
@@ -6531,7 +6532,7 @@ From earlier, contains map template and actual flowing state
 #create a template for maps, then plot the flowing state at different timesteps on the template
 #map of watershed 3 with depth to bedrock
 hillshade_out <- "./w3_dems/1mdem_hillshade.tif"
-#hill <- rast(hillshade_out)
+hill <- rast(hillshade_out)
 
 #dem
 dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
@@ -6601,10 +6602,12 @@ doi <- c(ymd_hms("2023-10-20 00:00:00"),
                             ymd_hms("2023-10-22 00:00:00"),
                             ymd_hms("2023-10-23 00:00:00"),
                             ymd_hms("2023-10-24 00:00:00"))
-  
+#instead of big_comb, need something that has the flowing state of and model accuracy
 states <- big_comb %>% 
     filter(datetime %in% doi[1])
 
+states <- comparison_w3 %>% 
+  filter(datetime %in% doi[1])
 #w3_stic_locs_r %>% left_join(states, by = "ID")
 
 #figure without scale bar and legends
@@ -6646,9 +6649,10 @@ geom_sf(data = w3_stic_locs_r %>% inner_join(states, by = "ID"),
 ```{r}
 #make the same thing as above, but pivot longer and then plot using facets
 #states <- 
-states <- comparison %>% 
+states <- comparison_w3 %>% 
+    select(-c(cheapest, random)) %>% 
     filter(datetime %in% doi) %>% 
-  pivot_longer(cols = c(cheapest, pk, random, twi),
+  pivot_longer(cols = c(pk, twi),
                values_to = "prediction", 
                names_to = "sequence")
 
@@ -6671,6 +6675,102 @@ geom_sf(data = w3_stic_locs_r %>% inner_join(states, by = "ID"),
   facet_grid(sequence~datetime)
 
 ```
+
+```{r}
+#take map panels from above, and plot for times of interest, where one sequence works better than another... why?
+threshold <- 0.05
+#df_best <- 
+t <-   df_long_w3 %>% 
+  filter(model != "random_accuracy",
+         model != "cheap_accuracy",
+         model != "con_accuracy")  %>% #View()
+    # your 0.05 rule
+  group_by(datetime) %>%
+  summarise(
+    top_acc   = max(accuracy, na.rm = TRUE),
+    n_top     = sum(accuracy >= top_acc - 1e-12),            # how many hit the top
+    top_model = model[which.max(accuracy)][1],
+    accs      = list(sort(unique(accuracy), decreasing = TRUE)),
+    .groups   = "drop"
+  ) %>%
+  rowwise() %>%
+  mutate(
+    second_acc = ifelse(length(accs) >= 2, accs[2], -Inf),   # second distinct max
+    margin     = top_acc - second_acc,
+    winner     = ifelse(n_top == 1 & margin >= threshold, top_model, "tie")
+  ) %>%
+  ungroup() %>%
+  select(datetime, winner, max_acc = top_acc) %>% 
+    inner_join(big_comb, by = "datetime") %>%
+ggplot(aes(x = datetime, y = (Q_mm_day), color = winner)) +
+  geom_point(size = 1) +
+  theme_classic() +
+  scale_fill_manual(values = c("#d68c45", "#247BA0", "lightgrey",  "#2c6e49")) +
+  scale_color_manual(values = c("#d68c45", "#247BA0", "lightgrey",  "#2c6e49")) +
+  labs(
+    title = "Model at least 5% more accurate than other models, W3",
+    y = "Discharge (mm/day)",
+    x = ""
+  ) +
+ # scale_x_break(c(ymd_hms("2023-11-12 00:00:00"),
+  #                ymd_hms("2024-05-20 00:00:00"))) +
+  scale_x_datetime(
+    date_labels = "%b %Y",   # or "%b %Y" for shorter labels
+    date_breaks = "1 month",    # adjust to taste
+    timezone = "UTC"
+  )+ theme(#legend.position = "bottom",
+           axis.ticks.x.top = element_blank(),
+        axis.text.x.top  = element_blank(),
+        axis.line.x.top = element_blank())
+
+ggplotly(t)
+# determine the flowing state
+doi <- c(ymd_hms("2023-09-03 10:00:00"),
+                            ymd_hms("2023-09-04 10:00:00"),
+                            ymd_hms("2023-09-05 10:00:00"))#,
+                            #ymd_hms("2023-10-23 00:00:00"),
+                            #ymd_hms("2023-10-24 00:00:00"))
+doi <- c(ymd_hms("2023-11-04 07:00:00"),
+                            ymd_hms("2023-11-04 20:00:00"),
+                            ymd_hms("2023-11-04 21:00:00"),
+                            ymd_hms("2023-11-04 22:00:00"),
+                            ymd_hms("2023-11-05 04:00:00"))
+doi <- c(ymd_hms("2024-06-22 01:30:00"),
+                            ymd_hms("2024-06-22 05:30:00"),
+                            ymd_hms("2024-06-22 09:30:00"),
+                            ymd_hms("2024-06-22 13:30:00"),
+                            ymd_hms("2024-06-22 17:30:00"))
+
+t + xlim(doi[1], doi[5])
+
+states <- comparison_w3 %>% 
+    select(-c(cheapest, random)) %>% 
+    filter(datetime %in% doi) %>% 
+  pivot_longer(cols = c(pk, twi, new),
+               values_to = "prediction", 
+               names_to = "sequence")
+
+states$eval <- mapply(get_eval_label, states$binary, states$prediction)
+
+ggplot()+
+  theme_void()+
+  geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 1)+
+  geom_sf(data = w3_net, colour = "grey", lwd = 0.8) +
+geom_sf(data = w3_stic_locs_r %>% inner_join(states, by = "ID"), 
+        aes(fill = as.character(prediction),
+            color = eval), size = 2, stroke = 1, pch = 21) +
+  scale_color_manual(values = c("green", "black", "orange"),
+                     name = "")+
+  scale_fill_manual(values = c("white", "black"),
+                    labels = c("dry", "flowing"),
+                    name = "")+
+  theme(rect = element_rect(fill = "transparent", color = NA),
+        legend.position = "")+
+  facet_grid(sequence~datetime)
+
+```
+
+
 ```{r}
 #make a mini bar plot to show the flowing accuracy at each time step
 maps <- ggplot()+
@@ -7508,7 +7608,83 @@ metrics_df <- tibble(get_metrics(comparison$pred_out, comparison$binary)) %>%
 return(metrics_df)
 }
 
-produce_metrics(ZZ_cheap, "ZZ", "cheapest_insertion")
+produce_metrics2 <- function(chain, shed, method){
+# chain <- ZZ_cheap
+# shed <- "ZZ"
+# method = "cheapest_insertion"
+# calculate the number of flowing nodes at each timestep
+  if(shed == "W3"){
+    number_activated <-
+      input_w3 %>%
+      group_by(datetime) %>%
+      select(-c(wshed, mins)) %>%
+      filter(binary == 1) %>%
+      summarise(number_flowing = length(binary))
+  } 
+  else if(shed == "FB"){
+    number_activated <-
+      input_fb %>%
+      group_by(datetime) %>%
+      select(-c(wshed, mins)) %>%
+      filter(binary == 1) %>%
+      summarise(number_flowing = length(binary))
+  }
+  else if(shed == "ZZ"){
+    number_activated <-
+      input_zz %>%
+      group_by(datetime) %>%
+      select(-c(wshed, mins)) %>%
+      filter(binary == 1) %>%
+      summarise(number_flowing = length(binary))
+  }
+
+#make a dataframe where each row is a date, with a list of the active or inactive nodes according to a hierarchy
+
+  model_result <- calc_model_result(chain$ID, shed)
+
+#combine all model results
+  if(shed == "W3"){
+    comparison <- input_w3 %>%
+      filter(mins %in% c(0, 30)) %>%
+      left_join(model_result, by = c("datetime", "ID")) %>%
+      select(-wshed, -mins) %>%
+      drop_na()
+  } 
+  else if(shed == "FB"){
+    comparison <- input_fb %>%
+      filter(mins %in% c(0, 30)) %>%
+      left_join(model_result, by = c("datetime", "ID")) %>%
+      select(-wshed, -mins) %>%
+      drop_na()
+  }
+  else if(shed == "ZZ"){
+    comparison <- input_zz %>%
+      filter(mins %in% c(0, 30)) %>%
+      left_join(model_result, by = c("datetime", "ID")) %>%
+      select(-wshed, -mins) %>%
+      drop_na()
+  }
+
+
+#chat gpt method to compare them
+get_eval_label <- function(true, pred) {
+  if (true == 1 && pred == 1) return("correct")
+  if (true == 0 && pred == 0) return("correct")
+  if (true == 1 && pred == 0) return("omission")
+  if (true == 0 && pred == 1) return("commission")
+}
+#get_eval_label(0,0)
+#apply get_eval function to each model run
+comparison$pred_eval <- mapply(get_eval_label, 
+                                   comparison$binary, 
+                                   comparison$pred_out)
+
+
+return(comparison)
+}
+
+
+produce_metrics2(ZZ_cheap, "ZZ", "cheapest_insertion")
 produce_metrics(W3_cheap, "W3", "cheapest_insertion")
 
 #function to calculate accuracy just when system wetness is changing
