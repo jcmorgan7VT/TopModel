@@ -21,7 +21,7 @@ Formatted, should contain everything needed for current analysis. Have not check
 ```{r setup}
 #loading packages
 library(pacman)
-p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,ggnewscale, sf, elevatr, patchwork, ggspatial, zoo, igraph, TSP, ggnetwork, #intergraph, ggpubr, knitr, #purrr, spatialEco, 
+p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,ggnewscale, sf, elevatr, patchwork, ggspatial, zoo, igraph, TSP, ggnetwork, knitr, #intergraph, ggpubr, #purrr, spatialEco, 
        hydroEvents,ggbreak,
        maptools)
 #whitebox::install_whitebox()
@@ -1899,6 +1899,78 @@ filter_ATSP_as_TSP_dummies(as.TOUR(sol+1))
 
 ```
 
+Trying again, but filtering out every edge with a prop value less than 50%
+```{r W3}
+#define all possible methods
+#removed 3 methods
+methods <- c("nearest_insertion", "random",
+  "cheapest_insertion", "farthest_insertion", "arbitrary_insertion",
+  "nn", "repetitive_nn")
+
+methods <- c(
+  "cheapest_insertion")
+
+#set up edges and distance matrix, convert to TSP object
+edges_W3 <- 
+  W3_all_combos %>% 
+  mutate(prop = case_when(prop < 0.5 ~ NA,
+                          prop >= 0.5 ~ prop)) %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) %>% as.matrix() %>% unname()
+edges_W3[is.na(edges_W3)] <- 1
+
+keyz <- 
+  W3_all_combos %>% 
+    #filter(prop > 0.5) %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) #%>% as.matrix() %>% unname()
+#create an accurate key, old one is WRONG!!!
+key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
+                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
+
+# Convert to TSP object
+
+#FOR LOOP TO ITERATE THROUGH METHODS
+#for(i in 1:length(methods)){
+i <- 1
+  atsp <- as.ATSP(edges_W3)
+
+    atsp <- insert_dummy(atsp, label = "dummy")
+  tour <- solve_TSP(atsp, method = methods[i], two_opt = TRUE)
+    #tour <- solve_TSP(tour, method = "two_opt")
+
+  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
+
+  # Extract path, removing dummy node
+  path <- as.integer(tour)
+  path <- path[labels(tour)[path] != "dummy"]
+  path
+  #convert edges to format 
+  #edges <- cbind(path[-length(path)], path[-1])
+  
+  #apply key to convert nodes to sensor IDs for algorithm
+opt_routes <- 
+  tibble(node_ID = path,
+         sequence = seq(1, length(path), 1)) %>% 
+  left_join(key2, by = "node_ID") %>% 
+  rename(ID = sensor_ID) %>% 
+  select(ID, sequence)
+
+produce_metrics(opt_routes, "W3", "test")
+
+```
 
 Trying one more thing- what if the sequence was defined in order by average prop value when it is the parent?
 ```{r}
@@ -2212,6 +2284,24 @@ Make a map of the activation sequence
 ```
 
 ## Concorde solver
+```{r}
+edges_W3 <- 
+  W3_all_combos %>% 
+  mutate(prop = case_when(prop < 0.5 ~ NA,
+                          prop >= 0.5 ~ prop)) %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) %>% as.matrix() %>% unname()
+edges_W3[is.na(edges_W3)] <- 1
+```
+
+
 ```{r W3}
 keyz_w3 <- 
   W3_all_combos %>% 
@@ -2319,16 +2409,16 @@ concon2_w3 <- tibble(node_ID = con_big_w3, sequence = seq(1, length(con_big_w3),
   select(ID, sequence)
   
 #con_model <- calc_model_result(concon$ID, "W3") %>% rename("con" = pred_out)
-#produce_metrics(concon2, "W3", "concorde")
+produce_metrics(concon2_w3, "W3", "concorde")
 
 opt_routes_w3 <- 
-  concon2 %>% 
+  concon2_w3 %>% 
   mutate(down = lag(ID)) %>% 
     rename("up" = ID) %>% 
     select(up, down) %>% drop_na()
 
 # actually determining how often the nodes follow proportion of time flowing sequence
-conc_props_w3 <- calc_props(opt_routes, "W3")
+conc_props_w3 <- calc_props(opt_routes_w3, "W3")
 
 conc_props_w3 %>% 
   filter(timescale == "30mins") %>% 
@@ -4285,7 +4375,7 @@ w3_stic_locs_r <- vect(w3_stic_locs_snap) %>%
 
 
 
-w3_stic_locs_r <- vect(w3_stic_locs_snap)
+#w3_stic_locs_r <- vect(w3_stic_locs_snap)
 #writeVector(w3_stic_locs_r, "./seismic_map_exports/w3_stic_locs_snap.shp")
 
 
@@ -4298,7 +4388,7 @@ sum(perim(w3_net))
 ggplot()+
   geom_spatraster(data = hill)+
   theme_void()+
-  #theme(legend.position = "")+
+  theme(legend.position = "")+
   scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
     new_scale_fill() +
   geom_spatraster(data = crop1, alpha = 0.5)+
@@ -4308,24 +4398,25 @@ w3_map_f1 <-
   ggplot()+
   geom_spatraster(data = hill)+
   theme_void()+
-  theme(legend.position = "")+
-  scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
+  #theme(legend.position = "")+
+  scale_fill_gradientn(colors = c("gray9", "gray48","lightgray", "white"),
+                       guide = "none")+
     new_scale_fill() +
-  geom_spatraster(data = crop1, alpha = 0.5)+
+  #geom_spatraster(data = crop1, alpha = 0.5)+
   geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 2)+
-  geom_sf(data = w3_net, colour = "darkslategray3", lwd = 2) +
-  geom_sf(data = w3_stic_locs_r, colour = "midnightblue", size = 2) +
+  geom_sf(data = w3_net, colour = "#9AC0CD", lwd = 2) +
+  geom_sf(data = w3_stic_locs_r, aes(fill = pk), size = 3, pch = 21) +
   #geom_sf(data = dd, aes(color = (depth)), pch = 19, size = 3) +
-  scale_color_gradient(low = "black", high = "white")+
+  scale_fill_gradient(high = "#27408B", low = "white", guide = "none")+
   #geom_sf(data = w3_pour, colour = "black") +
-   scale_fill_hypso_c(palette = "dem_screen" , limits = c(200, 1000))+
-  theme(rect = element_rect(fill = "transparent", color = NA))+
+   #scale_fill_hypso_c(palette = "dem_screen" , limits = c(200, 1000))+
+  #theme(rect = element_rect(fill = "transparent", color = NA))+
   ggspatial::annotation_scale(location = 'tr',
-                              pad_x = unit(1, "cm"),
-                              pad_y = unit(0.1, "cm"))
+                              pad_x = unit(0.4, "cm"),
+                              pad_y = unit(1, "cm"))
                               
 w3_map_f1
-#ggsave(w3_map_f1)
+ggsave("w3_map_f1f.png", w3_map_f1 )
 
 ```
 ```{r FB-map}
@@ -4338,7 +4429,6 @@ ybounds <- c(4868850,4869650)
 xbounds <- c(279350, 280450)
 
 #create a SpatExtent from a vector (length=4; order=xmin, xmax, ymin, ymax)
-points(lcc)
 crop1 <- crop(m1, ext(c(xbounds, ybounds)))
 #save cropped 1m dem to reduce processing time below, and gurantee that everything has the same extent
 #writeRaster(crop1, "./fb_dems/1mdem_crop.tif", overwrite = TRUE)
@@ -4419,11 +4509,13 @@ locs_fb <- data_23 %>%
   select(ID, lat, long) %>% 
   unique()
 #convert STIC data to a SpatVector data format
-locs_shape_fb <- vect(locs, 
+locs_shape_fb <- vect(locs_fb, 
                    geom=c("long", "lat"), 
                    crs = "+proj=longlat +datum=WGS84")
 #reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
-lcc_fb <- terra::project(locs_shape_fb, crs(m1))
+lcc_fb <- terra::project(locs_shape_fb, crs(m1)) %>% 
+  left_join(pks_fb, by = "ID")
+
 
 #assign destination for hillshade calculation
 hillshade_out_fb <- "./fb_dems/1mdem_hillshade.tif"
@@ -4438,15 +4530,19 @@ hill_fb <- rast(hillshade_out_fb)
   ggplot()+
   geom_spatraster(data = hill_fb)+
   theme_void()+
-  theme(legend.position = "")+
-  scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
+  #theme(legend.position = "")+
+  scale_fill_gradientn(colors = c( "gray9", "gray48","lightgray", "white"),
+                                   guide = "none")+
     new_scale_fill() +
-  geom_spatraster(data = crop1, alpha = 0.5)+
+  #geom_spatraster(data = crop1, alpha = 0.5)+
     geom_sf(data = fb_outline, fill = NA, color = "#397367", alpha = 0.3, lwd = 2) +
   geom_sf(data = fb_net, colour = "darkslategray3", lwd = 2) +
-    geom_sf(data = lcc_fb, colour = "midnightblue", pch = 19, size = 2) +
+    #geom_sf(data = lcc_fb, colour = "midnightblue", pch = 19, size = 2) +
+    geom_sf(data = lcc_fb, aes(fill = pk), size = 3, pch = 21) +
+  #geom_sf(data = dd, aes(color = (depth)), pch = 19, size = 3) +
+  scale_fill_gradient(high = "#27408B", low = "white")+
   #geom_sf(data = fb_pour, colour = "black", pch = 8, size = 3) +
-   scale_fill_hypso_c(palette = "dem_screen", limits = c(200, 1000))+
+   #scale_fill_hypso_c(palette = "dem_screen", limits = c(200, 1000))+
   theme(rect = element_rect(fill = "transparent", color = NA))+
   ggspatial::annotation_scale(location = 'tr', pad_x = unit(1, "cm"), 
                               pad_y = unit(1, "cm"))
@@ -4471,7 +4567,9 @@ locs_shape <- vect(locs,
                    crs = "+proj=longlat +datum=WGS84")
 #plot(locs_shape)
 #reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
-lcc <- terra::project(locs_shape, crs(m1))
+lcc <- terra::project(locs_shape, crs(m1)) %>% 
+  left_join(pks_zz, by = "ID")
+
 #plot(lcc)
 #define the rectangular area that will be shown on final map
 ybounds <- c(4866400,4867500)
@@ -4575,21 +4673,123 @@ hill <- rast(hillshade_out)
   ggplot()+
   geom_spatraster(data = hill)+
   theme_void()+
-  theme(legend.position = "")+
-  scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
+  #theme(legend.position = "")+
+  scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"),
+                       guide = "none")+
     new_scale_fill() +
-  geom_spatraster(data = crop1, alpha = 0.5)+
+  #geom_spatraster(data = crop1, alpha = 0.5)+
     geom_sf(data = zz_outline, fill = NA, color = "#7E6B8F", alpha = 0.3, lwd = 2) +
   geom_sf(data = zz_net, colour = "darkslategray3", lwd = 2) +
-    geom_sf(data = lcc, colour = "midnightblue", pch = 19, size = 2) +
+    #geom_sf(data = lcc, colour = "midnightblue", pch = 19, size = 2) +
+    geom_sf(data = lcc, aes(fill = pk), size = 3, pch = 21) +
+  #geom_sf(data = dd, aes(color = (depth)), pch = 19, size = 3) +
+  scale_fill_continuous(high = "#27408B", low = "white",
+                        labels = c("0", "0.5", "1"),
+                        breaks = c(0, 0.5, 1),
+                        limits = c(0, 1))+
   #geom_sf(data = zz_pour, colour = "black", pch = 8, size = 3) +
-   scale_fill_hypso_c(palette = "dem_screen", limits = c(200, 1000))+
-  theme(rect = element_rect(fill = "transparent", color = NA))+
-  ggspatial::annotation_scale(location = 'tr', pad_x = unit(1, "cm"), 
+   #scale_fill_hypso_c(palette = "dem_screen", limits = c(200, 1000))+
+  theme(rect = element_rect(fill = "transparent", color = NA),
+        legend.position = "left")+
+    labs(fill = str_wrap("Proportion of time flowing", width = 10))+
+  ggspatial::annotation_scale(location = 'tr', pad_x = unit(0.2, "cm"), 
                               pad_y = unit(1, "cm"))
 
 
 ```
+
+```{r whole-Valley}
+#use HB dem from previous maps, but just don't crop it, include outline of the whole valley, and the outlines of each study shed
+dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
+m1 <- rast(dem)
+plot(m1)
+
+#old hillshade
+valley_hill <- rast("./HB/1m hydro enforced DEM/wall_hillshade.tif")
+#old hillshade has a different angle, emphasizes the lineaments in the east better, but new one looks niver
+#see if a newly calculated one looks better
+hillshade_out <- "./HB/1m hydro enforced DEM/new_hillshade.tif"
+wbt_hillshade(
+  dem = dem,
+  output = hillshade_out,
+)
+valley_hill2 <- rast(hillshade_out)
+plot(valley_hill2)
+
+
+#get the outlines for each watershed
+#W3
+w3_shed <- "./w3_dems/w3_shed.tif"
+w3_outline <- as.polygons(rast(w3_shed), extent=FALSE)
+#FB
+fb_shed <- "./fb_dems/fb_shed.tif"
+fb_outline <- as.polygons(rast(fb_shed), extent=FALSE)
+#ZZ
+zz_shed <- "./zz_dems/zz_shed.tif"
+zz_outline <- as.polygons(rast(zz_shed), extent=FALSE)
+
+
+
+valley_plot <- ggplot()+
+  geom_spatraster(data = valley_hill2, maxcell = 5e+05)+#make max cells bigger on final version
+  theme_void()+
+  theme(legend.position = "")+
+  scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"))+
+    new_scale_fill() +
+  geom_spatraster(data = m1, alpha = 0.5)+
+  geom_sf(data = fb_outline, fill = NA, color = "black", alpha = 0.3, lwd = 1.5) +
+  geom_sf(data = w3_outline, fill = NA, color = "black", alpha = 0.3, lwd = 1.5) +
+  geom_sf(data = zz_outline, fill = NA, color = "black", alpha = 0.3, lwd = 1.5) +
+
+  #geom_sf(data = fb_net, colour = "darkslategray3") +#, lwd = 3) +
+    #geom_sf(data = lcc, colour = "midnightblue") + #, pch = 19, size = 6) +
+  #geom_sf(data = fb_pour, colour = "black") + #, pch = 8, size = 3) +
+   scale_fill_hypso_c(palette = "dem_screen")+#, limits = c(200, 1000))+
+  theme(rect = element_rect(fill = "transparent", color = NA))+
+  ggspatial::annotation_scale(location = 'tr', pad_x = unit(0.5, "cm"), 
+                              pad_y = unit(0.5, "cm")) #, line_width = 3, text_cex = 5, tick_height = 20)
+valley_plot
+#ggsave("valley.png", plot = valley_plot, limitsize = FALSE, units = "in", bg = NULL,)
+
+#combine 3 watershed shapes into one layer, and either label or make distinct colors
+
+```
+```{r}
+HB_bounds <- "./HB/hbef_wsheds/hbef_wsheds.shp"
+sheds <- vect(HB_bounds)
+sheds <- terra::project(sheds, crs(hill))
+plot(sheds)
+
+hb_outline <- aggregate(sheds)
+
+
+shed_colors <- c("#397367", "#FFD166", "#7E6B8F")
+
+valley_plot <- ggplot()+
+  geom_spatraster(data = valley_hill2, maxcell = 5e+05)+#make max cells bigger on final version
+  theme_void()+
+  theme(legend.position = "")+
+  scale_fill_gradientn(colors = c("gray9", "gray48","lightgray", "white"))+
+    new_scale_fill() +
+  #geom_spatraster(data = m1, alpha = 0.5)+
+  geom_sf(data = hb_outline, fill = NA, color = "black", alpha = 0.6, lwd = 1, lty = 2) +
+  geom_sf(data = fb_outline, fill = shed_colors[1], color = shed_colors[1], alpha = 0.6, lwd = 1) +
+  geom_sf(data = w3_outline, fill = shed_colors[2], color = shed_colors[2], alpha = 0.6, lwd = 1) +
+  geom_sf(data = zz_outline, fill = shed_colors[3], color = shed_colors[3], alpha = 0.6, lwd = 1) +
+
+  #geom_sf(data = fb_net, colour = "darkslategray3") +#, lwd = 3) +
+    #geom_sf(data = lcc, colour = "midnightblue") + #, pch = 19, size = 6) +
+  #geom_sf(data = fb_pour, colour = "black") + #, pch = 8, size = 3) +
+   #scale_fill_hypso_c(palette = "dem_screen")+#, limits = c(200, 1000))+
+  theme(rect = element_rect(fill = "transparent", color = NA))+
+  ggspatial::annotation_scale(location = 'tr', pad_x = unit(1, "cm"), 
+                              pad_y = unit(0.5, "cm"))
+valley_plot
+
+ggsave("valley.png", plot = valley_plot, limitsize = FALSE, units = "in", bg = NULL,)
+
+```
+
 
 ## Figure 2: Vignettes of network wetting and drying
 Chunk below copied from mapsForStoryboard.qmd, from section where I was determining times when the network went from fully dry to fully wet.
@@ -6129,7 +6329,9 @@ w3_pk_seq2 <-
   arrange(desc(pk)) %>% 
   mutate(sequence = seq(1, 26, 1))
 
-w3_grid <- W3_all_combos %>% 
+#w3_grid <- 
+  W3_all_combos %>% 
+    filter(prop > 0.5) %>% 
   mutate(up = as.numeric(substr(up, 3,4)),
          down = as.numeric(substr(down, 3,4))) %>% 
   filter(timescale == "30mins") %>% 
@@ -6215,19 +6417,48 @@ w3_grid + fb_grid + zz_grid
 ## Figure 6: Chains
 Plot that will show multiple chains beside each other, and highlight where they are different
 ```{r}
+renum_w3_pk <- W3_pk_seq %>% 
+  mutate(method = "Proportion of Time Flowing", x = 1) %>% 
+  filter(ID %in% new_seq_w3$down) %>% 
+  mutate(sequence = seq(1, 25, 1))
+
+color_key <- renum_w3_pk %>% 
+  select(ID, sequence) %>% 
+  rename(color_ID = sequence)
+  
+renum_w3_pk <- renum_w3_pk %>% left_join(color_key, by = "ID")
+
+renum_w3_twi <- w3_twi_sequence %>% 
+  mutate(method = "Topographic Wetness Index", x = 3) %>% 
+  filter(ID %in% new_seq_w3$down) %>% 
+  mutate(sequence = seq(1, 25, 1)) %>% 
+  left_join(color_key, by = "ID")
+
+renum_w3_new <- convert_to_IDseq(new_seq_w3) %>% 
+  mutate(method = "Average Sequential Wetting", x = 2) %>% 
+  left_join(color_key, by = "ID")
+
 #Make dataframe to contain the locations of points
 rbind(#mutate(W3_cheap, method = "cheapest_insertion",x = 1),
-      mutate(W3_pk_seq, method = "pk", x = 1),
+      renum_w3_pk,
       #mutate(convert_to_IDseq(W3_random), method = "random", x = 3),
-       mutate(convert_to_IDseq(new_seq_w3), method = "new", x = 2),
-      mutate(w3_twi_sequence, method = "twi", x = 3)
+       renum_w3_new,
+      renum_w3_twi
      
       #mutate(convert_to_IDseq(opt_routes_w3), method = "con", x = 6)
       ) %>% 
+  mutate(#method = str_wrap(method, 10),
+         method = fct_relevel(method, c("Proportion of Time Flowing",
+                                "Average Sequential Wetting",
+                                "Topographic Wetness Index"))
+         ) %>% 
   ggplot()+
-  geom_point(aes(x = x, y = sequence), size = 5)+
-  geom_text(aes(x = x, y = sequence, label = ID), color = "white", size = 2)+
-  labs()
+  geom_point(aes(x = method, y = sequence, color = color_ID), size = 5)+
+  geom_text(aes(x = method, y = sequence, label = ID), color = "white", size = 2)+
+  scale_x_discrete(labels = function(method) str_wrap(method, width = 10))+
+  scale_color_viridis_c(guide = "none")+
+  theme_classic()+
+  labs(y = "Sequence", x = "")
 ```
 
 
@@ -6682,8 +6913,11 @@ threshold <- 0.05
 #df_best <- 
 t <-   df_long_w3 %>% 
   filter(model != "random_accuracy",
+          #model != "new_accuracy",
+          model != "twi_accuracy",
          model != "cheap_accuracy",
-         model != "con_accuracy")  %>% #View()
+         model != "con_accuracy"
+         )  %>% #View()
     # your 0.05 rule
   group_by(datetime) %>%
   summarise(
@@ -6706,14 +6940,14 @@ ggplot(aes(x = datetime, y = (Q_mm_day), color = winner)) +
   geom_point(size = 1) +
   theme_classic() +
   scale_fill_manual(values = c("#d68c45", "#247BA0", "lightgrey",  "#2c6e49")) +
-  scale_color_manual(values = c("#d68c45", "#247BA0", "lightgrey",  "#2c6e49")) +
+  scale_color_manual(values = c("#d68c45", "#247BA0","lightgrey",  "#2c6e49")) +
   labs(
     title = "Model at least 5% more accurate than other models, W3",
     y = "Discharge (mm/day)",
     x = ""
   ) +
- # scale_x_break(c(ymd_hms("2023-11-12 00:00:00"),
-  #                ymd_hms("2024-05-20 00:00:00"))) +
+ scale_x_break(c(ymd_hms("2023-11-12 00:00:00"),
+                ymd_hms("2024-05-20 00:00:00"))) +
   scale_x_datetime(
     date_labels = "%b %Y",   # or "%b %Y" for shorter labels
     date_breaks = "1 month",    # adjust to taste
@@ -6723,7 +6957,7 @@ ggplot(aes(x = datetime, y = (Q_mm_day), color = winner)) +
         axis.text.x.top  = element_blank(),
         axis.line.x.top = element_blank())
 
-ggplotly(t)
+t
 # determine the flowing state
 doi <- c(ymd_hms("2023-09-03 10:00:00"),
                             ymd_hms("2023-09-04 10:00:00"),
@@ -6757,8 +6991,10 @@ ggplot()+
   geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 1)+
   geom_sf(data = w3_net, colour = "grey", lwd = 0.8) +
 geom_sf(data = w3_stic_locs_r %>% inner_join(states, by = "ID"), 
-        aes(fill = as.character(prediction),
-            color = eval), size = 2, stroke = 1, pch = 21) +
+        aes(fill = as.character(prediction)
+            ,
+            color = eval
+            ), size = 2, stroke = 1, pch = 21) +
   scale_color_manual(values = c("green", "black", "orange"),
                      name = "")+
   scale_fill_manual(values = c("white", "black"),
@@ -7429,6 +7665,10 @@ W3_rot / FB_rot / (ZZ_rot)
 
 ## Table 1: Topographic Metrics
 Drainage densities, drainage area, elevation range, measured expansion coefficient
+```{r drainage-area}
+#determine watershed area
+area_w3 <- expanse(w3_outline)/(1000 * 1000) #km^2
+```
 
 drainage density is just stream length (m) divided by area of shed (m^2)
 ```{r drainage-density}
@@ -7436,15 +7676,24 @@ drainage density is just stream length (m) divided by area of shed (m^2)
 #determine total stream length
 length_w3 <- sum(perim(w3_net))/1000 #m
 #determine watershed area
-area_w3 <- expanse(w3_outline)/(1000 * 1000) #m^2
+area_w3 <- expanse(w3_outline)/(1000 * 1000) #km^2
 
 length_w3 / area_w3
 #end up with a drainage density a lot larger than what Carrie reported and calculated
 
 ## FB
+length_fb <- sum(perim(fb_net))/1000 #m
+#determine watershed area
+area_w3 <- expanse(w3_outline)/(1000 * 1000) #m^2
 
+length_w3 / area_w3
 ## ZZ
 ```
+
+```{r}
+p_load(rempsyc)
+```
+
 
 ## Table 2: Accuracy of models
 Create a function that will compare a chain output and it's sequential wetting model to the actual observations.
@@ -7818,15 +8067,22 @@ all_methods_acc <- many_chains
 
 
 ```{r accuracy-W3}
-w3_acc <- rbind(produce_metrics(W3_cheap, "W3", "cheapest_insertion"),
+w3_acc <- rbind(#produce_metrics(W3_cheap, "W3", "cheapest_insertion"),
       produce_metrics(W3_pk_seq, "W3", "pk"),
-      produce_metrics(convert_to_IDseq(W3_random), "W3", "random"),
+      #produce_metrics(convert_to_IDseq(W3_random), "W3", "random"),
       produce_metrics(w3_twi_sequence, "W3", "twi"),
-      produce_metrics(convert_to_IDseq(new_seq_w3), "W3", "new"),
-      produce_metrics(convert_to_IDseq(opt_routes_w3), "W3", "con")
+      produce_metrics(convert_to_IDseq(new_seq_w3), "W3", "new")#,
+      #produce_metrics(convert_to_IDseq(opt_routes_w3), "W3", "con")
 
       )
 kable(w3_acc, digits = 2)
+
+p_load(rempsyc)
+
+nice_table(
+  w3_acc
+  )
+)
 
 ```
 ```{r accuracy-FB}
@@ -8640,25 +8896,6 @@ ccf(X[,1], X[,2], lag.max = 10, main = "Cross-correlation Node1 vs Node2")
 
 ```
 ```{r}
-p_load(arulesSequences)
-
-# Convert to transactions: each time step = sequence of active nodes
-events <- apply(X, 1, function(row) which(row == 1))
-seqdata <- do.call(rbind, lapply(seq_along(events), function(t) {
-  data.frame(
-    sequenceID = t,
-    eventID = 1,
-    size = length(events[[t]]),
-    items = paste0("Node", events[[t]])
-  )
-}))
-
-seqs <- as(seqdata, "transactions")
-rules <- cspade(seqs, parameter = list(support = 0.01, maxlen = 3))
-inspect(rules[1:10])
-
-```
-```{r}
 p_load(depmixS4)
 
 # Fit HMM with 2 hidden states to one node’s series
@@ -9374,4 +9611,283 @@ print(longest_complete_chunk)
 
 ```
 
+Trying gpt one more time
+```{r}
+p_load(arulesSequences)
 
+#create matrix, where rows are timesteps and columns are individual nodes
+
+X <- input_w3 %>% filter(datetime >= ymd_hms("2023-07-30 00:00:00"),
+                    datetime <= ymd_hms("2023-09-17 00:00:00")) %>% 
+  select(datetime, ID, binary) %>% 
+  pivot_wider(names_from = ID, values_from = binary) %>% #filter(if_any(everything(), is.na)) %>% View()
+  select(-datetime) %>% 
+  data.matrix()
+
+# Convert to sequence data: which nodes are active each timestep
+events <- apply(X, 1, function(row) colnames(X)[which(row==1)])
+events
+
+# Build sequence data frame
+seqdata <- do.call(rbind, lapply(seq_along(events), function(t) {
+  data.frame(
+    sequenceID = 1,      # single global sequence here; use multiple IDs if multiple runs
+    eventID    = t,      # timestep index
+    size       = length(events[[t]]),
+    items      = paste(events[[t]], collapse=",")
+  )
+}))
+
+seqdata
+
+# Write to temporary file in the expected basket format
+tmpfile <- tempfile()
+write.table(seqdata,
+            file = tmpfile,
+            sep = " ",
+            row.names = FALSE,
+            col.names = FALSE,
+            quote = FALSE)
+
+# Read back in as timedsequences
+seqs <- read_baskets(con = tmpfile,
+                     info = c("sequenceID","eventID","SIZE"))
+
+# Run CSPADE (Apriori-style sequence mining)
+patterns <- cspade(seqs, parameter = list(support = 0.5, maxlen = 3))
+inspect(patterns)
+# Convert to "timedsequences"
+seqs <- as((seqdata), "timedsequences")
+
+# Run Apriori-based sequential pattern mining (CSPADE)
+patterns <- cspade(seqs, parameter = list(support = 0.2, maxlen = 3))
+inspect(patterns)
+
+seqs <- as(seqdata, "transactions")
+patterns <- cspade(seqs, parameter = list(support = 0.3, maxlen = 3))  
+inspect(patterns)
+
+```
+
+That algorithm was not quite suitable, but maybe this will be
+```{r}
+make_serial_windows <- function(mat, window_size=4) {
+  n <- nrow(mat)
+  sequences <- lapply(1:(n-window_size+1), function(i) {
+    window <- mat[i:(i+window_size-1), , drop=FALSE]
+    # collect active nodes in order of time
+    seq <- unlist(apply(window, 1, function(row) colnames(mat)[which(row==1)]))
+    seq
+  })
+  return(sequences)
+}
+
+windows <- make_serial_windows(X, window_size=4)
+windows
+
+
+# Convert to seqdata format
+seqdata <- data.frame(
+  sequenceID = rep(seq_along(windows), sapply(windows, length)),
+  eventID    = unlist(lapply(windows, seq_along)),
+  items      = unlist(windows)
+)
+
+# Must coerce items to factor
+seqdata$items <- as.factor(seqdata$items)
+
+# Write to temporary file in basket format
+tmpfile <- tempfile()
+write.table(seqdata,
+            file = tmpfile,
+            sep = " ",
+            row.names = FALSE,
+            col.names = FALSE,
+            quote = FALSE)
+
+# Read as timedsequences
+seqs <- read_baskets(con = tmpfile, info = c("sequenceID","eventID"))
+
+# Mine sequential patterns
+patterns <- cspade(seqs, parameter = list(support=0.3, maxlen=4))
+inspect(patterns[1:5])
+
+# Convert to data frame
+df_patterns <- as(patterns, "data.frame")
+
+# Count number of steps in each pattern
+df_patterns$length <- sapply(df_patterns$sequence, function(x) {
+  # count number of {…} blocks
+  length(gregexpr("\\{", x)[[1]])
+})
+
+# Keep only those with length >= 2
+df_patterns_filtered <- subset(df_patterns, length >= 2)
+
+head(df_patterns_filtered, 10)
+
+
+# Count bigrams (A -> B transitions)
+library(stringr)
+
+transitions <- data.frame(from=character(), to=character(), count=integer())
+#this runs way too long
+for (s in df_patterns$sequence) {
+  steps <- str_extract_all(s, "\\{[^}]+\\}")[[1]]
+  steps <- gsub("[{}]", "", steps)
+  steps <- unlist(strsplit(steps, ","))
+  if (length(steps) >= 2) {
+    for (i in 1:(length(steps)-1)) {
+      transitions <- rbind(
+        transitions,
+        data.frame(from=steps[i], to=steps[i+1], count=1)
+      )
+    }
+  }
+}
+
+# Aggregate counts
+transitions <- transitions %>%
+  group_by(from, to) %>%
+  summarise(weight = sum(count), .groups="drop") %>%
+  arrange(desc(weight))
+
+head(transitions, 10)
+
+
+```
+```{r}
+make_transition_matrix <- function(mat) {
+  n_nodes <- ncol(mat)
+  trans <- matrix(0, n_nodes, n_nodes,
+                  dimnames = list(colnames(mat), colnames(mat)))
+  
+  for (t in 1:(nrow(mat)-1)) {
+    active_now  <- which(mat[t, ] == 1)
+    active_next <- which(mat[t+1, ] == 1)
+    for (i in active_now) {
+      for (j in active_next) {
+        trans[i, j] <- trans[i, j] + 1
+      }
+    }
+  }
+  return(trans)
+}
+
+Tmat <- make_transition_matrix(X)
+Tmat
+
+Pmat <- prop.table(Tmat, margin=1)  # row-stochastic (each row sums to 1)
+round(Pmat, 2)
+
+library(igraph)
+
+g <- graph_from_adjacency_matrix(Pmat, mode="directed", weighted=TRUE)
+plot(g,
+     edge.width = E(g)$weight * 5,
+     edge.arrow.size = 0.5,
+     vertex.size = 30,
+     vertex.color = "skyblue",
+     vertex.label.color = "black")
+
+```
+
+#ITERATING SMART ONCE AGAIN
+Doing by BFS algorithm that I accidentally invented lol
+```{r iterating-smart-W3}
+#pick a sensor randomly, then test every other sensor to see which has the best hierarchical behavior with that one. Proceed down the list without replacement
+options(dplyr.summarise.inform = FALSE)
+options(dplyr.mutate_all.inform = FALSE)
+
+
+#combos <- unique(combos$up)
+#with modern function, do not need input
+#[1] "2025-09-10 10:12:20 EDT"
+combos <- W3_IDs
+#find the starting point
+
+for(t in 1:length(combos)){
+ #t <- 1
+begin <- combos[t]
+options_initial <- combos[combos != begin]
+options <- combos[combos != begin]
+
+routes <- data.frame("up" = rep(begin, length(options_initial)),
+                     "down" = options_initial)
+ for(x in 1:length(options)){
+ #x <- 1
+ #calc_props(routes[x], "W3")
+        out <- calc_props(routes, "W3") %>% filter(timescale == "30mins")
+        
+        kep <- out[out$prop == max(out$prop),] #find the max prop value
+        kep <- kep[1,] #if tied, keep the first one/row
+  options <- options[options != substr(kep$down[1], 3, 4)] #create new options list
+  routes <- tibble("up" = substr(rep(kep$down[1], length(options)), 3, 4),
+                     "down" = options)
+  print(paste0("x = ",x))
+
+  if(x == 1) big_keep <- kep
+  if(x > 1) big_keep <- rbind(big_keep, kep)
+ }
+
+
+big_keep$start <- begin
+
+if(t == 1) biggest_keep <- big_keep
+  if(t > 1) biggest_keep <- rbind(biggest_keep, big_keep)
+}
+Sys.time()
+#[1] "2025-09-10 10:26:42 EDT"
+
+
+smart_iterate_w3_new <- biggest_keep
+View(smart_iterate_w3_new)
+smart_iterate_w3_new %>% group_by(start) #%>% 
+  ggplot()+
+  geom_density(data = smart_iterate_w3_new, 
+               aes(x = prop, y = after_stat(density), color = as.factor(start)))+
+  geom_density(data = filter(all_pk, timescale == "30mins" | shed == "W3"))+
+  aes(x = prop, y = after_stat(density))#+
+
+```
+
+
+This is actually a breadth-first-search algorithm....
+```{r}
+
+starts <- unique(smart_iterate_w3_new$start)
+
+starts[1]
+smart_iterate_w3 %>% 
+  filter(start == starts[1]) %>% 
+  as_tibble() %>% 
+  select(up, down) %>% 
+  #mutate(up = substr(up, 3, 4)) %>% 
+  convert_to_IDseq() %>% 
+  mutate(ID = as.numeric(substr(ID, 3, 4)))
+
+#testing every method
+for(i in 1:length(starts)){
+
+  chain <- smart_iterate_w3_new %>% 
+    filter(start == starts[i]) %>% 
+    as_tibble() %>% 
+    select(up, down) %>% 
+    convert_to_IDseq() %>% 
+    mutate(ID = as.numeric(substr(ID, 3, 4)))
+  
+  output <- produce_metrics(chain, "W3", starts[i])
+  
+  if(i == 1) many_chains <- output
+  if(i > 1) many_chains <- rbind(many_chains, output)
+}
+
+all_methods_acc <- many_chains
+
+View(all_methods_acc)
+all_methods_acc %>% filter(Accuracy == max(Accuracy))
+
+
+smart_iterate_w3_new
+
+```
