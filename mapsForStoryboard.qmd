@@ -6144,6 +6144,7 @@ Alter code to test two scenarios and compare to the original one
 Output of these functions will return all combinations of 4 observed and their counts, instead of filtering to combinations of interest like earlier attempts
 Included a new function, calc_props that removes 0011 and 1100, but a function for different scenarios could be developed here instead
 ```{r all-combos-functions}
+#removed all supports that I am filtering out
 calc_support_combos <- function(up, down, input){
 #inputs to function- comment out in final version
 # i <- 4
@@ -6199,10 +6200,10 @@ sequence_df$down <- down
 output$total <- sum(sequence_df$Frequency)
 #write some way to score the sequence_df
 #award one point for one of these configs:
-supports <- c("0001","0111","1101", "0100")
+#supports <- c("0001","0111","1101", "0100")
 
 
-sub <- filter(sequence_df, Sequence %in% supports)
+sub <- sequence_df#filter(sequence_df, Sequence %in% supports)
 output$points <- sum(sub$Frequency)
 
 
@@ -6333,7 +6334,7 @@ routes_w3 <- read_csv("w3_flowrouting.csv") %>%
   select(up, down) %>% 
   filter(down != 100, up != 0)
 
-fantastic_four_combos(routes_w3, "W3")
+fantastic_four_combos(routes_w3, "W3") %>% View()
 
 
 #must calculate prop values after and outside of fantastic 4
@@ -6929,8 +6930,9 @@ edges2 <- test %>%
   select(up, down, weight, labels)
 
 write.csv(edges2, "edges2.csv")
+edges2 <- read_csv("edges2.csv")
 
-network <- graph_from_data_frame(d=edges2, directed=T) 
+network <- graph_from_adjacency_matrix(edges_W3, mode = "directed", weighted = TRUE) 
 E(network)$weight
 # plot it
 plot(network,layout = layout_nicely(network), edge.arrow.size = 0.25,
@@ -6938,18 +6940,18 @@ plot(network,layout = layout_nicely(network), edge.arrow.size = 0.25,
      vertex.label.cex = 1)
 is_weighted(network)
 #greedy algorithm
-mst <- mst(network, weights = edges2$weight)
+mst <- mst(network, weights = E(network)$weight)
 
     # Visualize the MST (optional)
 same.shape <- layout_nicely(mst)
-
+V(mst)$name <- key2$sensor_ID
 plot(
   mst,
-  #layout = layout_nicely(mst),
-  layout = layout_as_tree(mst),
+  layout = layout_nicely(mst),
+  #layout = layout_as_tree(mst),
   vertex.label = V(mst)$name,
   edge.arrow.size = 0.25,
-  vertex.size = 10,
+  vertex.size = 5,
   vertex.label.cex = 0.75,
   edge.weight=2,
   #edge.width=(E(mst)$weight*500),
@@ -6968,7 +6970,7 @@ seed <- V(graph1)$name[sample(1:vcount(graph1), 10)]
 tree1 <- SEMtree(network, data = as_data_frame(network), seed=seed, type="CLE", verbose=TRUE)
 tree1 <- SEMtree(graph1, data = als.npn, seed=seed, type="CLE", verbose=TRUE)
 
-V <- colnames(als.npn)[colnames(als.npn) %in% V(graph)$name]
+V <- colnames(als.npn)[colnames(als.npn) %in% V(graph1)$name]
 tree3 <- SEMtree(NULL, als.npn, seed=V, type="CAT", verbose=TRUE)
 tree4 <- SEMtree(NULL, als.npn, seed=V, type="CPDAG", alpha=0.05, verbose=TRUE)
 
@@ -6979,7 +6981,8 @@ edges3 <- edges2 %>%
   #        down = substr(up, 3,4)) #%>% 
   pivot_wider(names_from = up, values_from = weight)
 
-V <- edges3$down
+V <- V(network)$label
+tree3 <- SEMtree(network, E(network)$weight, seed = seq(1, 26, 1), type="MST", verbose=TRUE)
 
 tree3 <- SEMtree(network$graph, edges3, seed=V, type="CAT", verbose=TRUE)
 tree3 <- SEMtree(network$graph, edges3, seed=V, type="MST", verbose=TRUE)

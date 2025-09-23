@@ -307,6 +307,55 @@ un_split <- total_state_changes %>%
 return(un_split)
 }
 ```
+Make them ID/sequence format
+```{r helper-functions}
+#write wrapper functions to convert between the two forms easily
+#routes_w3 <- 
+  pks_w3 %>% 
+    filter(ID %in% W3_IDs) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down) %>% 
+  convert_to_IDseq()
+
+#convert from up/down to ID/seq
+convert_to_IDseq <- function(input){ 
+  #expecting input that is a df of up/down structure
+
+  #make list in order of parent-child sequence
+  IDs <- c(input$down[1], input$up)
+  #make sequence ID column
+  sequence <- seq(1, length(input$up) + 1, 1)
+ 
+  convert <- tibble(ID = IDs,
+           sequence = sequence)
+  
+return(convert)
+}
+  
+
+#convert from ID/seq to up/down
+input <- W3_cheap
+
+  input %>% 
+    mutate(up = ID,
+         down = lag(up)) %>% 
+  select(up, down) %>% 
+  drop_na()
+  
+convert_to_updown <- function(input){
+  #up is child and down is parent
+  convert <- 
+  input %>% 
+    mutate(up = ID,
+         down = lag(up)) %>% 
+  select(up, down) %>% 
+  drop_na()
+  
+  return(convert)
+}
+```
 
 ## Discharge and Stage
 ### W3 Discharge
@@ -9841,6 +9890,7 @@ Sys.time()
 
 
 smart_iterate_w3_new <- biggest_keep
+write_csv(smart_iterate_w3_new, "breadthfs_results.csv")
 View(smart_iterate_w3_new)
 smart_iterate_w3_new %>% group_by(start) #%>% 
   ggplot()+
@@ -9848,6 +9898,12 @@ smart_iterate_w3_new %>% group_by(start) #%>%
                aes(x = prop, y = after_stat(density), color = as.factor(start)))+
   geom_density(data = filter(all_pk, timescale == "30mins" | shed == "W3"))+
   aes(x = prop, y = after_stat(density))#+
+  
+  
+  smart_iterate_w3_new %>% 
+    select(start, up)
+    group_by(start) %>% 
+    nest(sequence = as.list(up))
 
 ```
 
@@ -9858,7 +9914,7 @@ This is actually a breadth-first-search algorithm....
 starts <- unique(smart_iterate_w3_new$start)
 
 starts[1]
-smart_iterate_w3 %>% 
+smart_iterate_w3_new %>% 
   filter(start == starts[1]) %>% 
   as_tibble() %>% 
   select(up, down) %>% 
