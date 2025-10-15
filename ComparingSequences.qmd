@@ -3046,6 +3046,7 @@ pks_w3 <- data_23 %>%
   select(ID, pk) %>% 
   ungroup() %>% 
   mutate(wshed = "W3")
+#write_csv(pks_w3, "pks_w3.csv")
 
 #Define sequence by proportion of time flowing
 W3_pk_seq <- pks_w3 %>% 
