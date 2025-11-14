@@ -431,6 +431,9 @@ q_24_bind <-
   q_24_f %>% 
   select(datetime, Q_mmperday) %>% 
   rename("Q_mm_day" = Q_mmperday)
+
+w3_discharge_bind <- rbind(q_23_bind, q_24_bind)
+
 ```
   
 Chunk straight from mapsForStoryboard, of my current best attempt to extract rising and falling limbs from discharge record for W3. Plan to use to compare how the different methods work during rising, falling, and baseflow.
@@ -3358,32 +3361,33 @@ dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
 m1 <- rast(dem)
 m10 <- aggregate(m1, 10)
 #save raster, because whitebox wants it is a files location instead of an object in R
-writeRaster(m10, "./w3_dems/10mdem.tif", overwrite = TRUE)
+writeRaster(m10, "./zz_dems/10mdem.tif", overwrite = TRUE)
 
 
-breach_output <- "./w3_dems/10mdem_breach.tif"
+breach_output <- "./zz_dems/10mdem_breach.tif"
 wbt_breach_depressions_least_cost(
-  dem = "./w3_dems/10mdem.tif",
+  dem = "./zz_dems/10mdem.tif",
   output = breach_output,
   dist = 10,
   fill = TRUE)
 
-fill_output <- "./w3_dems/10mdem_fill.tif"
+fill_output <- "./zz_dems/10mdem_fill.tif"
 wbt_fill_depressions_wang_and_liu(
   dem = breach_output,
   output = fill_output
 )
 
 #flow accumulation/drainage area
-flowacc_output <- "./w3_dems/10mdem_flowacc.tif"
+flowacc_output <- "./zz_dems/10mdem_flowacc.tif"
 wbt_d_inf_flow_accumulation(input = fill_output,
                             output = flowacc_output,
                             out_type = "Specific Contributing Area")
 #Slope
-slope_output <- "./w3_dems/10mdem_slope.tif"
+slope_output <- "./zz_dems/10mdem_slope.tif"
 wbt_slope(dem = fill_output,
           output = slope_output,
           units = "degrees")
+plot(rast(slope_output))
 #calculate TPI
 tpi_output <- "./w3_dems/10mdem_tpi.tif"
 wbt_relative_topographic_position(
@@ -7724,20 +7728,161 @@ drainage density is just stream length (m) divided by area of shed (m^2)
 ```{r drainage-density}
 ## W3
 #determine total stream length
+w3_net <- vect("./carrieZigZag/w3_network.shp")
 length_w3 <- sum(perim(w3_net))/1000 #m
 #determine watershed area
 area_w3 <- expanse(w3_outline)/(1000 * 1000) #km^2
 
 length_w3 / area_w3
 #end up with a drainage density a lot larger than what Carrie reported and calculated
+# maximum drainage density
 
 ## FB
-length_fb <- sum(perim(fb_net))/1000 #m
-#determine watershed area
-area_w3 <- expanse(w3_outline)/(1000 * 1000) #m^2
+fb_net <- vect("./carrieZigZag/FB_network.shp")
+fb_shed <- "./fb_dems/fb_shed.tif"
+fb_outline <- as.polygons(rast(fb_shed), extent=FALSE)
 
-length_w3 / area_w3
+length_fb <- sum(perim(fb_net))/1000 #km
+#determine watershed area
+area_fb <- expanse(fb_outline)/(1000 * 1000) #m^2
+length_fb / area_fb
+
 ## ZZ
+zz_net <- vect("./carrieZigZag/zigzag_streams.shp")
+zz_shed <- "./zz_dems/zz_shed.tif"
+zz_outline <- as.polygons(rast(zz_shed), extent=FALSE)
+
+length_zz <- sum(perim(zz_net))/1000 #m
+#determine watershed area
+area_zz <- expanse(zz_outline)/(1000 * 1000) #m^2
+length_zz / area_zz
+
+#### Calculate Slope for each one ####
+slope_output <- "./w3_dems/10mdem_slope.tif"
+wbt_slope(dem = fill_output,
+          output = slope_output,
+          units = "degrees")
+
+slope_output <- "./zz_dems/10mdem_slope.tif"
+wbt_slope(dem = fill_output,
+          output = slope_output,
+          units = "degrees")
+plot(rast(slope_output))
+
+plot(zz_outline)
+rast(slope_output) %>% 
+  crop(zz_outline) %>% 
+  terra::mask(zz_outline) %>% 
+  plot()
+#### Using valley wide slope to calculate average slope ####
+w3_avg_slope <- rast(slope_output) %>% 
+  crop(w3_outline) %>% 
+  terra::mask(w3_outline) %>% 
+  global("mean", na.rm=TRUE)
+fb_avg_slope <- rast(slope_output) %>% 
+  crop(fb_outline) %>% 
+  terra::mask(fb_outline) %>% 
+  global("mean", na.rm=TRUE)
+zz_avg_slope <- rast(slope_output) %>% 
+  crop(zz_outline) %>% 
+  terra::mask(zz_outline) %>% 
+  global("mean", na.rm=TRUE)
+#### Use valley wide elevation to calculate min and max elevation in m ####
+dem_location <- "/Users/johnmorgan/Documents/VT Research/HBTopmodel/HB/1m hydro enforced DEM/dem1m.tif"
+w3_elev <- aggregate(rast(dem_location), 10) %>% 
+  crop(w3_outline) %>% 
+  terra::mask(w3_outline) %>% 
+  global(c("min", "max"), na.rm=TRUE)
+fb_elev <- aggregate(rast(dem_location), 10) %>% 
+  crop(fb_outline) %>% 
+  terra::mask(fb_outline) %>% 
+  global(c("min", "max"), na.rm=TRUE)
+zz_elev <- aggregate(rast(dem_location), 10) %>% 
+  crop(zz_outline) %>% 
+  terra::mask(zz_outline) %>% 
+  global(c("min", "max"), na.rm=TRUE)
+
+#### Sensor Density ####
+# Just take the number of sensors in each watershed, and divide by the total maximum distance of flowing network
+dist_per_w3 <- sum(perim(w3_net))/length(W3_IDs)
+dist_per_fb <- sum(perim(fb_net))/length(FB_IDs)
+dist_per_zz <- sum(perim(zz_net))/length(ZZ_IDs)
+#### Expansion Coefficient ####
+# Calculate expansion coefficient
+# figure out how drainage density varies with the number activated
+# W3
+ripe_w3 <- input_w3 %>% 
+  group_by(datetime) %>% 
+  summarise(number_flowing = sum(binary)) %>% 
+  mutate(flowing_length_km = number_flowing * dist_per_w3/1000,
+         dd = flowing_length_km/area_w3) %>% 
+  left_join(w3_discharge_bind) %>% 
+  ungroup() %>% 
+  mutate(log_length = log(flowing_length_km),
+         log_Q = log(Q_mm_day)) %>% 
+  select(log_length, log_Q)
+ripe_w3 <- ripe_w3[!is.infinite(rowSums(ripe_w3)),]
+
+
+w3_fit <-  lm(log_length ~ log_Q, data=ripe_w3)
+summary(w3_fit)
+w3_beta <- unname(w3_fit$coefficients[2])
+
+# FB
+ripe_fb <- input_fb %>% 
+  group_by(datetime) %>% 
+  summarise(number_flowing = sum(binary)) %>% 
+  mutate(flowing_length_km = number_flowing * dist_per_fb/1000,
+         dd = flowing_length_km/area_fb) %>% 
+  left_join(fb_discharge_bind) %>% 
+  ungroup() %>% 
+  mutate(log_length = log(flowing_length_km),
+         log_Q = log(Q_mm_day)) %>% 
+  select(log_length, log_Q)
+ripe_fb <- ripe_fb[!is.infinite(rowSums(ripe_fb)),]
+
+
+fb_fit <-  lm(log_length ~ log_Q, data=ripe_fb)
+summary(fb_fit)
+fb_beta <- unname(fb_fit$coefficients[2])
+
+# ZZ
+ripe_zz <- input_zz %>% 
+  group_by(datetime) %>% 
+  summarise(number_flowing = sum(binary)) %>% 
+  mutate(flowing_length_km = number_flowing * dist_per_zz/1000,
+         dd = flowing_length_km/area_zz) %>% 
+  left_join(w3_discharge_bind) %>% 
+  ungroup() %>% 
+  mutate(log_length = log(flowing_length_km),
+         log_Q = log(Q_mm_day)) %>% 
+  select(log_length, log_Q)
+ripe_zz <- ripe_zz[!is.infinite(rowSums(ripe_zz)),]
+
+
+w3_fit <-  lm(log_length ~ log_Q, data=ripe_w3)
+summary(w3_fit)
+w3_beta <- unname(w3_fit$coefficients[2])
+#### Final Table ####
+topo <- data.frame("Watershed" = c("W3", "FB", "ZZ"),
+                   "Drainage Area (ha)" = c(area_w3*100, area_fb*100, area_zz*100),
+                   "Maximum Drainage Density m/m^2" = c(length_w3 / area_w3,
+                                                        length_fb / area_fb,
+                                                        length_zz / area_zz),
+                   "Slope" = c(w3_avg_slope$mean, fb_avg_slope$mean, zz_avg_slope$mean),
+                   "Elevation_lower" = c(w3_elev$min, fb_elev$min, zz_elev$min),
+                   "Elevation_upper" = c(w3_elev$max, fb_elev$max, zz_elev$max),
+                   "Expansion Coefficient (m)" = c(w3_beta,
+                                                   fb_beta,
+                                                   zz_beta),
+                   "Approximate Spacing (m)" = c(100, 50,  75))
+
+p_load(rempsyc)
+
+nice_table(
+  topo
+  )
+
 ```
 
 ```{r}

@@ -260,6 +260,8 @@ input_w3  %>% filter(datetime < stop_23,
   scale_fill_discrete(na.value = "transparent")
 
 ```
+
+
 #### 2024
 ```{r W3-2024-id_events}
 #identifying events
@@ -555,7 +557,7 @@ end_of_events <- discharge_df_23 %>%
 
 discharge_df_23 %>% 
   left_join(end_of_events, by = "event_id") %>% 
-  filter(event_type != "baseflow") #%>% 
+  filter(event_type != "baseflow") %>% 
   ggplot(aes(x = datetime, y = Q_mm_day, color = event_type))+
   geom_line()+
   facet_wrap(~event_id, scales = "free_x")
@@ -1961,7 +1963,7 @@ input_w3 %>%
 ```
 
 # Methods to quantify how similar sequences work
-```{r}
+```{r testing-GPT-solutions}
 seqs <- list(
   event1 = c(1, 4, 5, 7, 8),
   event2 = c(4, 1, 5, 7, 8),
@@ -2005,5 +2007,18 @@ d <- stringdistmatrix(seq_strings, method = "osa")  # Optimal string alignment
 p_load(scss)
 LCS(seqs)
 
+
+
 ```
 
+```{r}
+data <- all_events_ready %>% 
+  dplyr::select(event_id, ID) %>% 
+  filter(event_id != 1) %>% 
+  dplyr::rename("sensor" = "ID")
+
+```
+
+I have already found the sequence for each event, now the question is whether I should try to find a sequence where they "continually flow" from that point on... or just rock with what I've got
+
+Just use all of the sequnces from events in my calc_props suite of functions, and in the modeling exercise
