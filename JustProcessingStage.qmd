@@ -1,0 +1,440 @@
+---
+title: "JustProcessingStage"
+format: html
+editor_options: 
+  chunk_output_type: console
+---
+
+11-17-25
+Markdown just for processing stage discharge measurements, and preparing discharge datasets for FB and ZZ. Because it is in one place I can just create a finalized .csv for each watershed, and remove the stage/discharge processing part of other scripts.
+
+```{r setup}
+library(pacman)
+p_load(tidyverse)
+```
+
+# Process salt dilutions
+Use previously created script with functions for processing salt dilutions.
+```{r process-dilutions}
+source("calcQ.R")
+q_combined <- rbind(
+calcQ("./salt_dilutions/FB/FB_8_1") %>% mutate("shed" = "FB"),
+#calcQ("./salt_dilutions/FB/FB_6_23_fail") %>% mutate("shed" = "FB"),
+calcQ("./salt_dilutions/ZZ/ZZ_8_1")%>% mutate("shed" = "ZZ"),
+calcQ("./salt_dilutions/ZZ/ZZ_7_1")%>% mutate("shed" = "ZZ"),
+#calcQ("./salt_dilutions/ZZ/ZZ_6_23") %>% mutate("shed" = "ZZ"),#different timestep, after fixing gave negative number
+calcQ("./salt_dilutions/ZZ/ZZ_6_21")%>% mutate("shed" = "ZZ"),
+
+#no k
+calcQ_noK("./salt_dilutions/FB/FB_7_1", mean(c(0.0001120716, 2.621858e-06))) %>% mutate("shed" = "FB"),
+calcQ_noK("./salt_dilutions/FB/FB_6_23_Success", mean(c(0.0001120716, 2.621858e-06))) %>% mutate("shed" = "FB"),
+
+#missing FB 8_5, no k and no upstream logger
+# ZZ_8_5, no k and no upstream logger
+calcQ_noK_oneL("./salt_dilutions/FB/FB_8_5", mean(c(0.0001120716, 2.621858e-06))) %>% mutate("shed" = "FB"),
+calcQ_noK_oneL("./salt_dilutions/ZZ/ZZ_8_5", mean(c(9.453437e-05, 4.017994e-06,
+                                                    3.962093e-05, 9.693616e-05)))%>% mutate("shed" = "ZZ")
+)
+```
+
+# Falls Brook
+
+Potential big problem with my pressure transducer measurements. At some point during summer of 2024, the pressure changes really dramatically, like increases by one order of magnitude. It remains this way in 2025 as well. I think it affects the salt dilutions that Logan conducted.
+```{r read-csv}
+#### 2023 ####
+FB_air23 <- read_csv("./PressureTransducers_11_14_23/FB_air.csv", 
+                     skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi_air = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME))
+
+FB_water23 <- read_csv("./PressureTransducers_11_14_23/FB_water.csv", 
+                       skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi_water = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME))
+
+FB_water25 %>% 
+  left_join(FB_air25, by = "DATETIME") %>%
+  #filter(DATETIME >= ymd_hms("2024-07-30 14:00:00 UTC")) %>% 
+  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>%
+  #mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>%
+  ggplot(aes(x = DATETIME))+
+  geom_line(aes(y = diff_psi), col = "blue")+
+    #geom_line(aes(y = pressure_psi_air))+
+
+  theme_classic()+
+  labs(title = "Falls Brook Stage",
+       x = "",
+       y = "Stage (in)")
+
+#exclude windows where they were not deployed
+FB_water %>%
+  left_join(FB_air, by = "DATETIME") %>%
+  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>%
+  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>%
+  filter(stage_cm < 5)
+
+#7/22/2023 00:00:00
+#9/20/23 00 - 2023-09-22 00:00:00
+#2023-11-12 00:30:00
+
+# FB_water %>% 
+#   left_join(FB_air, by = "DATETIME") %>% 
+#   mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
+#   mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
+#   filter(DATETIME > ymd_hms("2023-07-22 00:00:00"),
+#          DATETIME < ymd_hms("2023-11-12 00:00:00")) %>% 
+#   filter(!(DATETIME >= ymd_hms("2023-09-20 00:00:00") & 
+#           DATETIME <= ymd_hms("2023-09-22 00:00:00"))) %>% 
+#   mutate(minutes = minute(DATETIME)) %>% 
+#   filter(minutes %in% c(0, 30)) %>% 
+#   mutate(roll_mean = rollapply(stage_cm ,48,mean,align='center',fill=NA)) %>%
+#   ggplot()+
+#   geom_line(aes(x = DATETIME, y = stage_cm))+
+#     geom_line(aes(x = DATETIME, y = roll_mean), color = "grey")+
+#   theme_classic()+
+#   labs(title = "Falls Brook Stage",
+#        x = "",
+#        y = "Stage (in)")
+
+processed_fb_stage23 <- FB_water23 %>% 
+  left_join(FB_air23, by = "DATETIME") %>% 
+  mutate(diff_psi = pressure_psi_water - pressure_psi_air,
+         stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701,
+         minutes = minute(DATETIME)) %>% 
+  filter(DATETIME > ymd_hms("2023-07-22 00:00:00"),
+         DATETIME < ymd_hms("2023-11-12 00:00:00")) %>% 
+  filter(!(DATETIME >= ymd_hms("2023-09-20 00:00:00") & 
+          DATETIME <= ymd_hms("2023-09-22 00:00:00"))) %>% 
+  filter(minutes %in% c(0, 30)) %>% 
+  mutate(roll_mean = rollapply(stage_cm ,48,mean,align='center',fill=NA),
+         deployment = 23) 
+
+
+processed_fb_stage23 %>% 
+  ggplot(aes(x = DATETIME, y = roll_mean))+
+  geom_line()+
+  theme_classic()
+#output processed salt dilutions
+# q_combined %>% filter(shed == "FB") %>% 
+#   mutate(datetime = round_date(datetime, unit = minutes(30))) %>% 
+#   rename(DATETIME = datetime) %>% 
+#   left_join(processed_fb_stage, by = "DATETIME")
+
+#### 2024 ####
+FB_air24 <- read_csv("./PressureTransducers_summer24/FB_air.csv", skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi_air = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME)) %>% 
+  rbind(fb_air_25)
+
+
+FB_water24 <- read_csv("./PressureTransducers_summer24/FB_water.csv", skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi_water = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME)) %>% 
+  rbind(fb_water_25)
+
+processed_fb_stage24 <- FB_water24 %>% 
+  left_join(FB_air24, by = "DATETIME") %>% 
+  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
+  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
+    filter(DATETIME <= ymd_hms("2024-08-06 10:30:00 UTC")) %>% 
+  mutate(minutes = minute(DATETIME)) %>% 
+  filter(minutes %in% c(0, 30)) %>% 
+  mutate(roll_mean = rollapply(stage_cm ,48,mean,align='center',fill=NA),
+         deployment = 24) %>%
+  drop_na()
+
+#max(processed_fb_stage_24$DATETIME)
+#### 2025 ####
+FB_air25 <- read_csv("./pducers_summer25/fb_air.csv", skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi_air = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME))
+
+FB_water25 <- read_csv("./pducers_summer25/fb_water.csv", skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi_water = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME))
+
+processed_fb_stage25 <- FB_water25 %>% 
+  left_join(FB_air25, by = "DATETIME") %>% 
+  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
+  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
+    filter(DATETIME >= ymd_hms(max(processed_fb_stage_24$DATETIME))) %>% 
+  mutate(minutes = minute(DATETIME)) %>% 
+  filter(minutes %in% c(0, 30)) %>% 
+  mutate(roll_mean = rollapply(stage_cm ,24,mean,align='center',fill=NA),
+         deployment = 25) %>%
+  drop_na()
+
+#### Combine all years ####
+fb_all <- rbind(processed_fb_stage25, processed_fb_stage24, processed_fb_stage23) %>% 
+  rename("datetime" = DATETIME)
+
+fb_all %>% 
+  ggplot(aes(x = datetime, y = roll_mean))+
+  geom_line()+
+  theme_classic()
+
+```
+```{r identify-events}
+#identifying events
+bf = baseflowB(processed_fb_stage$roll_mean, alpha = 0.99)
+
+
+#subtract baseflow from discharge
+#PoT_res = eventPOT(q_23_plotting$Q_mm_day - bf$bf, threshold = 1, min.diff = 1)
+
+PoT_res = eventPOT(processed_fb_stage$roll_mean - bf$bf, threshold = 0.4, min.diff = 20)
+#plot the events
+plotEvents(data = processed_fb_stage$roll_mean, events = PoT_res, xlab = "Index", ylab = "Flow (ML/day)", colpnt = "#E41A1C", colline = "#377EB8", main = "eventPOT")
+
+
+
+limbs(data = processed_fb_stage$roll_mean, 
+               dates =NULL, 
+               events = PoT_res, 
+               to.plot = TRUE)#now, extract just the start column, then get each window and run through scoring algorithm
+
+
+ranges <- data.frame("starts" = PoT_res$srt) %>% 
+  mutate("stops" = lead(starts)) %>% 
+  mutate(event_ID = row_number(starts))
+
+
+# Example: discharge dataframe with datetime and discharge
+discharge_df <- processed_fb_stage
+
+# Copy of your event table
+events <- limbs(data = processed_fb_stage$roll_mean, 
+               dates =NULL, 
+               events = PoT_res, 
+               to.plot = FALSE)#now, extract just the start column, then get each window and run through scoring algorithm
+
+# Initialize the event_type column
+discharge_df$event_type <- NA_character_
+discharge_df$event_id <- NA_integer_
+
+# Assign "rising" and "falling" from event definitions
+for (i in seq_len(nrow(events))) {
+  ev <- events[i, ]
+  discharge_df$event_id[ev$ris.srt:ev$fal.end] <- i  # Event ID for rising+falling
+  
+  # Rising limb
+  if (!is.na(ev$ris.srt) && !is.na(ev$ris.end) && ev$ris.srt <= ev$ris.end) {
+    discharge_df$event_type[ev$ris.srt:ev$ris.end] <- "rising"
+  }
+  
+  # Falling limb
+  if (!is.na(ev$fal.srt) && !is.na(ev$fal.end) && ev$fal.srt <= ev$fal.end) {
+    discharge_df$event_type[ev$fal.srt:ev$fal.end] <- "falling"
+  }
+  
+  # Baseflow between events
+  if (i < nrow(events)) {
+    this_fal_end <- ev$fal.end
+    next_ris_srt <- events$ris.srt[i + 1]
+    if (this_fal_end + 1 <= next_ris_srt - 1) {
+      baseflow_idx <- (this_fal_end + 1):(next_ris_srt - 1)
+      discharge_df$event_type[baseflow_idx] <- "baseflow"
+      discharge_df$event_id[baseflow_idx] <- NA  # baseflow is not part of any event
+    }
+  }
+}
+
+# Optional: label all remaining NA values as "baseflow" (e.g., before first or after last event)
+discharge_df$event_type[is.na(discharge_df$event_type)] <- "baseflow"
+
+stage_df_23 <- discharge_df
+
+discharge_df %>% 
+  ggplot(aes(x = DATETIME, y = roll_mean, color = event_type))+
+  geom_point()
+
+
+```
+
+```{r fit-stage-discharge}
+
+
+# processed salt dilutions
+dilutions <- q_combined %>% filter(shed == "FB") %>% 
+  mutate(datetime = round_date(datetime, unit = minutes(30))) %>% 
+  rename(DATETIME = datetime) %>% 
+  left_join(processed_fb_stage, by = "DATETIME")
+dilutions
+
+# applying linear equation
+mutate(Q = roll_mean * fb_stage_Q_model$coefficients[2] +  fb_stage_Q_model$coefficients[1])
+
+# applying exponential equation
+  mutate(Q = exp(log(roll_mean) * model_exp$coefficients[2] +  model_exp$coefficients[1]))
+
+
+fb_stage_Q_model <- lm(dilutions$discharge ~ dilutions$roll_mean)
+#try exponential model
+model_exp <- lm(log(dilutions$discharge)~ log(dilutions$roll_mean))
+summary(model_exp)
+
+# plot of discharge
+discharge_df$event_type[is.na(discharge_df$event_type)] <- "baseflow"
+
+stage_df_24 <- discharge_df
+
+discharge_df %>% 
+  ggplot(aes(x = DATETIME, y = roll_mean, color = event_type))+
+  geom_point()
+
+```
+
+# Zig Zag
+
+Zig zag has the same problem, but only for the 2025 observations.
+```{r read-csv}
+#### 2023 ####
+ZZ_air23 <- read_csv("./PressureTransducers_11_14_23/ZZ_air.csv", skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi_air = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME))
+
+ZZ_water23 <- read_csv("./PressureTransducers_11_14_23/ZZ_water.csv", skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi_water = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME))
+
+processed_zz_stage23 <- ZZ_water23 %>% 
+  left_join(ZZ_air23, by = "DATETIME") %>% 
+  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
+  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>%
+  #filter(DATETIME <= ymd_hms("2024-07-21 10:30:00 UTC")) %>% 
+   filter(DATETIME > ymd_hms("2023-07-22 00:00:00"),
+         DATETIME < ymd_hms("2023-11-12 00:00:00")) %>% 
+  filter(!(DATETIME >= ymd_hms("2023-09-20 00:00:00") & 
+          DATETIME <= ymd_hms("2023-09-22 00:00:00"))) %>% 
+  mutate(minutes = minute(DATETIME)) %>% 
+  filter(minutes %in% c(0, 30)) %>% 
+  mutate(roll_mean = rollapply(stage_cm ,48,mean,align='center',fill=NA)) %>% 
+  drop_na()
+
+
+#### 2024 ####
+ZZ_air24 <- read_csv("./PressureTransducers_summer24/ZZ_air.csv", skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi_air = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME))
+
+ZZ_water24 <- read_csv("./PressureTransducers_summer24/ZZ_water.csv", skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi_water = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME))
+
+
+processed_zz_stage24 <- ZZ_water24 %>% 
+  left_join(ZZ_air24, by = "DATETIME") %>% 
+  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
+  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>%
+  filter(DATETIME <= ymd_hms("2024-07-21 10:30:00 UTC")) %>% 
+  mutate(minutes = minute(DATETIME)) %>% 
+  filter(minutes %in% c(0, 30)) %>% 
+  mutate(roll_mean = rollapply(stage_cm ,24,mean,align='center',fill=NA)) %>% 
+  drop_na()
+#### 2025 ####
+ZZ_air25 <-
+  rbind(read_csv("./pducers_summer25/zz_air.csv", skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi_air = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME)))
+
+ZZ_water25 <- 
+  read_csv("./pducers_summer25/zz_water.csv", skip = 1) %>% 
+  select(2:3) %>% 
+  rename(DATETIME = 1,
+         pressure_psi_water = 2) %>% 
+  mutate(DATETIME = mdy_hms(DATETIME))
+
+     
+processed_zz_stage25 <- ZZ_water25 %>% 
+  left_join(ZZ_air25, by = "DATETIME") %>% 
+  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
+  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
+  filter(DATETIME >= ymd_hms(max(processed_zz_stage24$DATETIME))) %>%
+  mutate(minutes = minute(DATETIME)) %>% 
+  filter(minutes %in% c(0, 30)) %>% 
+  mutate(roll_mean = rollapply(stage_cm ,24,mean,align='center',fill=NA)) %>% 
+  drop_na()
+
+#### combined ####
+#View(processed_zz_stage)
+processed_zz_stage25 %>%
+  ggplot()+
+    geom_line(aes(x = DATETIME, y = stage_cm))+
+    geom_line(aes(x = DATETIME, y = roll_mean), color = "grey")+  theme_classic()+
+  labs(title = "ZZ Stage",
+       x = "",
+       y = "Stage (in)")
+```
+
+```{r fit-stage-discharge}
+#Read in measurements from 2024
+
+# processed salt dilutions
+dilutions <- q_combined %>% filter(shed == "ZZ") %>% 
+  mutate(datetime = round_date(datetime, unit = minutes(30))) %>% 
+  rename(DATETIME = datetime) %>% 
+  left_join(processed_zz_stage, by = "DATETIME")
+dilutions
+
+ZZ_water %>% 
+  left_join(ZZ_air, by = "DATETIME") %>% 
+  mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
+  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701,
+         #apply a rolling mean to get rid of temperature artifacts
+         roll_mean = rollapply(stage_cm ,48,mean,align='center',fill=NA)) %>% 
+  ggplot()+
+  geom_line(aes(x = DATETIME, y = stage_cm))+
+    geom_line(aes(x = DATETIME, y = roll_mean), color = "grey")+
+  
+  theme_classic()+
+  labs(title = "ZZ Stage",
+       x = "",
+       y = "Stage (in)")+
+  geom_point(data = dilutions,
+             aes(x = DATETIME, y = stage_cm),
+             color = "blue")
+
+dilutions %>% 
+  ggplot(aes(x = roll_mean, y = discharge))+
+  geom_point()+
+  labs(x = "Stage (cm)", y = "Discharge (L/s)",
+       title = "ZZ Stage/Q")+
+  theme_classic()+
+  geom_smooth(method = "lm")
+
+exponential.model <- lm(log(dilutions$discharge)~ dilutions$roll_mean)
+summary(exponential.model)
+
+linear <- lm((dilutions$discharge)~ dilutions$roll_mean)
+summary(linear)
+
+
+#now apply model to convert to discharge across time
+processed_zz_stage %>% 
+  mutate(prediction = (roll_mean^exponential.model$coefficients[2])-exponential.model$coefficients[1]) %>% 
+  ggplot(aes(x = DATETIME, y = prediction))+
+  geom_line()
+  
+```
