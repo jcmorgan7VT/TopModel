@@ -23,7 +23,9 @@ Formatted, should contain everything needed for current analysis. Have not check
 library(pacman)
 p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,ggnewscale, sf, elevatr, patchwork, ggspatial, zoo, igraph, TSP, ggnetwork, knitr, #intergraph, ggpubr, #purrr, spatialEco, 
        hydroEvents,ggbreak,
-       maptools)
+       maptools,
+       rempsyc # make nice table
+)
 #whitebox::install_whitebox()
 
 
@@ -724,6 +726,7 @@ comparison %>%
 Process salt dilutions
 ```{r process-dilutions}
 source("calcQ.R")
+calcQ("./salt_dilutions/FB/FB_8_1") %>% dplyr::mutate("shed" = "FB")
 q_combined <- rbind(
 calcQ("./salt_dilutions/FB/FB_8_1") %>% mutate("shed" = "FB"),
 #calcQ("./salt_dilutions/FB/FB_6_23_fail") %>% mutate("shed" = "FB"),
@@ -747,13 +750,13 @@ calcQ_noK_oneL("./salt_dilutions/ZZ/ZZ_8_5", mean(c(9.453437e-05, 4.017994e-06,
 ```{r FB-2023}
 FB_air <- read_csv("./PressureTransducers_11_14_23/FB_air.csv", skip = 1) %>% 
   select(2:3) %>% 
-  rename(DATETIME = 1,
+  dplyr::rename(DATETIME = 1,
          pressure_psi_air = 2) %>% 
   mutate(DATETIME = mdy_hms(DATETIME))
 
 FB_water <- read_csv("./PressureTransducers_11_14_23/FB_water.csv", skip = 1) %>% 
   select(2:3) %>% 
-  rename(DATETIME = 1,
+  dplyr::rename(DATETIME = 1,
          pressure_psi_water = 2) %>% 
   mutate(DATETIME = mdy_hms(DATETIME))
 
@@ -7859,7 +7862,8 @@ ripe_zz <- input_zz %>%
   select(log_length, log_Q)
 ripe_zz <- ripe_zz[!is.infinite(rowSums(ripe_zz)),]
 
-
+# regression to find B
+# W3
 w3_fit <-  lm(log_length ~ log_Q, data=ripe_w3)
 summary(w3_fit)
 w3_beta <- unname(w3_fit$coefficients[2])
@@ -8272,7 +8276,6 @@ w3_acc <- rbind(#produce_metrics(W3_cheap, "W3", "cheapest_insertion"),
       )
 kable(w3_acc, digits = 2)
 
-p_load(rempsyc)
 
 nice_table(
   w3_acc
