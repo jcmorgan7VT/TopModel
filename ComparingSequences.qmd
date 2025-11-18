@@ -313,6 +313,7 @@ Make them ID/sequence format
 ```{r helper-functions}
 #write wrapper functions to convert between the two forms easily
 #routes_w3 <- 
+`%not_in%` <- purrr::negate(`%in%`)
 
 
 #convert from up/down to ID/seq
@@ -2302,8 +2303,9 @@ View(smart_iterate_w3_new)
 # smart_iterate_zz_new <- biggest_keep
 # write_csv(smart_iterate_zz_new, "breadthfs_resultsZZ.csv")
 ```
+
 Already run BFS, now can just read in results in future
-```{r}
+```{r BFS-results}
 bfsW3 <- read_csv("breadthfs_results.csv")
 bfsFB <- read_csv("breadthfs_resultsFB.csv")
 bfsZZ <- read_csv("breadthfs_resultsZZ.csv")
@@ -2323,29 +2325,8 @@ bfsZZ %>% group_by(start) %>%
 
 ```
 ```{r}
-just1 <- 
-bfsW3 %>% 
-  filter(start == 1) #%>% 
-  select(up, down) %>% 
-  mutate(up = as.numeric(substr(up, 3, 4))) %>% 
-  convert_to_IDseq()
-  
- just1[rev(seq_len(nrow(just1))), ]
 
-convert_to_IDseq2 <- function(input){ 
-  #expecting input that is a df of up/down structure
-  # different than other function, where first row is the most upstream pair, or last in sequence
 
-  #make list in order of parent-child sequence
-  IDs <- c(input$down[1], input$up)
-  #make sequence ID column
-  sequence <- seq(1, length(input$up) + 1, 1)
- 
-  convert <- tibble(ID = IDs,
-           sequence = sequence)
-  
-return(convert)
-}
 for(i in 1:length(unique(bfsW3$start))){
 out <- bfsW3 %>% 
   select(up, down) %>% 
@@ -2360,6 +2341,30 @@ produce_metrics(., "W3", i)
 event_seqsW3_23_accuracy <- allout
 event_seqsW3_23_accuracy %>% 
   filter(Accuracy == max(Accuracy))
+
+
+best_bfs_seqW3 <- 
+  bfsW3 %>% 
+  filter(start == 2) %>% 
+  select(up, down) %>% 
+  convert_to_IDseq2()
+  
+#(just1[rev(seq_len(nrow(just1))), ])
+
+convert_to_IDseq2 <- function(input){ 
+  #expecting input that is a df of up/down structure
+  # different than other function, where first row is the most upstream pair, or last in sequence
+  input2 <- input#input[rev(seq_len(nrow(input))), ]
+  #make list in order of parent-child sequence
+  IDs <- c(input2$up[1], input2$down)
+  #make sequence ID column
+  sequence <- seq(1, length(input2$up) + 1, 1)
+ 
+  convert <- tibble(ID = as.numeric(substr(IDs,3,4)),
+           sequence = sequence)
+  
+return(convert)
+}
 ```
 
 
@@ -2440,6 +2445,14 @@ event_seqsW3_24_accuracy <- allout
 event_seqsW3_24_accuracy %>% 
   filter(Accuracy == max(Accuracy))
 
+
+event_seqsW3_23_accuracy %>% 
+  filter(Accuracy == max(Accuracy))
+
+best_event_seqW3 <- 
+  event_seqsW3_23 %>% 
+  filter(event_id == 2) %>% 
+  select(ID, Sequence)
 ```
 
 # Testing Sequences, running model
@@ -2700,37 +2713,33 @@ Can report the range of accuracies for the multitude of sequences from actual an
 
 
 #running model
-# cheap_model_w3 <- calc_model_result(W3_cheap$ID, "W3") %>%   
-#   rename("cheapest" = pred_out)
+
 pk_model_w3 <- calc_model_result(W3_pk_seq$ID, "W3") %>% 
   rename("pk" = pred_out)
-# random_model_w3 <- calc_model_result(W3_random$down, "W3") %>% 
-#   rename("random" = pred_out)
+
 twi_model_w3 <- calc_model_result(w3_twi_sequence$ID, "W3") %>% 
   rename("twi" = pred_out)
-# new_model_w3 <- calc_model_result(new_seq_w3$down, "W3") %>% 
-#   rename("new" = pred_out)
-# con_model_w3 <- calc_model_result(opt_routes_w3$down, "W3") %>% 
-#   rename("concorde" = pred_out)
+bfs_model_w3 <- calc_model_result(best_bfs_seqW3$ID, "W3") %>%
+  rename("bfs" = pred_out)
+event_model_w3 <- calc_model_result(best_event_seqW3$ID, "W3") %>%
+  rename("event" = pred_out)
 
 
 comparison_w3 <- input_w3 %>% 
   filter(mins %in% c(0, 30)) %>% 
-  left_join(cheap_model_w3, by = c("datetime", "ID")) %>% 
   left_join(pk_model_w3, by = c("datetime", "ID")) %>% 
-    left_join(random_model_w3, by = c("datetime", "ID")) %>% 
   left_join(twi_model_w3, by = c("datetime", "ID")) %>% 
-  left_join(new_model_w3, by = c("datetime", "ID")) %>% 
-    #left_join(con_model_w3, by = c("datetime", "ID")) %>% 
+  left_join(bfs_model_w3, by = c("datetime", "ID")) %>% 
+  left_join(event_model_w3, by = c("datetime", "ID")) %>% 
   select(-wshed, -mins) %>% 
   drop_na()
 
 #apply get_eval function to each model run
-comparison_w3$cheapest_eval <- mapply(get_eval_label, comparison_w3$binary, comparison_w3$cheapest)
+
 comparison_w3$pk_eval <- mapply(get_eval_label, comparison_w3$binary, comparison_w3$pk)
-comparison_w3$random_eval <- mapply(get_eval_label, comparison_w3$binary, comparison_w3$random)
 comparison_w3$twi_eval <- mapply(get_eval_label, comparison_w3$binary, comparison_w3$twi)
-comparison_w3$new_eval <- mapply(get_eval_label, comparison_w3$binary, comparison_w3$new)
+comparison_w3$bfs_eval <- mapply(get_eval_label, comparison_w3$binary, comparison_w3$bfs)
+comparison_w3$event_eval <- mapply(get_eval_label, comparison_w3$binary, comparison_w3$event)
 #comparison_w3$con_eval <- mapply(get_eval_label, comparison_w3$binary, comparison_w3$concorde)
 
 
@@ -2738,26 +2747,23 @@ comparison_w3$new_eval <- mapply(get_eval_label, comparison_w3$binary, compariso
 df_summary_time_w3 <- comparison_w3 %>%
   group_by(datetime) %>%
   summarize(
-    cheap_correct = sum(cheapest_eval == "correct"),
     pk_correct = sum(pk_eval == "correct"),
-    random_correct = sum(random_eval == "correct"),
     twi_correct = sum(twi_eval == "correct"),
-    new_correct = sum(new_eval == "correct"),
-      new_correct = sum(new_eval == "correct"),
+    bfs_correct = sum(bfs_eval == "correct"),
+    event_correct = sum(event_eval == "correct"),
     #con_correct = sum(con_eval == "correct"),
     total = n(),
-    cheap_accuracy = cheap_correct / total,
     pk_accuracy = pk_correct / total,
-    random_accuracy = random_correct / total,
     twi_accuracy = twi_correct / total,
-    new_accuracy = new_correct / total#,
-    #con_accuracy = con_correct / total
+    bfs_accuracy = bfs_correct / total,
+    event_accuracy = event_correct / total
   )
 
 df_long_w3 <- df_summary_time_w3 %>%
   select(datetime, contains("accuracy")) %>% 
-  tidyr::pivot_longer(cols = c(cheap_accuracy, pk_accuracy, 
-                               random_accuracy, twi_accuracy, new_accuracy),#, con_accuracy), 
+  tidyr::pivot_longer(cols = c(pk_accuracy, 
+                               twi_accuracy, bfs_accuracy,
+                               event_accuracy),#, con_accuracy), 
                       names_to = "model", values_to = "accuracy")
 
 #make data long for final plot
@@ -5287,11 +5293,11 @@ w3_grid + fb_grid + zz_grid
 
 ## Figure 5: Chains
 Plot that will show multiple chains beside each other, and highlight where they are different
-```{r}
+```{r chains-plot}
 renum_w3_pk <- W3_pk_seq %>% 
   mutate(method = "Proportion of Time Flowing", x = 1) %>% 
-  filter(ID %in% new_seq_w3$down) %>% 
-  mutate(sequence = seq(1, 25, 1))
+  filter(ID %in% W3_IDs) %>% 
+  mutate(sequence = seq(1, 26, 1))
 
 color_key <- renum_w3_pk %>% 
   select(ID, sequence) %>% 
@@ -5301,35 +5307,55 @@ renum_w3_pk <- renum_w3_pk %>% left_join(color_key, by = "ID")
 
 renum_w3_twi <- w3_twi_sequence %>% 
   mutate(method = "Topographic Wetness Index", x = 3) %>% 
-  filter(ID %in% new_seq_w3$down) %>% 
-  mutate(sequence = seq(1, 25, 1)) %>% 
+  filter(ID %in% W3_IDs) %>% 
+  mutate(sequence = seq(1, 26, 1)) %>% 
   left_join(color_key, by = "ID")
 
-renum_w3_new <- convert_to_IDseq(new_seq_w3) %>% 
-  mutate(method = "Average Sequential Wetting", x = 2) %>% 
+renum_w3_bfs <- best_bfs_seqW3 %>% 
+  mutate(method = "BFS", x = 2) %>% 
   left_join(color_key, by = "ID")
+renum_w3_event <- best_event_seqW3 %>% 
+  mutate(method = "Event based sequence", x = 4) %>% 
+  rename(sequence = Sequence) %>% 
+  left_join(color_key, by = "ID")
+
+#best_bfs_seqW3
+#best_event_seqW3
 
 #Make dataframe to contain the locations of points
 rbind(#mutate(W3_cheap, method = "cheapest_insertion",x = 1),
       renum_w3_pk,
       #mutate(convert_to_IDseq(W3_random), method = "random", x = 3),
-       renum_w3_new,
+       renum_w3_bfs,
+      renum_w3_event,
       renum_w3_twi
      
       #mutate(convert_to_IDseq(opt_routes_w3), method = "con", x = 6)
       ) %>% 
   mutate(#method = str_wrap(method, 10),
          method = fct_relevel(method, c("Proportion of Time Flowing",
-                                "Average Sequential Wetting",
-                                "Topographic Wetness Index"))
+                                
+                                "Topographic Wetness Index",
+                                "BFS",
+                                "Event based sequence"
+                                ))
          ) %>% 
+  mutate(text_ID = abs(color_ID-26)) %>% 
   ggplot()+
   geom_point(aes(x = method, y = sequence, color = color_ID), size = 5)+
-  geom_text(aes(x = method, y = sequence, label = ID), color = "white", size = 2)+
+  geom_text(aes(x = method, y = sequence, 
+                label = text_ID), color = "white", size = 2)+
   scale_x_discrete(labels = function(method) str_wrap(method, width = 10))+
+  scale_y_continuous(
+    breaks = c(5, 24),  # Positions for the labels
+    labels = c("Last", "First") # Custom labels
+  ) +
   scale_color_viridis_c(guide = "none")+
   theme_classic()+
-  labs(y = "Sequence", x = "")
+  labs(y = "Sequence", x = "")+
+  theme(axis.ticks.y = element_blank(), # Removes y-axis tick marks
+    axis.line.y = element_blank(),
+    axis.text.y = element_text(angle = 90, hjust = 1, vjust = 0.5))    # Removes y-axis line)
 ```
 
 
@@ -5449,16 +5475,16 @@ scale_color_identity()+
 ```
 
 New version, where the difference in accuracy has to be greater than some threshold
-```{r}
+```{r discharge-colored-by-model-accuracy}
 
 
 #plot the best at each timestep
 #df <- 
   df_long_w3 %>% 
-  filter(model != "random_accuracy",
-         model != "cheap_accuracy",
-         model != "con_accuracy",
-         model != "twi_accuracy") %>% 
+  # filter(model != "random_accuracy",
+  #        model != "cheap_accuracy",
+  #        model != "con_accuracy",
+  #        model != "twi_accuracy") %>% 
   group_by(datetime) %>% 
   mutate(max_accuracy = max(accuracy),
          diff_in_acc = max_accuracy - accuracy) %>% 
@@ -5468,13 +5494,12 @@ New version, where the difference in accuracy has to be greater than some thresh
                                 dup == FALSE ~ model)) %>%
 inner_join(big_comb, by = "datetime") #%>%
   
-  library(dplyr)
 threshold <- 0.05
 #df_best <- 
   df_long_w3 %>% 
-  filter(model != "random_accuracy",
-         model != "cheap_accuracy",
-         model != "con_accuracy")  %>% #View()
+  # filter(model != "random_accuracy",
+  #        model != "cheap_accuracy",
+  #        model != "con_accuracy")  %>% #View()
     # your 0.05 rule
   group_by(datetime) %>%
   summarise(
@@ -5492,14 +5517,16 @@ threshold <- 0.05
   ) %>%
   ungroup() %>%
   select(datetime, winner, max_acc = top_acc) %>% 
-    inner_join(big_comb, by = "datetime") %>%
-ggplot(aes(x = datetime, y = log(Q_mm_day), color = winner)) +
+    inner_join(w3_discharge_bind, by = "datetime") %>%
+ggplot(aes(x = datetime, y = (Q_mm_day), color = winner)) +
   geom_point(size = 1) +
   theme_classic() +
-  scale_fill_manual(values = c("#d68c45", "#247BA0", "lightgrey",  "#2c6e49")) +
-  scale_color_manual(values = c("#d68c45", "#247BA0", "lightgrey",  "#2c6e49")) +
+  scale_fill_manual(values = c("#d68c45", "#247BA0", "#2c6e49",
+                                "lightgrey", "maroon")) +
+  scale_color_manual(values = c("#d68c45", "#247BA0",   "#2c6e49",
+                                "lightgrey","maroon")) +
   labs(
-    title = "Model at least 5% more accurate than other models, W3, Log Y",
+    title = "Model at least 5% more accurate than other models, W3",
     y = "Discharge (mm/day)",
     x = ""
   ) +
@@ -5915,7 +5942,25 @@ Map where the points are colored by accuracy, and faceted by hydrograph componen
 ```{r W3-map}
 #summarize through time
 ID_acc <- comparison_w3 %>%
-    inner_join(discharge_df, by = "datetime") %>% 
+      inner_join(w3_discharge_bind, by = "datetime") %>% 
+  group_by(ID) %>%
+  summarize(
+    pk_correct = sum(pk_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    bfs_correct = sum(bfs_eval == "correct"),
+    event_correct = sum(event_eval == "correct"),
+    #con_correct = sum(con_eval == "correct"),
+    total = n(),
+    pk_accuracy = pk_correct / total,
+    twi_accuracy = twi_correct / total,
+    bfs_accuracy = bfs_correct / total,
+    event_accuracy = event_correct / total) %>%
+  select(ID, 
+         pk_accuracy, twi_accuracy, bfs_accuracy, event_accuracy) %>%
+  tidyr::pivot_longer(cols = c(pk_accuracy, twi_accuracy, bfs_accuracy, event_accuracy), names_to = "model", values_to = "accuracy")
+
+ID_acc <- comparison_w3 %>%
+    inner_join(w3_discharge_bind, by = "datetime") %>% 
   group_by(ID, event_type) %>%
   summarize(
     cheap_correct = sum(cheapest_eval == "correct"),
@@ -6005,7 +6050,7 @@ ggplot()+
   theme_void()+
   geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 2)+
   geom_sf(data = w3_net, colour = "grey", lwd = 1) +
-geom_sf(data = w3_stic_locs_r %>% inner_join(ID_acc_w3, by = "ID"), 
+geom_sf(data = w3_stic_locs_r %>% inner_join(ID_acc, by = "ID"), 
         aes(fill = accuracy), size = 4, pch = 21) +
   scale_fill_gradientn(colors = c("white","lightgrey","darkgrey", "black"))+
   #scale_shape_manual(values = c(21, 24, 22))+
@@ -7092,21 +7137,19 @@ all_methods_acc <- many_chains
 
 
 ```{r accuracy-W3}
-w3_acc <- rbind(#produce_metrics(W3_cheap, "W3", "cheapest_insertion"),
+w3_acc <- rbind(
       produce_metrics(W3_pk_seq, "W3", "pk"),
-      #produce_metrics(convert_to_IDseq(W3_random), "W3", "random"),
-      produce_metrics(w3_twi_sequence, "W3", "twi"),
-      produce_metrics(convert_to_IDseq(new_seq_w3), "W3", "new")#,
-      #produce_metrics(convert_to_IDseq(opt_routes_w3), "W3", "con")
-
-      )
+      produce_metrics(best_bfs_seqW3, "W3", "BFS"),
+      produce_metrics(best_event_seqW3, "W3", "event"),
+      produce_metrics(w3_twi_sequence, "W3", "twi")
+      ) %>% 
+  select(Accuracy, Sensitivity, Specificity, shed, method)
 kable(w3_acc, digits = 2)
 
 
 nice_table(
   w3_acc
   )
-)
 
 ```
 ```{r accuracy-FB}
