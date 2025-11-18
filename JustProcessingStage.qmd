@@ -132,6 +132,7 @@ FB_air24 <- read_csv("./PressureTransducers_summer24/FB_air.csv", skip = 1) %>%
   mutate(DATETIME = mdy_hms(DATETIME)) %>% 
   rbind(fb_air_25)
 
+#FB_water24 <- read_csv("./PressureTransducers_summer24/FB_water.csv", skip = 1) %>% 
 
 FB_water24 <- read_csv("./PressureTransducers_summer24/FB_water.csv", skip = 1) %>% 
   select(2:3) %>% 
@@ -151,8 +152,14 @@ processed_fb_stage24 <- FB_water24 %>%
          deployment = 24) %>%
   drop_na()
 
+processed_fb_stage24 %>% 
+  ggplot(aes(x = DATETIME, y = roll_mean))+
+  geom_line()+
+  theme_classic()
+
 #max(processed_fb_stage_24$DATETIME)
 #### 2025 ####
+#in 2025 units are kPa, not psi
 FB_air25 <- read_csv("./pducers_summer25/fb_air.csv", skip = 1) %>% 
   select(2:3) %>% 
   rename(DATETIME = 1,
@@ -168,7 +175,7 @@ FB_water25 <- read_csv("./pducers_summer25/fb_water.csv", skip = 1) %>%
 processed_fb_stage25 <- FB_water25 %>% 
   left_join(FB_air25, by = "DATETIME") %>% 
   mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
-  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
+  mutate(stage_cm = ((diff_psi*1000) / (997 * 9.8)) * 100 * 0.393701) %>% 
     filter(DATETIME >= ymd_hms(max(processed_fb_stage_24$DATETIME))) %>% 
   mutate(minutes = minute(DATETIME)) %>% 
   filter(minutes %in% c(0, 30)) %>% 
@@ -178,7 +185,8 @@ processed_fb_stage25 <- FB_water25 %>%
 
 #### Combine all years ####
 fb_all <- rbind(processed_fb_stage25, processed_fb_stage24, processed_fb_stage23) %>% 
-  rename("datetime" = DATETIME)
+  rename("datetime" = DATETIME) %>% 
+  drop_na()
 
 fb_all %>% 
   ggplot(aes(x = datetime, y = roll_mean))+
@@ -186,21 +194,67 @@ fb_all %>%
   theme_classic()
 
 ```
+```{r fit-stage-discharge}
+
+
+# processed salt dilutions
+dilutionsFB <- q_combined %>% filter(shed == "FB") %>% 
+  mutate(datetime = ymd_hms(datetime),
+         datetime = round_date(datetime, unit = minutes(30))) %>% 
+  #rename(DATETIME = datetime) %>% 
+  left_join(fb_all, by = "datetime")
+dilutionsFB
+
+#plot(log(dilutions$roll_mean), log(dilutions$discharge))
+
+# fitting linear equation
+fb_stage_Q_model <- lm(dilutions$discharge ~ dilutions$roll_mean)
+
+#try exponential model
+dilutionsFB_mod <- dilutionsFB[-3,]
+model_exp <- lm(log(dilutionsFB_mod$discharge)~ log(dilutionsFB_mod$roll_mean))
+summary(model_exp)
+
+#mutate(Q = roll_mean * fb_stage_Q_model$coefficients[2] +  fb_stage_Q_model$coefficients[1])
+
+# applying exponential equation
+# L/s discharge units
+fb_all %>% 
+  mutate(Q = exp(log(roll_mean) * model_exp$coefficients[2] +  model_exp$coefficients[1])) %>%
+  ggplot(aes(x = datetime, y = Q))+
+  geom_line()
+
+
+
+# plot of discharge
+discharge_df$event_type[is.na(discharge_df$event_type)] <- "baseflow"
+
+stage_df_24 <- discharge_df
+
+discharge_df %>% 
+  ggplot(aes(x = DATETIME, y = roll_mean, color = event_type))+
+  geom_point()
+
+```
+
 ```{r identify-events}
 #identifying events
-bf = baseflowB(processed_fb_stage$roll_mean, alpha = 0.99)
+bf <- baseflowB(fb_all$roll_mean, alpha = 0.99)
 
 
 #subtract baseflow from discharge
 #PoT_res = eventPOT(q_23_plotting$Q_mm_day - bf$bf, threshold = 1, min.diff = 1)
 
-PoT_res = eventPOT(processed_fb_stage$roll_mean - bf$bf, threshold = 0.4, min.diff = 20)
+PoT_res <- eventPOT(fb_all$roll_mean - bf$bf, threshold = 0.4, min.diff = 20)
 #plot the events
-plotEvents(data = processed_fb_stage$roll_mean, events = PoT_res, xlab = "Index", ylab = "Flow (ML/day)", colpnt = "#E41A1C", colline = "#377EB8", main = "eventPOT")
+plotEvents(data = fb_all$roll_mean, 
+           events = PoT_res, 
+           xlab = "Index", 
+           ylab = "Flow (ML/day)", 
+           colpnt = "#E41A1C", 
+           colline = "#377EB8", main = "eventPOT")
 
-
-
-limbs(data = processed_fb_stage$roll_mean, 
+limbs(data = fb_all$roll_mean, 
                dates =NULL, 
                events = PoT_res, 
                to.plot = TRUE)#now, extract just the start column, then get each window and run through scoring algorithm
@@ -263,38 +317,6 @@ discharge_df %>%
 
 ```
 
-```{r fit-stage-discharge}
-
-
-# processed salt dilutions
-dilutions <- q_combined %>% filter(shed == "FB") %>% 
-  mutate(datetime = round_date(datetime, unit = minutes(30))) %>% 
-  rename(DATETIME = datetime) %>% 
-  left_join(processed_fb_stage, by = "DATETIME")
-dilutions
-
-# applying linear equation
-mutate(Q = roll_mean * fb_stage_Q_model$coefficients[2] +  fb_stage_Q_model$coefficients[1])
-
-# applying exponential equation
-  mutate(Q = exp(log(roll_mean) * model_exp$coefficients[2] +  model_exp$coefficients[1]))
-
-
-fb_stage_Q_model <- lm(dilutions$discharge ~ dilutions$roll_mean)
-#try exponential model
-model_exp <- lm(log(dilutions$discharge)~ log(dilutions$roll_mean))
-summary(model_exp)
-
-# plot of discharge
-discharge_df$event_type[is.na(discharge_df$event_type)] <- "baseflow"
-
-stage_df_24 <- discharge_df
-
-discharge_df %>% 
-  ggplot(aes(x = DATETIME, y = roll_mean, color = event_type))+
-  geom_point()
-
-```
 
 # Zig Zag
 
@@ -352,6 +374,7 @@ processed_zz_stage24 <- ZZ_water24 %>%
   mutate(roll_mean = rollapply(stage_cm ,24,mean,align='center',fill=NA)) %>% 
   drop_na()
 #### 2025 ####
+# in 2025, units are kPa, not psi
 ZZ_air25 <-
   rbind(read_csv("./pducers_summer25/zz_air.csv", skip = 1) %>% 
   select(2:3) %>% 
@@ -370,7 +393,7 @@ ZZ_water25 <-
 processed_zz_stage25 <- ZZ_water25 %>% 
   left_join(ZZ_air25, by = "DATETIME") %>% 
   mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
-  mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
+  mutate(stage_cm = ((diff_psi*1000) / (997 * 9.8)) * 100 * 0.393701) %>% 
   filter(DATETIME >= ymd_hms(max(processed_zz_stage24$DATETIME))) %>%
   mutate(minutes = minute(DATETIME)) %>% 
   filter(minutes %in% c(0, 30)) %>% 

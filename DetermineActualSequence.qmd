@@ -190,6 +190,11 @@ for(i in 1:length(unique(ttt$event_id))){
   if(i > 1) all_events <- rbind(all_events, sequenced_event)
 }
 
+# Define sequences to then test using my suite of functions
+all_events23 <- all_events
+all_events23_sequences <- all_events %>% 
+  select(-start_of_flow)
+write_csv(all_events23_sequences, "W3event_sequences23.csv")
 # add the end of each event
 end_of_events <- discharge_df_23 %>% 
     group_by(event_id) %>% 
@@ -368,6 +373,12 @@ for(i in 1:length(unique(ttt$event_id))){
   if(i > 1) all_events <- rbind(all_events, sequenced_event)
 }
 
+# all_events is the output of this loop
+all_events24 <- all_events
+all_events24_sequences <- all_events %>% 
+  select(-start_of_flow)
+write_csv(all_events24_sequences, "W3event_sequences24.csv")
+
 # add the end of each event
 end_of_events <- discharge_df_24 %>% 
     group_by(event_id) %>% 
@@ -436,14 +447,183 @@ input_w3  %>% filter(datetime < stop24,
 
 ```
 
-Chunk straight from mapsForStoryboard, of my current best attempt to extract rising and falling limbs from discharge record for W3. Plan to use to compare how the different methods work during rising, falling, and baseflow.
-```{r identifying-events}
-start_23 <- ymd_hms("2023-7-20 00:00:00")
-stop_23 <- ymd_hms("2023-10-22 00:00:00")
+### FB
+
+### Number of transitions in each component of hydrograph
+```{r W3}
+#make companion plot that shows the number of transitions during each part of hydrograph
+test <- input_w3 %>% 
+  filter(mins %in% c(0, 30)) %>%
+  group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) %>% 
+  filter(transition %in% c(-1, 1))
+
+test$state_change <- "none"
+test$state_change[test$transition == -1] <- "wetting"
+test$state_change[test$transition == 1] <- "drying"
+
+num_trans_w3 <- test %>% 
+  group_by(datetime, state_change) %>% 
+  summarise(number_of_nodes = length(state_change))
+
+test %>% 
+  inner_join(discharge_df_23, by = "datetime") %>%
+  group_by(state_change, event_type) %>% 
+  summarise(count = n()) %>% 
+  pivot_wider(names_from = state_change, values_from = count) %>% 
+  kable(format = "markdown")
 
 
+```
+```{r FB}
+num_trans_fb <- input_fb %>% 
+  filter(mins %in% c(0, 30)) %>%
+  group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) %>% 
+  filter(transition %in% c(-1, 1))
+
+num_trans_fb$state_change <- "none"
+num_trans_fb$state_change[num_trans_fb$transition == -1] <- "wetting"
+num_trans_fb$state_change[num_trans_fb$transition == 1] <- "drying"
+
+num_trans_fb <- num_trans_fb %>% 
+  group_by(datetime, state_change) %>% 
+  summarise(number_of_nodes = length(state_change))
+```
+```{r ZZ}
+num_trans_zz <- input_zz %>% 
+  filter(mins %in% c(0, 30)) %>%
+  group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) %>% 
+  filter(transition %in% c(-1, 1))
+
+num_trans_zz$state_change <- "none"
+num_trans_zz$state_change[num_trans_zz$transition == -1] <- "wetting"
+num_trans_zz$state_change[num_trans_zz$transition == 1] <- "drying"
+
+num_trans_zz <- num_trans_zz %>% 
+  group_by(datetime, state_change) %>% 
+  summarise(number_of_nodes = length(state_change))
+```
+
+#Determine the wettest and driest times for each watershed
+```{r determine-when-it-goes-from-all-dry-to-all-wet}
+#make binary columns for wet and dry
+rbind(input_w3, input_fb, input_zz)
+
+
+df1 <- input_w3 %>% 
+  group_by(datetime) %>% 
+  summarise("percent_flowing" = sum(binary)/length(binary)) %>% 
+  filter(percent_flowing <= 0.1) %>% 
+  mutate(date = date(datetime)) %>% 
+  select(-datetime, -percent_flowing) %>% unique() %>% 
+  rowid_to_column("dry_ID") %>% 
+  rename("dry_date" = date)
+
+df2 <- input_w3 %>% 
+  group_by(datetime) %>% 
+  summarise("percent_flowing" = sum(binary)/length(binary)) %>% 
+  filter(percent_flowing >= 0.9) %>% 
+  mutate(date = date(datetime)) %>% 
+  select(-datetime, -percent_flowing) %>% unique()%>% 
+  rowid_to_column("wet_ID") %>% 
+  rename("wet_date" = date)
+
+#dataframe that tells us when the network went from fully dry to fully wet and vice versa
+crossed_up <- cross_join(df1, df2) %>% 
+  mutate(difference = wet_date - dry_date) %>% 
+  group_by(dry_date) %>% 
+  filter(abs(difference) == min(abs(difference))) %>% 
+  filter(abs(difference) <= 10 )
+  #summarise(min = min(difference),
+   #         max = max(difference)
+
+
+f1 <- Vectorize(function(x, y) list(as.numeric(difftime(y, x, units = "d"))))
+outer(df1$dry_date, df2$wet_date, FUN = f1)
+
+#maximum percentage of sensors flowing is 100%
+max(spots_flowing$percent_flowing)
+#times when stream was at it's maximum extent
+spots_flowing$datetime[spots_flowing$percent_flowing == max(spots_flowing$percent_flowing)]
+#minimum extent times
+min(spots_flowing$percent_flowing)
+no_flow <- spots_flowing$datetime[spots_flowing$percent_flowing == min(spots_flowing$percent_flowing)]
+
+
+filter(q_23_f, DATETIME %in% no_flow)
+
+
+spots_flowing$datetime[spots_flowing$percent_flowing == min(spots_flowing$percent_flowing)]
+
+#plots for the wettest times for each watershed
+plot_test <- filter(all_w3, 
+               datetime == "2023-07-03 15:20:00 EDT")
+
+ggplot()+
+  geom_tile(data=test, aes(x=x, y=y), fill = "lightgrey")+
+  geom_point(data = plot_test, aes(x = long, y = lat, color = wetdry), size = 2)+
+  scale_color_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c("dry", "wet"),
+                    labels = c("No flow", "flowing"),
+                    name = ""
+                    )+
+  geom_text(data = plot_test, aes(x = long, y = lat,label = ID), hjust=-0.00025, vjust=0.00025)+
+  theme_void()+
+  labs(title = "Wettest extent in W3")+
+  coord_equal()
+#plot of the driest extent in W3
+
+plot_test <- filter(all_w3, 
+               datetime == "2023-09-21 16:00:00 EDT")
+ggplot()+
+  geom_tile(data=test, aes(x=x, y=y), fill = "lightgrey")+
+  geom_point(data = plot_test, aes(x = long, y = lat, color = wetdry), size = 2)+
+  scale_color_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c("dry", "wet"),
+                    labels = c("No flow", "flowing"),
+                    name = ""
+                    )+
+  geom_text(data = plot_test, aes(x = long, y = lat,label = ID), hjust=-0.00025, vjust=0.00025)+
+  theme_void()+
+  labs(title = "Driest extent in W3")+
+  coord_equal()
+```
+
+```{r first-fully-dry-to-wet}
+ # Function factory for secondary axis transforms
+train_sec <- function(primary, secondary, na.rm = TRUE) {
+  # Thanks Henry Holm for including the na.rm argument!
+  from <- range(secondary, na.rm = na.rm)
+  to   <- range(primary, na.rm = na.rm)
+  # Forward transform for the data
+  forward <- function(x) {
+    rescale(x, from = from, to = to)
+  }
+  # Reverse transform for the secondary axis
+  reverse <- function(x) {
+    rescale(x, from = to, to = from)
+  }
+  list(fwd = forward, rev = reverse)
+}
+
+# sec <- with(economics, train_sec(unemploy, psavert))
+# 
+# ggplot(economics, aes(date)) +
+#   geom_line(aes(y = unemploy), colour = "blue") +
+#   geom_line(aes(y = sec$fwd(psavert)), colour = "red") +
+#   scale_y_continuous(sec.axis = sec_axis(~sec$rev(.), name = "psavert"))
+
+#add precipitation
+#add hydrograph to plot
 q_23_plotting <- q_23_f %>% 
-    filter(DATETIME > start_23 & DATETIME < stop_23) %>% 
+    filter(DATETIME > start & DATETIME < stop) %>% 
   rename("datetime" = DATETIME)
 q_23_plotting %>% 
 ggplot(aes(x  = datetime, y = Q_mm_day))+
@@ -453,142 +633,354 @@ ggplot(aes(x  = datetime, y = Q_mm_day))+
        y = "Instantaneous Q (mm/day)")+
   theme_classic()
 
-#calculate baseflow
-#old values greyed
-#bf = baseflowB(q_23_plotting$Q_mm_day, alpha = 0.980)
-#0.925
-bf = baseflowB(q_23_plotting$Q_mm_day, alpha = 0.925)
+    
+
+start <- ymd_hms("2023-10-20 00:00:00")
+stop <- ymd_hms("2023-10-22 00:00:00")
+
+#precip <- 
+  read_csv("./HB/dailyWatershedPrecip1956-2024.csv") %>% 
+    filter(watershed == "W3") %>% 
+        filter(DATE >= start & DATE <= stop) %>% 
+    ggplot()+
+    geom_bar(aes(x = DATE, y = Precip), stat = "identity")
+
+precip1 <- read_csv("./HB/HBEF_W3precipitation_15min.csv") %>% 
+    filter(DateTime >= start & DateTime <= stop) %>% 
+    mutate(day = day(DateTime),
+           hour = hour(DateTime)) %>% 
+    group_by(day, hour) %>% 
+    reframe(hourly_precip = sum(precip), across()) %>% 
+    mutate(mins = minute(DateTime)) %>% 
+    filter(mins == 0) %>%
+  rename("datetime" = DateTime) %>% 
+    left_join(q_23_plotting, by = "datetime") %>% 
+  select(datetime, hourly_precip, Q_mm_day)
 
 
-#subtract baseflow from discharge
-#PoT_res = eventPOT(q_23_plotting$Q_mm_day - bf$bf, threshold = 1, min.diff = 1)
-#min.diff = 30
-PoT_res = eventPOT(q_23_plotting$Q_mm_day - bf$bf, threshold = 0.5, min.diff = 96)
-#plot the events
-plotEvents(data = q_23_plotting$Q_mm_day, events = PoT_res, xlab = "Index", ylab = "Flow (ML/day)", colpnt = "#E41A1C", colline = "#377EB8", main = "eventPOT")
+sec3 <- with(precip1, train_sec(hourly_precip, Q_mm_day))
+
+
+water <- precip1 %>% 
+    ggplot(aes(x = datetime))+
+    geom_col(aes(y = hourly_precip))+
+    geom_line(aes(y = sec3$fwd(Q_mm_day)), colour = "blue") +
+    scale_y_continuous("Hourly Precipitation (mm)",
+                       sec.axis = sec_axis(~sec3$rev(.),
+                       name = "Discharge (mm/day)"))+
+    labs(x = "",
+         y = "Precipitation (mm)")+
+      theme_classic()+
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y = element_text(angle = 0),
+        axis.title.y.right = element_text(angle = 0)
+        )
+
+
+test_IDS <- input_w3 %>% 
+    filter(datetime > start & datetime < stop)
+
+remainder <- test_IDS$ID
+
+pks_ordered <- pks_w3 %>% 
+filter(ID %in% remainder) %>% 
+  arrange(desc(pk)) %>% 
+  rowid_to_column("pk_order")
+
+test <- input_w3 %>% 
+    filter(datetime > start & datetime < stop) %>% 
+  #filter(ID == 17)
+  #filter(ID %in% W3_IDs) %>% 
+  left_join(pks_ordered, by = "ID") #%>% 
+sec2 <- with(test, train_sec(pk_order, pk))
+
+test <- 
+  input_w3 %>% 
+    filter(datetime > start & datetime < stop) %>% 
+    mutate(day = day(datetime),
+           hour = hour(datetime)) %>% 
+  #filter(ID == 17)
+  #filter(ID %in% W3_IDs) %>% 
+  left_join(precip1, by = c("day", "hour")) %>% 
+  left_join(pks_ordered, by = "ID") %>% 
+  filter(mins.x == 0)
+test2 <- test %>% 
+  select(datetime.x, binary, hourly_precip, pk_order)
+sec2 <- with(test2, train_sec(pk_order, hourly_precip))
 
 
 
-limbs(data = q_23_plotting$Q_mm_day, 
-               dates =NULL, 
-               events = PoT_res, 
-               to.plot = TRUE)#now, extract just the start column, then get each window and run through scoring algorithm
-PoT_res$srt
+tiles <- test2 %>% 
+  ggplot(aes(x = datetime.x))+
+  geom_tile(aes(y = pk_order, fill = as.character(binary)))+
+  scale_y_continuous("Supposed Activation Order")+
+  #facet_grid(~name, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c(0, 1),
+                    labels = c("Dry", "Wet"),
+                    name = ""
+                    )+
+  labs(#title = "Very dry to very wet",
+       #subtitle = "W3, 10/20 - 10/22, 2023",
+       x = "")+
+scale_x_continuous(breaks=c(ymd_hms("2023-10-20 00:00:00"),
+                            ymd_hms("2023-10-21 00:00:00"),
+                            ymd_hms("2023-10-22 00:00:00")),
+                   labels = c("10/20/23",
+                              "10/21/23",
+                              "10/22/23"))+
+  theme_classic()+
+    theme(legend.position="right",
+          axis.title.y = element_text(angle = 0))
 
+p_load(patchwork)
+
+(water)/tiles + plot_layout(heights = c(1, 5))
+
+
+test2 %>% 
+  ggplot(aes(x = datetime.x))+
+  geom_tile(aes(y = (pk_order), fill = as.character(binary)))+
+  geom_col(aes(y = sec2$fwd(hourly_precip)))+
+  ylab("Supposed activation order")+
+  scale_y_continuous(sec.axis = sec_axis(~sec2$fwd(.), name = "Instantaneous Q (mm/day)")) +
+  #facet_grid(~name, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c(0, 1),
+                    labels = c("Dry", "Wet"),
+                    name = ""
+                    )+
+  labs(title = "Very dry to very wet",
+       subtitle = "W3, 10/20 - 10/22, 2023",
+       x = "")+
+scale_x_continuous(breaks=c(ymd_hms("2023-10-20 00:00:00"),
+                            ymd_hms("2023-10-21 00:00:00"),
+                            ymd_hms("2023-10-22 00:00:00")),
+                   labels = c("10/20/23",
+                              "10/21/23",
+                              "10/22/23"))+
+  theme_classic()+
+    theme(legend.position="right")
+
+
+```
+```{r second}
+
+
+d <- 1
+start <- ymd_hms(paste0("2023-07-15 00:00:00"))
+stop <- ymd_hms(paste0(crossed_up$wet_date[d]," 00:00:00"))
+#add precipitation
+#add hydrograph to plot
+q_23_plotting <- q_23_f %>% 
+    filter(DATETIME > start & DATETIME < stop) %>% 
+  rename("datetime" = DATETIME)
 q_23_plotting %>% 
-  select(datetime, Q_mm_day) %>% 
-  arrange(datetime) %>% 
-  unique() %>% 
-  mutate(lab = as.numeric(row_number())) %>% 
-  mutate(group = data.table::rleid(lab, cols = PoT_res$srt))
-
-ranges <- data.frame("starts" = PoT_res$srt) %>% 
-  mutate("stops" = lead(starts)) %>% 
-  mutate(event_ID = row_number(starts))
-
-ranges_extended <- ranges %>% 
-  mutate(starts = starts - 48, 
-         stops = stops + 48)
-ranges_extended[1,1] <- 1
-ranges_extended[15,2] <- 5762
-
-
-ranges[26,2] <- 5762
-#trying fuzzy join method?
-p_load(fuzzyjoin)
-id_events <- q_23_plotting %>% 
-  select(datetime, Q_mm_day) %>% 
-  mutate(ID = row_number()) |> fuzzy_left_join(ranges_extended, by = c(ID = "starts", ID = "stops"),
-                              match_fun = list(`>=`, `<=`)) |> 
-   mutate(event_ID = event_ID) |> 
-   select(-starts, -stops)
-
-id_events %>% 
-  ggplot()+
-  geom_point(aes(x = datetime, y = Q_mm_day, color = event_ID))
-
-id_events <- q_23_plotting %>% 
-  select(datetime, Q_mm_day) %>% 
-  mutate(ID = row_number()) |> fuzzy_left_join(ranges, by = c(ID = "starts", ID = "stops"),
-                              match_fun = list(`>=`, `<=`)) |> 
-   mutate(event_ID = event_ID) |> 
-   select(-starts, -stops)
-
-id_events %>% 
-  ggplot()+
-  geom_point(aes(x = datetime, y = Q_mm_day, color = event_ID))
-
-
-```
-
-Doing a thing where I define a sequence based on the activation order during events
-```{r}
-discharge_df_23 %>% filter(event_id == 1)
-
-
-#now, take this new dataframe and for each event find the start of flow
-ttt <- 
-input_w3 %>%
-  filter(datetime <= stop_23) %>% 
-  inner_join(discharge_df_23,  by = c("datetime")) %>% 
-    filter(binary == 1) %>% 
-    group_by(ID, event_id) %>% 
-    summarise(start_of_flow = min(datetime)) %>% 
-    arrange(start_of_flow) %>% 
-  drop_na()
-
-#write a for loop to go through event ids, calculate the sequence for each event, and then find an "average" sequence
-for(i in 1:length(unique(ttt$event_id))){
-  event <- unique(ttt$event_id)[i]
-  
-  sequenced_event <- filter(ttt, event_id == event) %>% 
-    arrange(start_of_flow) %>% 
-      rowid_to_column("Sequence")
-  
-  if(i == 1) all_events <- sequenced_event
-  if(i > 1) all_events <- rbind(all_events, sequenced_event)
-}
-
-# add the end of each event
-end_of_events <- discharge_df_23 %>% 
-    group_by(event_id) %>% 
-    summarise(start_of_event = min(datetime),
-              end_of_event = max(datetime))
-
-discharge_df_23 %>% 
-  left_join(end_of_events, by = "event_id") %>% 
-  filter(event_type != "baseflow") %>% 
-  ggplot(aes(x = datetime, y = Q_mm_day, color = event_type))+
+ggplot(aes(x  = datetime, y = Q_mm_day))+
   geom_line()+
-  facet_wrap(~event_id, scales = "free_x")
+  labs(title = "Discharge from W3, July to Nov 2023",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()
+
+    
+
+
+
+
+precip1 <- read_csv("./HB/HBEF_W3precipitation_15min.csv") %>% 
+    filter(DateTime >= start & DateTime <= stop) %>% 
+    mutate(day = day(DateTime),
+           hour = hour(DateTime)) %>% 
+    group_by(day, hour) %>% 
+    reframe(hourly_precip = sum(precip), across()) %>% 
+    mutate(mins = minute(DateTime)) %>% 
+    filter(mins == 0) %>%
+  rename("datetime" = DateTime) %>% 
+    left_join(q_23_plotting, by = "datetime") %>% 
+  select(datetime, hourly_precip, Q_mm_day)
+
+
+sec3 <- with(precip1, train_sec(hourly_precip, Q_mm_day))
+
+
+water <- precip1 %>% 
+    ggplot(aes(x = datetime))+
+    geom_col(aes(y = hourly_precip))+
+    geom_line(aes(y = sec3$fwd(Q_mm_day)), colour = "blue") +
+    scale_y_continuous("Hourly Precipitation (mm)",
+                       sec.axis = sec_axis(~sec3$rev(.),
+                       name = "Discharge (mm/day)"))+
+    labs(x = "",
+         y = "Precipitation (mm)")+
+      theme_classic()+
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        axis.title.y = element_text(angle = 0),
+        axis.title.y.right = element_text(angle = 0)
+        )
+
+
+test_IDS <- input_w3 %>% 
+    filter(datetime > start & datetime < stop)
+
+remainder <- test_IDS$ID
+
+pks_ordered <- pks_w3 %>% 
+filter(ID %in% remainder) %>% 
+  arrange(desc(pk)) %>% 
+  rowid_to_column("pk_order")
+
+
+#sec2 <- with(test, train_sec(pk_order, pk))
+
+test <- 
+  input_w3 %>% 
+    filter(datetime > start & datetime < stop) %>% 
+    filter(mins == 0) %>% 
+  #filter(ID == 17)
+  #filter(ID %in% W3_IDs) %>% 
+  left_join(precip1, by = "datetime") %>% 
+  left_join(pks_ordered, by = "ID") 
+
+sec2 <- with(test, train_sec(pk_order, hourly_precip))
+
+
+
+tiles <- test %>% 
+  ggplot(aes(x = datetime))+
+  geom_tile(aes(y = pk_order, fill = as.character(binary)))+
+  scale_y_continuous("Supposed Activation Order")+
+  #facet_grid(~name, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c(0, 1),
+                    labels = c("Dry", "Wet"),
+                    name = ""
+                    )+
+  labs(#title = "Very dry to very wet",
+       #subtitle = "W3, 10/20 - 10/22, 2023",
+       x = "")+
+# scale_x_continuous(breaks=c(ymd_hms("2023-07-20 00:00:00"),
+#                             ymd_hms("2023-07-21 00:00:00"),
+#                             ymd_hms("2023-07-22 00:00:00")),
+#                    labels = c("7/20/23",
+#                               "7/21/23",
+#                               "7/22/23"))+
+  theme_classic()+
+    theme(legend.position="right",
+          axis.title.y = element_text(angle = 0))
+
+
+(water)/tiles + plot_layout(heights = c(1, 5))
+
+
+
+
+```
+```{r old-plot-presence/absence-with-discharge}
+
+d <- 1
+start <- ymd_hms(paste0(crossed_up$dry_date[d]," 00:00:00"))
+stop <- ymd_hms(paste0(crossed_up$wet_date[d]," 00:00:00"))
+
+
+test_IDS <- input_w3 %>% 
+    filter(datetime > start & datetime < stop)
+
+remainder <- test_IDS$ID
+
+pks_ordered <- pks_w3 %>% 
+filter(ID %in% remainder) %>% 
+  arrange(desc(pk)) %>% 
+  rowid_to_column("pk_order")
+
+q_23_plotting <- q_23_f %>% 
+    filter(DATETIME > start & DATETIME < stop) %>% 
+  rename("datetime" = DATETIME)
+q_23_plotting %>% 
+ggplot(aes(x  = datetime, y = Q_mm_day))+
+  geom_line()+
+  labs(title = "Discharge from W3, July to Nov 2023",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()
+
+
+test <- input_w3 %>% 
+    filter(datetime > start & datetime < stop) %>% 
+  #filter(ID == 17)
+  #filter(ID %in% W3_IDs) %>% 
+  left_join(q_23_plotting, by = "datetime") %>% 
+  left_join(pks_ordered, by = "ID")
+sec2 <- with(test, train_sec(pk_order, Q_mm_day))
+
+test %>% 
+  ggplot(aes(x = datetime))+
+  geom_tile(aes(y = (pk_order), fill = as.character(binary)))+
+      geom_line(aes(y = sec2$fwd(Q_mm_day)), color = "white")+
+  ylab("Supposed activation order")+
+  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Instantaneous Q (mm/day)")) +
+  #facet_grid(~name, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c(0, 1),
+                    labels = c("Dry", "Wet"),
+                    name = ""
+                    )+
+  labs(title = "Very dry to very wet",
+       subtitle = "W3, 7/20 - 7/22, 2023",
+       x = "")+
+scale_x_continuous(breaks=c(ymd_hms("2023-07-20 00:00:00"),
+                            ymd_hms("2023-07-21 00:00:00"),
+                            ymd_hms("2023-07-22 00:00:00")),
+                   labels = c("7/20/23",
+                              "7/21/23",
+                              "7/22/23"))+
+  theme_classic()+
+    theme(legend.position="right")
+
+#add hydrograph to plot
+crossed_up
+```
+
+#Calculate Baseflow permanence, to use instead of overall flow permanence
+
+```{r baseflow-permanence}
+baseflow_pk <- discharge_df_24 %>% 
+  rbind(discharge_df_23) %>% 
+  filter(event_type == "baseflow") %>% 
+  inner_join(input_w3) %>% 
+  group_by(ID) %>% 
+  summarise(baseflow_pk = mean(binary))
+arsenal <- "/Users/johnmorgan/Documents/VT Research/HBTopmodel"
+write_csv(baseflow_pk, paste0(arsenal, "/baseflow_pk.csv"))
+
+pks_ordered
+
+input_w3 %>% 
+  group_by(ID) %>% 
+  summarise(pk = mean(binary))
+
 ```
 
 
-Combine the model results above, and the identified events
+
 ```{r}
-comparison %>% 
-  drop_na() %>% 
-  inner_join(discharge_df, by = "datetime") %>% 
-  group_by(event_type, code) %>% 
-  summarise(mean = mean(count)) %>% 
-  ggplot()+
-  geom_bar(aes(x = event_type, y = mean, fill = code), stat = "identity")
-
-comparison %>% 
-  inner_join(discharge_df, by = "datetime") %>% 
-  filter(code == "ommission") %>% 
-  ggplot()+
-  geom_line(aes(x = datetime, y = Q_mm_day, color = count))
-
-#for the graph theory solution, the commission and ommission are symmetrical most of the time... I guess this makes sense if one is out of order, it causes another to be in order, like when I did the lagging method to calculate this
-comparison %>% 
-  inner_join(discharge_df, by = "datetime") %>% 
-  pivot_wider(names_from = code, values_from = count) %>% 
-  mutate(diff = commission - ommission) %>% 
-  filter(diff != 0) %>% View()
-
+data <- all_events_ready %>% 
+  dplyr::select(event_id, ID) %>% 
+  filter(event_id != 1) %>% 
+  dplyr::rename("sensor" = "ID")
 
 ```
+
+Just use all of the sequnces from events in my calc_props suite of functions, and in the modeling exercise
+
+# DEPREC
+Stage processing that I have outsourced to a different script:
 ### Stage for FB and ZZ
 Process salt dilutions
 ```{r process-dilutions}
@@ -1442,537 +1834,3 @@ processed_zz_stage %>%
   geom_line()
   
 ```
-
-
-### Number of transitions in each component of hydrograph
-```{r W3}
-#make companion plot that shows the number of transitions during each part of hydrograph
-test <- input_w3 %>% 
-  filter(mins %in% c(0, 30)) %>%
-  group_by(ID) %>% 
-  mutate(lagged = lag(binary),
-         transition = (binary - lagged)) %>% 
-  filter(transition %in% c(-1, 1))
-
-test$state_change <- "none"
-test$state_change[test$transition == -1] <- "wetting"
-test$state_change[test$transition == 1] <- "drying"
-
-num_trans_w3 <- test %>% 
-  group_by(datetime, state_change) %>% 
-  summarise(number_of_nodes = length(state_change))
-
-test %>% 
-  inner_join(discharge_df_23, by = "datetime") %>%
-  group_by(state_change, event_type) %>% 
-  summarise(count = n()) %>% 
-  pivot_wider(names_from = state_change, values_from = count) %>% 
-  kable(format = "markdown")
-
-
-```
-```{r FB}
-num_trans_fb <- input_fb %>% 
-  filter(mins %in% c(0, 30)) %>%
-  group_by(ID) %>% 
-  mutate(lagged = lag(binary),
-         transition = (binary - lagged)) %>% 
-  filter(transition %in% c(-1, 1))
-
-num_trans_fb$state_change <- "none"
-num_trans_fb$state_change[num_trans_fb$transition == -1] <- "wetting"
-num_trans_fb$state_change[num_trans_fb$transition == 1] <- "drying"
-
-num_trans_fb <- num_trans_fb %>% 
-  group_by(datetime, state_change) %>% 
-  summarise(number_of_nodes = length(state_change))
-```
-```{r ZZ}
-num_trans_zz <- input_zz %>% 
-  filter(mins %in% c(0, 30)) %>%
-  group_by(ID) %>% 
-  mutate(lagged = lag(binary),
-         transition = (binary - lagged)) %>% 
-  filter(transition %in% c(-1, 1))
-
-num_trans_zz$state_change <- "none"
-num_trans_zz$state_change[num_trans_zz$transition == -1] <- "wetting"
-num_trans_zz$state_change[num_trans_zz$transition == 1] <- "drying"
-
-num_trans_zz <- num_trans_zz %>% 
-  group_by(datetime, state_change) %>% 
-  summarise(number_of_nodes = length(state_change))
-```
-
-#Determine the wettest and driest times for each watershed
-```{r determine-when-it-goes-from-all-dry-to-all-wet}
-#make binary columns for wet and dry
-rbind(input_w3, input_fb, input_zz)
-
-
-df1 <- input_w3 %>% 
-  group_by(datetime) %>% 
-  summarise("percent_flowing" = sum(binary)/length(binary)) %>% 
-  filter(percent_flowing <= 0.1) %>% 
-  mutate(date = date(datetime)) %>% 
-  select(-datetime, -percent_flowing) %>% unique() %>% 
-  rowid_to_column("dry_ID") %>% 
-  rename("dry_date" = date)
-
-df2 <- input_w3 %>% 
-  group_by(datetime) %>% 
-  summarise("percent_flowing" = sum(binary)/length(binary)) %>% 
-  filter(percent_flowing >= 0.9) %>% 
-  mutate(date = date(datetime)) %>% 
-  select(-datetime, -percent_flowing) %>% unique()%>% 
-  rowid_to_column("wet_ID") %>% 
-  rename("wet_date" = date)
-
-#dataframe that tells us when the network went from fully dry to fully wet and vice versa
-crossed_up <- cross_join(df1, df2) %>% 
-  mutate(difference = wet_date - dry_date) %>% 
-  group_by(dry_date) %>% 
-  filter(abs(difference) == min(abs(difference))) %>% 
-  filter(abs(difference) <= 10 )
-  #summarise(min = min(difference),
-   #         max = max(difference)
-
-
-f1 <- Vectorize(function(x, y) list(as.numeric(difftime(y, x, units = "d"))))
-outer(df1$dry_date, df2$wet_date, FUN = f1)
-
-#maximum percentage of sensors flowing is 100%
-max(spots_flowing$percent_flowing)
-#times when stream was at it's maximum extent
-spots_flowing$datetime[spots_flowing$percent_flowing == max(spots_flowing$percent_flowing)]
-#minimum extent times
-min(spots_flowing$percent_flowing)
-no_flow <- spots_flowing$datetime[spots_flowing$percent_flowing == min(spots_flowing$percent_flowing)]
-
-
-filter(q_23_f, DATETIME %in% no_flow)
-
-
-spots_flowing$datetime[spots_flowing$percent_flowing == min(spots_flowing$percent_flowing)]
-
-#plots for the wettest times for each watershed
-plot_test <- filter(all_w3, 
-               datetime == "2023-07-03 15:20:00 EDT")
-
-ggplot()+
-  geom_tile(data=test, aes(x=x, y=y), fill = "lightgrey")+
-  geom_point(data = plot_test, aes(x = long, y = lat, color = wetdry), size = 2)+
-  scale_color_manual(drop = FALSE,
-                     values = binary,
-                    breaks = c("dry", "wet"),
-                    labels = c("No flow", "flowing"),
-                    name = ""
-                    )+
-  geom_text(data = plot_test, aes(x = long, y = lat,label = ID), hjust=-0.00025, vjust=0.00025)+
-  theme_void()+
-  labs(title = "Wettest extent in W3")+
-  coord_equal()
-#plot of the driest extent in W3
-
-plot_test <- filter(all_w3, 
-               datetime == "2023-09-21 16:00:00 EDT")
-ggplot()+
-  geom_tile(data=test, aes(x=x, y=y), fill = "lightgrey")+
-  geom_point(data = plot_test, aes(x = long, y = lat, color = wetdry), size = 2)+
-  scale_color_manual(drop = FALSE,
-                     values = binary,
-                    breaks = c("dry", "wet"),
-                    labels = c("No flow", "flowing"),
-                    name = ""
-                    )+
-  geom_text(data = plot_test, aes(x = long, y = lat,label = ID), hjust=-0.00025, vjust=0.00025)+
-  theme_void()+
-  labs(title = "Driest extent in W3")+
-  coord_equal()
-```
-
-```{r first-fully-dry-to-wet}
- # Function factory for secondary axis transforms
-train_sec <- function(primary, secondary, na.rm = TRUE) {
-  # Thanks Henry Holm for including the na.rm argument!
-  from <- range(secondary, na.rm = na.rm)
-  to   <- range(primary, na.rm = na.rm)
-  # Forward transform for the data
-  forward <- function(x) {
-    rescale(x, from = from, to = to)
-  }
-  # Reverse transform for the secondary axis
-  reverse <- function(x) {
-    rescale(x, from = to, to = from)
-  }
-  list(fwd = forward, rev = reverse)
-}
-
-# sec <- with(economics, train_sec(unemploy, psavert))
-# 
-# ggplot(economics, aes(date)) +
-#   geom_line(aes(y = unemploy), colour = "blue") +
-#   geom_line(aes(y = sec$fwd(psavert)), colour = "red") +
-#   scale_y_continuous(sec.axis = sec_axis(~sec$rev(.), name = "psavert"))
-
-#add precipitation
-#add hydrograph to plot
-q_23_plotting <- q_23_f %>% 
-    filter(DATETIME > start & DATETIME < stop) %>% 
-  rename("datetime" = DATETIME)
-q_23_plotting %>% 
-ggplot(aes(x  = datetime, y = Q_mm_day))+
-  geom_line()+
-  labs(title = "Discharge from W3, July to Nov 2023",
-       x = "",
-       y = "Instantaneous Q (mm/day)")+
-  theme_classic()
-
-    
-
-start <- ymd_hms("2023-10-20 00:00:00")
-stop <- ymd_hms("2023-10-22 00:00:00")
-
-#precip <- 
-  read_csv("./HB/dailyWatershedPrecip1956-2024.csv") %>% 
-    filter(watershed == "W3") %>% 
-        filter(DATE >= start & DATE <= stop) %>% 
-    ggplot()+
-    geom_bar(aes(x = DATE, y = Precip), stat = "identity")
-
-precip1 <- read_csv("./HB/HBEF_W3precipitation_15min.csv") %>% 
-    filter(DateTime >= start & DateTime <= stop) %>% 
-    mutate(day = day(DateTime),
-           hour = hour(DateTime)) %>% 
-    group_by(day, hour) %>% 
-    reframe(hourly_precip = sum(precip), across()) %>% 
-    mutate(mins = minute(DateTime)) %>% 
-    filter(mins == 0) %>%
-  rename("datetime" = DateTime) %>% 
-    left_join(q_23_plotting, by = "datetime") %>% 
-  select(datetime, hourly_precip, Q_mm_day)
-
-
-sec3 <- with(precip1, train_sec(hourly_precip, Q_mm_day))
-
-
-water <- precip1 %>% 
-    ggplot(aes(x = datetime))+
-    geom_col(aes(y = hourly_precip))+
-    geom_line(aes(y = sec3$fwd(Q_mm_day)), colour = "blue") +
-    scale_y_continuous("Hourly Precipitation (mm)",
-                       sec.axis = sec_axis(~sec3$rev(.),
-                       name = "Discharge (mm/day)"))+
-    labs(x = "",
-         y = "Precipitation (mm)")+
-      theme_classic()+
-  theme(axis.text.x=element_blank(),
-        axis.ticks.x=element_blank(),
-        axis.title.y = element_text(angle = 0),
-        axis.title.y.right = element_text(angle = 0)
-        )
-
-
-test_IDS <- input_w3 %>% 
-    filter(datetime > start & datetime < stop)
-
-remainder <- test_IDS$ID
-
-pks_ordered <- pks_w3 %>% 
-filter(ID %in% remainder) %>% 
-  arrange(desc(pk)) %>% 
-  rowid_to_column("pk_order")
-
-test <- input_w3 %>% 
-    filter(datetime > start & datetime < stop) %>% 
-  #filter(ID == 17)
-  #filter(ID %in% W3_IDs) %>% 
-  left_join(pks_ordered, by = "ID") #%>% 
-sec2 <- with(test, train_sec(pk_order, pk))
-
-test <- 
-  input_w3 %>% 
-    filter(datetime > start & datetime < stop) %>% 
-    mutate(day = day(datetime),
-           hour = hour(datetime)) %>% 
-  #filter(ID == 17)
-  #filter(ID %in% W3_IDs) %>% 
-  left_join(precip1, by = c("day", "hour")) %>% 
-  left_join(pks_ordered, by = "ID") %>% 
-  filter(mins.x == 0)
-test2 <- test %>% 
-  select(datetime.x, binary, hourly_precip, pk_order)
-sec2 <- with(test2, train_sec(pk_order, hourly_precip))
-
-
-
-tiles <- test2 %>% 
-  ggplot(aes(x = datetime.x))+
-  geom_tile(aes(y = pk_order, fill = as.character(binary)))+
-  scale_y_continuous("Supposed Activation Order")+
-  #facet_grid(~name, scales = "free") + 
-  scale_fill_manual(drop = FALSE,
-                     values = binary,
-                    breaks = c(0, 1),
-                    labels = c("Dry", "Wet"),
-                    name = ""
-                    )+
-  labs(#title = "Very dry to very wet",
-       #subtitle = "W3, 10/20 - 10/22, 2023",
-       x = "")+
-scale_x_continuous(breaks=c(ymd_hms("2023-10-20 00:00:00"),
-                            ymd_hms("2023-10-21 00:00:00"),
-                            ymd_hms("2023-10-22 00:00:00")),
-                   labels = c("10/20/23",
-                              "10/21/23",
-                              "10/22/23"))+
-  theme_classic()+
-    theme(legend.position="right",
-          axis.title.y = element_text(angle = 0))
-
-p_load(patchwork)
-
-(water)/tiles + plot_layout(heights = c(1, 5))
-
-
-test2 %>% 
-  ggplot(aes(x = datetime.x))+
-  geom_tile(aes(y = (pk_order), fill = as.character(binary)))+
-  geom_col(aes(y = sec2$fwd(hourly_precip)))+
-  ylab("Supposed activation order")+
-  scale_y_continuous(sec.axis = sec_axis(~sec2$fwd(.), name = "Instantaneous Q (mm/day)")) +
-  #facet_grid(~name, scales = "free") + 
-  scale_fill_manual(drop = FALSE,
-                     values = binary,
-                    breaks = c(0, 1),
-                    labels = c("Dry", "Wet"),
-                    name = ""
-                    )+
-  labs(title = "Very dry to very wet",
-       subtitle = "W3, 10/20 - 10/22, 2023",
-       x = "")+
-scale_x_continuous(breaks=c(ymd_hms("2023-10-20 00:00:00"),
-                            ymd_hms("2023-10-21 00:00:00"),
-                            ymd_hms("2023-10-22 00:00:00")),
-                   labels = c("10/20/23",
-                              "10/21/23",
-                              "10/22/23"))+
-  theme_classic()+
-    theme(legend.position="right")
-
-
-```
-```{r second}
-
-
-d <- 1
-start <- ymd_hms(paste0("2023-07-15 00:00:00"))
-stop <- ymd_hms(paste0(crossed_up$wet_date[d]," 00:00:00"))
-#add precipitation
-#add hydrograph to plot
-q_23_plotting <- q_23_f %>% 
-    filter(DATETIME > start & DATETIME < stop) %>% 
-  rename("datetime" = DATETIME)
-q_23_plotting %>% 
-ggplot(aes(x  = datetime, y = Q_mm_day))+
-  geom_line()+
-  labs(title = "Discharge from W3, July to Nov 2023",
-       x = "",
-       y = "Instantaneous Q (mm/day)")+
-  theme_classic()
-
-    
-
-
-
-
-precip1 <- read_csv("./HB/HBEF_W3precipitation_15min.csv") %>% 
-    filter(DateTime >= start & DateTime <= stop) %>% 
-    mutate(day = day(DateTime),
-           hour = hour(DateTime)) %>% 
-    group_by(day, hour) %>% 
-    reframe(hourly_precip = sum(precip), across()) %>% 
-    mutate(mins = minute(DateTime)) %>% 
-    filter(mins == 0) %>%
-  rename("datetime" = DateTime) %>% 
-    left_join(q_23_plotting, by = "datetime") %>% 
-  select(datetime, hourly_precip, Q_mm_day)
-
-
-sec3 <- with(precip1, train_sec(hourly_precip, Q_mm_day))
-
-
-water <- precip1 %>% 
-    ggplot(aes(x = datetime))+
-    geom_col(aes(y = hourly_precip))+
-    geom_line(aes(y = sec3$fwd(Q_mm_day)), colour = "blue") +
-    scale_y_continuous("Hourly Precipitation (mm)",
-                       sec.axis = sec_axis(~sec3$rev(.),
-                       name = "Discharge (mm/day)"))+
-    labs(x = "",
-         y = "Precipitation (mm)")+
-      theme_classic()+
-  theme(axis.text.x=element_blank(),
-        axis.ticks.x=element_blank(),
-        axis.title.y = element_text(angle = 0),
-        axis.title.y.right = element_text(angle = 0)
-        )
-
-
-test_IDS <- input_w3 %>% 
-    filter(datetime > start & datetime < stop)
-
-remainder <- test_IDS$ID
-
-pks_ordered <- pks_w3 %>% 
-filter(ID %in% remainder) %>% 
-  arrange(desc(pk)) %>% 
-  rowid_to_column("pk_order")
-
-
-#sec2 <- with(test, train_sec(pk_order, pk))
-
-test <- 
-  input_w3 %>% 
-    filter(datetime > start & datetime < stop) %>% 
-    filter(mins == 0) %>% 
-  #filter(ID == 17)
-  #filter(ID %in% W3_IDs) %>% 
-  left_join(precip1, by = "datetime") %>% 
-  left_join(pks_ordered, by = "ID") 
-
-sec2 <- with(test, train_sec(pk_order, hourly_precip))
-
-
-
-tiles <- test %>% 
-  ggplot(aes(x = datetime))+
-  geom_tile(aes(y = pk_order, fill = as.character(binary)))+
-  scale_y_continuous("Supposed Activation Order")+
-  #facet_grid(~name, scales = "free") + 
-  scale_fill_manual(drop = FALSE,
-                     values = binary,
-                    breaks = c(0, 1),
-                    labels = c("Dry", "Wet"),
-                    name = ""
-                    )+
-  labs(#title = "Very dry to very wet",
-       #subtitle = "W3, 10/20 - 10/22, 2023",
-       x = "")+
-# scale_x_continuous(breaks=c(ymd_hms("2023-07-20 00:00:00"),
-#                             ymd_hms("2023-07-21 00:00:00"),
-#                             ymd_hms("2023-07-22 00:00:00")),
-#                    labels = c("7/20/23",
-#                               "7/21/23",
-#                               "7/22/23"))+
-  theme_classic()+
-    theme(legend.position="right",
-          axis.title.y = element_text(angle = 0))
-
-
-(water)/tiles + plot_layout(heights = c(1, 5))
-
-
-
-
-```
-```{r old-plot-presence/absence-with-discharge}
-
-d <- 1
-start <- ymd_hms(paste0(crossed_up$dry_date[d]," 00:00:00"))
-stop <- ymd_hms(paste0(crossed_up$wet_date[d]," 00:00:00"))
-
-
-test_IDS <- input_w3 %>% 
-    filter(datetime > start & datetime < stop)
-
-remainder <- test_IDS$ID
-
-pks_ordered <- pks_w3 %>% 
-filter(ID %in% remainder) %>% 
-  arrange(desc(pk)) %>% 
-  rowid_to_column("pk_order")
-
-q_23_plotting <- q_23_f %>% 
-    filter(DATETIME > start & DATETIME < stop) %>% 
-  rename("datetime" = DATETIME)
-q_23_plotting %>% 
-ggplot(aes(x  = datetime, y = Q_mm_day))+
-  geom_line()+
-  labs(title = "Discharge from W3, July to Nov 2023",
-       x = "",
-       y = "Instantaneous Q (mm/day)")+
-  theme_classic()
-
-
-test <- input_w3 %>% 
-    filter(datetime > start & datetime < stop) %>% 
-  #filter(ID == 17)
-  #filter(ID %in% W3_IDs) %>% 
-  left_join(q_23_plotting, by = "datetime") %>% 
-  left_join(pks_ordered, by = "ID")
-sec2 <- with(test, train_sec(pk_order, Q_mm_day))
-
-test %>% 
-  ggplot(aes(x = datetime))+
-  geom_tile(aes(y = (pk_order), fill = as.character(binary)))+
-      geom_line(aes(y = sec2$fwd(Q_mm_day)), color = "white")+
-  ylab("Supposed activation order")+
-  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Instantaneous Q (mm/day)")) +
-  #facet_grid(~name, scales = "free") + 
-  scale_fill_manual(drop = FALSE,
-                     values = binary,
-                    breaks = c(0, 1),
-                    labels = c("Dry", "Wet"),
-                    name = ""
-                    )+
-  labs(title = "Very dry to very wet",
-       subtitle = "W3, 7/20 - 7/22, 2023",
-       x = "")+
-scale_x_continuous(breaks=c(ymd_hms("2023-07-20 00:00:00"),
-                            ymd_hms("2023-07-21 00:00:00"),
-                            ymd_hms("2023-07-22 00:00:00")),
-                   labels = c("7/20/23",
-                              "7/21/23",
-                              "7/22/23"))+
-  theme_classic()+
-    theme(legend.position="right")
-
-#add hydrograph to plot
-crossed_up
-```
-
-#Calculate Baseflow permanence, to use instead of overall flow permanence
-
-```{r baseflow-permanence}
-baseflow_pk <- discharge_df_24 %>% 
-  rbind(discharge_df_23) %>% 
-  filter(event_type == "baseflow") %>% 
-  inner_join(input_w3) %>% 
-  group_by(ID) %>% 
-  summarise(baseflow_pk = mean(binary))
-arsenal <- "/Users/johnmorgan/Documents/VT Research/HBTopmodel"
-write_csv(baseflow_pk, paste0(arsenal, "/baseflow_pk.csv"))
-
-pks_ordered
-
-input_w3 %>% 
-  group_by(ID) %>% 
-  summarise(pk = mean(binary))
-
-```
-
-# Methods to quantify how similar sequences work
-
-
-```{r}
-data <- all_events_ready %>% 
-  dplyr::select(event_id, ID) %>% 
-  filter(event_id != 1) %>% 
-  dplyr::rename("sensor" = "ID")
-
-```
-
-I have already found the sequence for each event, now the question is whether I should try to find a sequence where they "continually flow" from that point on... or just rock with what I've got
-
-Just use all of the sequnces from events in my calc_props suite of functions, and in the modeling exercise

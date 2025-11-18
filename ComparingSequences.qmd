@@ -313,13 +313,7 @@ Make them ID/sequence format
 ```{r helper-functions}
 #write wrapper functions to convert between the two forms easily
 #routes_w3 <- 
-  pks_w3 %>% 
-    filter(ID %in% W3_IDs) %>% 
-  arrange(desc(pk)) %>% 
-  mutate(down = lag(ID)) %>% 
-  rename("up" = ID) %>% drop_na() %>% 
-  select(up, down) %>% 
-  convert_to_IDseq()
+
 
 #convert from up/down to ID/seq
 convert_to_IDseq <- function(input){ 
@@ -335,7 +329,14 @@ convert_to_IDseq <- function(input){
   
 return(convert)
 }
-  
+
+  pks_w3 %>% 
+    filter(ID %in% W3_IDs) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down) %>% 
+  convert_to_IDseq()
 
 #convert from ID/seq to up/down
 input <- W3_cheap
@@ -1637,1358 +1638,6 @@ num_trans_zz <- num_trans_zz %>%
   group_by(datetime, state_change) %>% 
   summarise(number_of_nodes = length(state_change))
 ```
-# Graph theory sequences
-## Determine all possible combinations, or the full graph
-Determine all possible combinations
-```{r W3}
-input <- rbind(bind23, bind24) %>%
-  filter(wshed == "W3", mins %in% c(0, 30)) %>%
-  select(datetime, binary, ID) %>%
-  #mutate(ID = paste0("r_",ID)) %>% 
-  pivot_wider(names_from = ID, values_from = binary)
-
-combos <- W3_IDs
-
-#create empty list to hold repeated node IDs
-zzz <- length(combos)
-all_list <- c()
-for(z in 1:zzz){
-  all_list <- c(all_list, rep(combos[z], zzz))
-}
-#create data frame with all possible combinations
-W3_combos_routes <- data.frame("up" = rep(combos, zzz),
-                                "down" = all_list)
-#Run suite of functions to determine proportion of time that state changes follow the parent -> child relationship
-W3_all_combos <- calc_props(W3_combos_routes, "W3")
-
-#general_graph(W3_IDs, "W3", methods = c("cheapest_insertion"), two_opt = TRUE)
-```
-
-
-
-```{r FB}
-#set routes for all 3 watersheds
-input <- rbind(bind23, bind24) %>%
-  filter(wshed == "FB", mins %in% c(0, 30)) %>%
-  select(datetime, binary, ID) %>%
-  #mutate(ID = paste0("r_",ID)) %>% 
-  pivot_wider(names_from = ID, values_from = binary)
-
-combos <- FB_IDs
-zzz <- length(combos)
-rep(combos, zzz)
-all_list <- c()
-for(z in 1:zzz){
-  all_list <- c(all_list, rep(combos[z], zzz))
-}
-
-all_combos_routes <- data.frame("up" = rep(combos, zzz),
-                                "down" = all_list)
-
-#run calc_support for all sheds and timesteps for relative position
-FB_all_combos <- calc_props(all_combos_routes, "FB")
-```
-```{r ZZ}
-#set routes for all 3 watersheds
-
-input <- rbind(bind23, bind24) %>%
-  filter(wshed == "ZZ", mins %in% c(0, 30)) %>%
-  select(datetime, binary, ID) %>%
-  #mutate(ID = paste0("r_",ID)) %>% 
-  pivot_wider(names_from = ID, values_from = binary)
-
-combos <- ZZ_IDs
-zzz <- length(combos)
-rep(combos, zzz)
-all_list <- c()
-for(z in 1:zzz){
-  all_list <- c(all_list, rep(combos[z], zzz))
-}
-
-all_combos_routes <- data.frame("up" = rep(combos, zzz),
-                                "down" = all_list)
-#run calc_support for all sheds and timesteps for relative position
-ZZ_all_combos <- calc_props(all_combos_routes, "ZZ")
-```
-
-What if I tried to show this in some way- map where each sensor was the average prop value when it is a parent?
-```{r}
-parents <- W3_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  rename(parent = down, child = up) %>% 
-  group_by(parent) %>% 
-  summarise(mean_parent = mean(prop)) %>% 
-  rename(ID = parent)
-  
-childs <- W3_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  rename(parent = down, child = up) %>% 
-  group_by(child) %>% 
-  summarise(mean_child = mean(prop)) %>% 
-  rename(ID = child)
-
-left_join(parents, childs, by = "ID") %>% 
-  ggplot(aes(x = mean_parent, y = mean_child))+
-  geom_point()
-
-parents <- FB_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  rename(parent = down, child = up) %>% 
-  group_by(parent) %>% 
-  summarise(mean_parent = mean(prop)) %>% 
-  rename(ID = parent)
-  
-childs <- FB_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  rename(parent = down, child = up) %>% 
-  group_by(child) %>% 
-  summarise(mean_child = mean(prop)) %>% 
-  rename(ID = child)
-
-left_join(parents, childs, by = "ID") %>% 
-  ggplot(aes(x = mean_parent, y = mean_child))+
-  geom_point()
-```
-
-## Find a path through the full graph using the TSP
-For each watershed, find the best chain using solutions to traveling salesman problem.  Testing every method for solving the TSP manually.  Done before developing the generalized function below.   
-```{r W3}
-#define all possible methods
-#removed 3 methods
-methods <- c("nearest_insertion", "random",
-  "cheapest_insertion", "farthest_insertion", "arbitrary_insertion",
-  "nn", "repetitive_nn")
-
-# methods <- c("random",
-#   "cheapest_insertion")
-
-#set up edges and distance matrix, convert to TSP object
-edges_W3 <- 
-  W3_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  #rename(labels = prop) %>% 
-  #filter(prop != 0) %>% 
-  mutate(prop = 1 - prop) %>%  #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    select(-up) %>% as.matrix() %>% unname()
-
-keyz <- 
-  W3_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    select(-up) #%>% as.matrix() %>% unname()
-#create an accurate key, old one is WRONG!!!
-key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
-                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
-
-# Convert to TSP object
-
-#FOR LOOP TO ITERATE THROUGH METHODS
-for(i in 1:length(methods)){
-  atsp <- as.ATSP(edges_W3)
-
-    atsp <- insert_dummy(atsp, label = "dummy")
-  tour <- solve_TSP(atsp, method = methods[i], two_opt = TRUE)
-    #tour <- solve_TSP(tour, method = "two_opt")
-
-  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
-
-  # Extract path, removing dummy node
-  path <- as.integer(tour)
-  path <- path[labels(tour)[path] != "dummy"]
-  #convert edges to format 
-  edges <- cbind(path[-length(path)], path[-1])
-  
-  #apply key to convert nodes to sensor IDs for algorithm
-opt_routes <- 
-  as.data.frame(edges) %>% 
-  rename("parent" = V2, "child" = V1) %>% 
- rename(node_ID = child) %>% 
-  left_join(key2, by = "node_ID") %>% 
-  rename(child = sensor_ID,
-         done = node_ID,
-         node_ID = parent) %>% 
-  left_join(key2, by = "node_ID") %>% 
-  rename(done2 = node_ID,
-         parent = sensor_ID) %>% 
-  select(parent, child)
-
-#prepare routes for algorithm
-routes_graph <- opt_routes %>% 
-  rename("up" = child,
-         "down" = parent) %>% drop_na()
-
-chain_output <- calc_props(routes_graph, "W3") %>% 
-    mutate("method" = methods[i])
-
-    if(i == 1) all_chain_outputs <- chain_output
-    if(i > 1) all_chain_outputs <- rbind(all_chain_outputs, chain_output)
-}
-
-all_chain_outputs %>% 
-  filter(timescale %in% c("30mins", "daily")#, hierarchy == "Flow Permanence"
-         ) %>% 
-  ggplot(aes(x = prop, y = after_stat(density))) +
-geom_density(aes(color = method), alpha = 0.5)+
-    geom_density(alpha = 0.5, lty = 3)+
-      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
-    theme_bw()+
-  ylim(c(0, 6.25))+
-  xlim(c(0,1))+
-  labs(title = "Distributions of Proportion of time Sequence Followed",
-       subtitle = "0011 and 1100 removed",
-       x = "Proportion of time followed",
-       y = "Density")+
-  facet_grid(~timescale)
-
-```
-
-```{r fooling around}
-# 8/12/25, fooling around
-keyz <- 
-  W3_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    select(-up) #%>% as.matrix() %>% unname()
-#create an accurate key, old one is WRONG!!!
-key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
-                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
-
-
-edges_W3 <- 
-  W3_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  #rename(labels = prop) %>% 
-  #filter(prop != 0) %>% 
-  mutate(prop = 1 - prop) %>%  #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    select(-up) %>% as.matrix() %>% unname()
-
-  #concorde solver?
-#downloaded concorde but could not figure out how to get it working
-concorde_path("/Users/johnmorgan/Documents/concorde/TSP")
-
-data("USCA312")
-
-## run concorde in verbose mode (-v) with fast cuts only (-V)
-solve_TSP(USCA312, method = "concorde", control = list(clo = "-v -V"))
-
-#now try applying
-atsp <- as.ATSP(edges_W3)
-
-    atsp <- insert_dummy(atsp, label = "dummy")
-  tour <- solve_TSP(atsp, method = "concorde", as_TSP = TRUE, precision = 6, two_opt = TRUE)
-  #control = list(clo = "-B")
-    #tour <- solve_TSP(atsp, method = "cheapest_insertion", as_TSP = TRUE, two_opt = TRUE)
-
-    #tour <- solve_TSP(tour, method = "two_opt")
-
-  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
-
-  # Extract path, removing dummy node
-  path <- as.integer(tour)
-  path <- path[labels(tour)[path] != "dummy"]
-  #convert edges to format 
-  edges <- cbind(path[-length(path)], path[-1])
-  
-con_sol <- c(edges[,1], edges[25,2])
-
-concon <- tibble(ID = con_sol, sequence = seq(1, length(con_sol), 1))
-concon <- tibble(node_ID = con_sol, sequence = seq(1, length(con_sol), 1)) %>% 
-  left_join(key2, by = "node_ID") %>%
-  rename(ID = sensor_ID) %>% 
-  select(ID, sequence)
-  
-
-#con_model <- calc_model_result(concon$ID, "W3") %>% rename("con" = pred_out)
-produce_metrics(concon, "W3", "concorde")
-
-
-#acc_0.755 <- concon
-
-#trying another thing
-C_int <- round(1e6 * edges_W3)
-diag(C_int) <- max(C_int) + 1L
-
-
-reformed <- reformulate_ATSP_as_TSP(atsp)
-
-write_TSPLIB(reformed, file = "myinstance.tsp")
-
-sol <- as.integer(scan("~/Documents/concorde/myinstance.sol", quiet = TRUE)[-1])
-
-read_delim("~/Documents/concorde/myinstance.sol", delim = " ")
-
-as.TOUR(sol+1)
-
-n_orig <- 26
-map_to_atsp <- function(id) {
-  if (id < n_orig) {
-    return(id)
-  } else if (id < 2 * n_orig) {
-    return(id - n_orig)
-  } else {
-    return(NA)  # dummy
-  }
-}
-tour_atsp <- vapply(sol, map_to_atsp, integer(1))
-tour_atsp <- tour_atsp[!is.na(tour_atsp)]         # remove dummy
-tour_atsp <- tour_atsp[!duplicated(tour_atsp)]    # keep first visit only
-
-
-filter_ATSP_as_TSP_dummies(as.TOUR(sol+1))
-
-```
-
-Trying again, but filtering out every edge with a prop value less than 50%
-```{r W3}
-#define all possible methods
-#removed 3 methods
-methods <- c("nearest_insertion", "random",
-  "cheapest_insertion", "farthest_insertion", "arbitrary_insertion",
-  "nn", "repetitive_nn")
-
-methods <- c(
-  "cheapest_insertion")
-
-#set up edges and distance matrix, convert to TSP object
-edges_W3 <- 
-  W3_all_combos %>% 
-  mutate(prop = case_when(prop < 0.5 ~ NA,
-                          prop >= 0.5 ~ prop)) %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  #rename(labels = prop) %>% 
-  #filter(prop != 0) %>% 
-  mutate(prop = 1 - prop) %>%  #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    select(-up) %>% as.matrix() %>% unname()
-edges_W3[is.na(edges_W3)] <- 1
-
-keyz <- 
-  W3_all_combos %>% 
-    #filter(prop > 0.5) %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    select(-up) #%>% as.matrix() %>% unname()
-#create an accurate key, old one is WRONG!!!
-key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
-                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
-
-# Convert to TSP object
-
-#FOR LOOP TO ITERATE THROUGH METHODS
-#for(i in 1:length(methods)){
-i <- 1
-  atsp <- as.ATSP(edges_W3)
-
-    atsp <- insert_dummy(atsp, label = "dummy")
-  tour <- solve_TSP(atsp, method = methods[i], two_opt = TRUE)
-    #tour <- solve_TSP(tour, method = "two_opt")
-
-  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
-
-  # Extract path, removing dummy node
-  path <- as.integer(tour)
-  path <- path[labels(tour)[path] != "dummy"]
-  path
-  #convert edges to format 
-  #edges <- cbind(path[-length(path)], path[-1])
-  
-  #apply key to convert nodes to sensor IDs for algorithm
-opt_routes <- 
-  tibble(node_ID = path,
-         sequence = seq(1, length(path), 1)) %>% 
-  left_join(key2, by = "node_ID") %>% 
-  rename(ID = sensor_ID) %>% 
-  select(ID, sequence)
-
-produce_metrics(opt_routes, "W3", "test")
-
-```
-
-Trying one more thing- what if the sequence was defined in order by average prop value when it is the parent?
-```{r}
-#new_seq <- 
-  W3_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  rename(parent = down,
-         child = up) %>% 
-  group_by(parent) %>% 
-  summarise(mean = mean(prop),
-            sd = sd(prop)) %>% 
-  arrange(desc(mean)) %>% View()
-  mutate(sequence = seq(1, length(con_big), 1)) %>% 
-  rename(ID = parent) %>% 
-  mutate(ID = as.numeric(substr(ID, 3, 4))) %>% 
-  select(ID, sequence)
-  #filter(prop != 0) %>% 
-  
-produce_metrics(new_seq, "W3", "ordered")
-
-
-w3_pk_renum <- W3_pk_seq %>% 
-  filter(ID %in% (W3_IDs)) %>% 
-  mutate(sequence = seq(1, 26, 1))
-new_seq %>% 
-  left_join(w3_pk_renum, by = "ID") %>% 
-View()
-```
-New sequence is just as good as proportion of time flowing, but definitely a different sequence... definitely related to the number of transitions I think
-
-Calculate new sequence for figure 5:
-```{r}
-new_seq <- 
-  W3_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  rename(parent = down,
-         child = up) %>% 
-  group_by(parent) %>% 
-  summarise(mean = mean(prop),
-            sd = sd(prop)) %>% 
-  arrange(desc(mean)) %>% #View()
-  mutate(sequence = seq(1, length(25), 1)) %>% 
-  rename(ID = parent) %>% 
-  mutate(ID = as.numeric(substr(ID, 3, 4))) %>% 
-  select(ID, sequence)
-  
-opt_routes <- 
-  new_seq %>% 
-  mutate(down = lag(ID)) %>% 
-    rename("up" = ID) %>% 
-    select(up, down) %>% drop_na()
-  
-calc_props(opt_routes, "W3")
-```
-
-
-```{r FB-analysis}
-#define all possible methods
-#removed 3 methods
-methods <- c("nearest_insertion", "random",
-  "cheapest_insertion", "farthest_insertion", "arbitrary_insertion",
-  "nn", "repetitive_nn")
-
-#methods <- c("random", "cheapest_insertion")
-keyz <- 
-  FB_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    select(-up) #%>% as.matrix() %>% unname()
-#create an accurate key, old one is WRONG!!!
-key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
-                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
-#set up edges and distance matrix, convert to TSP object
-
-#IF there are NAs, replace them with 1; results from when there is a node that flowed the whole time it was deployed along with another, and not deployed for part of the other one's deployment; happened most in FB
-edges_FB <- 
-  FB_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  #rename(labels = prop) %>% 
-  #filter(prop != 0) %>% 
-  mutate(prop = 1 - prop) %>% #%>% #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    mutate(
-    across(everything(), ~replace_na(.x, 1))
-  ) %>%
-    select(-up) %>% as.matrix() %>% unname()
-
-#FOR LOOP TO ITERATE THROUGH METHODS
-for(i in 1:length(methods)){
-  atsp <- as.ATSP(edges_FB)
-  atsp <- insert_dummy(atsp, label = "dummy")
-  tour <- solve_TSP(atsp, method = methods[i])#, two_opt = TRUE)
-  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
-
-  # Extract path, removing dummy node
-  path <- as.integer(tour)
-  path <- path[labels(tour)[path] != "dummy"]
-  #convert edges to format 
-  edges <- cbind(path[-length(path)], path[-1])
-  
-  #apply key to convert nodes to sensor IDs for algorithm
-opt_routes <- 
-  as.data.frame(edges) %>% 
-  rename("parent" = V2, "child" = V1) %>% 
- rename(node_ID = child) %>% 
-  left_join(key2, by = "node_ID") %>% 
-  rename(child = sensor_ID,
-         done = node_ID,
-         node_ID = parent) %>% 
-  left_join(key2, by = "node_ID") %>% 
-  rename(done2 = node_ID,
-         parent = sensor_ID) %>% 
-  select(parent, child)
-
-#prepare routes for algorithm
-routes_graph <- opt_routes %>% 
-  rename("up" = child,
-         "down" = parent) %>% drop_na()
-
-chain_output <- calc_props(routes_graph, "FB") %>% 
-    mutate("method" = methods[i])
-
-    if(i == 1) FB_chain_outputs <- chain_output
-    if(i > 1) FB_chain_outputs <- rbind(FB_chain_outputs, chain_output)
-}
-
-
-#plots for committee meeting
-FB_chain_outputs %>% 
-  filter(timescale %in% c("30mins", "daily")#, hierarchy == "Flow Permanence"
-         ) %>% 
-  ggplot(aes(x = prop, y = after_stat(density))) +
-geom_density(aes(color = method), alpha = 0.5)+
-    geom_density(alpha = 0.5, lty = 3)+
-      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
-    theme_bw()+
-  ylim(c(0, 6.25))+
-  xlim(c(0,1))+
-  labs(title = "Distributions of Proportion of time Sequence Followed",
-       x = "Proportion of time followed",
-       y = "Density")+
-  facet_grid(~timescale)
-
-```
-```{r ZZ-analysis}
-#define all possible methods
-#removed 3 methods
-methods <- c("nearest_insertion", "random",
-  "cheapest_insertion", "farthest_insertion", "arbitrary_insertion",
-  "nn", "repetitive_nn")
-
-#methods <- c("random", "cheapest_insertion")
-keyz <- 
-  ZZ_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    select(-up) #%>% as.matrix() %>% unname()
-#create an accurate key, old one is WRONG!!!
-key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
-                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
-#set up edges and distance matrix, convert to TSP object
-
-#IF there are NAs, replace them with 1; results from when there is a node that flowed the whole time it was deployed along with another, and not deployed for part of the other one's deployment; happened most in FB
-edges_ZZ <- 
-  ZZ_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  #rename(labels = prop) %>% 
-  #filter(prop != 0) %>% 
-  mutate(prop = 1 - prop) %>% #%>% #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    mutate(
-    across(everything(), ~replace_na(.x, 1))
-  ) %>%
-    select(-up) %>% as.matrix() %>% unname()
-
-
-
-# reformat from atsp to tsp
-#tsp1 <- reformulate_ATSP_as_TSP(atsp)
-
-#FOR LOOP TO ITERATE THROUGH METHODS
-for(i in 1:length(methods)){
-  # Convert to TSP object
-atsp <- as.ATSP(edges_ZZ)
-  
-  atsp <- insert_dummy(atsp, label = "dummy")
-  tour <- solve_TSP(atsp, method = methods[i], start = length(ZZ_IDs) + 1)#, start = 25)#, two_opt = TRUE)
-  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
-
-  # Extract path, removing dummy node
-   path <- unname(cut_tour(tour, "dummy"))
-  #convert edges to format 
-  edges <- cbind(path[-length(path)], path[-1])
-  
-  #apply key to convert nodes to sensor IDs for algorithm
-opt_routes <- 
-  as.data.frame(edges) %>% 
-  rename("parent" = V2, "child" = V1) %>% 
- rename(node_ID = child) %>% 
-  left_join(key2, by = "node_ID") %>% 
-  rename(child = sensor_ID,
-         done = node_ID,
-         node_ID = parent) %>% 
-  left_join(key2, by = "node_ID") %>% 
-  rename(done2 = node_ID,
-         parent = sensor_ID) %>% 
-  select(parent, child)
-
-#prepare routes for algorithm
-routes_graph <- opt_routes %>% 
-  rename("up" = child,
-         "down" = parent) %>% drop_na()
-
-chain_output <- calc_props(routes_graph, "ZZ") %>% 
-    mutate("method" = methods[i])
-
-    if(i == 1) ZZ_chain_outputs <- chain_output
-    if(i > 1) ZZ_chain_outputs <- rbind(ZZ_chain_outputs, chain_output)
-}
-
-
-#plots for committee meeting
-ZZ_chain_outputs %>% 
-  filter(timescale %in% c("30mins", "daily")#, hierarchy == "Flow Permanence"
-         ) %>% 
-  ggplot(aes(x = prop, y = after_stat(density))) +
-geom_density(aes(color = method), alpha = 0.5)+
-    geom_density(alpha = 0.5, lty = 3)+
-      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
-    theme_bw()+
-  ylim(c(0, 6.25))+
-  xlim(c(0,1))+
-  labs(title = "Distributions of Proportion of time Sequence Followed",
-       subtitle = "0011 and 1100 removed",
-       x = "Proportion of time followed",
-       y = "Density")+
-  facet_grid(~timescale)
-
-
-atsp <- as.ATSP(edges_ZZ)
-  
-  atsp <- insert_dummy(atsp, label = "dummy")
-  tour <- solve_TSP(atsp, method = methods[4], start = length(ZZ_IDs) + 1)#, two_opt = TRUE)
-  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
-
-  # Extract path, removing dummy node
-  #path <- as.integer(tour)
-  path <- unname(cut_tour(tour, "dummy"))
-  #convert edges to format 
-  edges <- cbind(path[-length(path)], path[-1])
-
-
-
-# Create a chain graph from the path
-edges <- cbind(path[-length(path)], path[-1])
-chain_graph <- graph_from_edgelist(edges, directed = TRUE)
-plot(chain_graph,
-       layout = layout_nicely(chain_graph),
-     edge.arrow.size = 0.25,
-  vertex.size = 10,
-  vertex.label.cex = 0.75)
-
-ggnet <- fortify(chain_graph, layout = igraph::layout_nicely(chain_graph))
-ggplot(ggnet, aes(x = x, y = y, xend = xend, yend = yend)) +
-  geom_edges(color = "grey", arrow = grid::arrow(length = unit(6, "pt"),
-                                                 type = "open")) +
-  geom_nodes(color = "black", size = 8) +
-  # geom_nodetext(aes(label =LETTERS[ path ]),
-  #               fontface = "bold", color = "white", size = 3) +
-  theme_blank()
-```
-```{r plot-chain}
-edges2 <- all_graph_solutions %>% 
-  filter(shed == "W3", method == "random", timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down) %>% as.matrix()
-chain_graph <- graph_from_edgelist(edges2, directed = TRUE)
-plot(chain_graph)
-
-ggmst <- fortify(chain_graph, layout = igraph::layout_as_tree(chain_graph))
-ggplot(ggmst, aes(x = x, y = y, xend = xend, yend = yend)) +
-  geom_edges(color = "grey", arrow = grid::arrow(length = unit(6, "pt"),
-                                                 type = "open")) +
-  geom_nodes(color = "black", size = 3) +
-  geom_nodetext(aes(label = name),
-                fontface = "bold", color = "white", size = 1) +
-  theme_blank()
-```
-
-Make a map of the activation sequence
-```{r}
-
-```
-
-## Concorde solver
-```{r}
-edges_W3 <- 
-  W3_all_combos %>% 
-  mutate(prop = case_when(prop < 0.5 ~ NA,
-                          prop >= 0.5 ~ prop)) %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  #rename(labels = prop) %>% 
-  #filter(prop != 0) %>% 
-  mutate(prop = 1 - prop) %>%  #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    select(-up) %>% as.matrix() %>% unname()
-edges_W3[is.na(edges_W3)] <- 1
-```
-
-
-```{r W3}
-keyz_w3 <- 
-  W3_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    select(-up) #%>% as.matrix() %>% unname()
-#create an accurate key, old one is WRONG!!!
-key2_w3 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz_w3), 3, 4)),
-                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz_w3), 3, 4))), 1))
-
-edges_W3 <- 
-  W3_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  #rename(labels = prop) %>% 
-  #filter(prop != 0) %>% 
-  mutate(prop = 1 - prop) %>%  #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    select(-up) %>% as.matrix() %>% unname()
-
-
-
-# 1. JV-transform + dummy
-atsp_to_stsp <- function(cost_mat, dummy_cost = 0) {
-  n <- nrow(cost_mat)
-  M <- max(cost_mat) * n + 1  # big constant
-  
-  # JV transform: create 2n x 2n symmetric matrix
-  sym_mat <- matrix(M, nrow = 2*n, ncol = 2*n)
-  
-  # link in->out copies (zero cost)
-  for (i in 1:n) {
-    sym_mat[i, n+i] <- 0
-    sym_mat[n+i, i] <- 0
-  }
-  
-  # original costs from out(i) to in(j)
-  for (i in 1:n) {
-    for (j in 1:n) {
-      if (i != j) {
-        sym_mat[n+i, j] <- cost_mat[i, j]
-        sym_mat[j, n+i] <- cost_mat[i, j]
-      }
-    }
-  }
-  
-  # Add dummy node
-  sym_with_dummy <- matrix(M, nrow = 2*n + 1, ncol = 2*n + 1)
-  sym_with_dummy[1:(2*n), 1:(2*n)] <- sym_mat
-  
-  dummy_idx <- 2*n + 1
-  # Connect dummy to all "in" nodes with dummy_cost
-  sym_with_dummy[dummy_idx, 1:n] <- dummy_cost
-  sym_with_dummy[1:n, dummy_idx] <- dummy_cost
-  
-  # return symmetric matrix
-  sym_with_dummy
-}
-
-out_matrix_w3 <- atsp_to_stsp(edges_W3)
-# 2. Write TSPLIB file
-write_tsplib <- function(sym_mat, file) {
-  tsp_obj <- TSP(as.dist(sym_mat))
-  write_TSPLIB(tsp_obj, file = file)
-}
-
-write_tsplib(out_matrix_w3, "~/Documents/concorde/W3.tsp")
-
-#/Users/johnmorgan/Documents/concorde/TSP/concorde -o W3solution.tour /Users/johnmorgan/Documents/concorde/W3.tsp
-
-# 3. Read Concorde .sol and convert to ATSP tour
-read_concorde_sol <- function(sol_file, cost_mat) {
-  n <- nrow(cost_mat)
-  tour_nodes <- scan(sol_file, what = integer(), quiet = TRUE)
-  
-  # Remove first line if it's length
-  if (length(tour_nodes) == n + 1 || length(tour_nodes) == 2*n + 1 || length(tour_nodes) == 2*n + 2) {
-    # If first number equals length of tour, drop it
-    if (tour_nodes[1] == length(tour_nodes) - 1) {
-      tour_nodes <- tour_nodes[-1]
-    }
-  }
-  
-  # Remove dummy index if present
-  dummy_idx <- 2*n + 1
-  tour_nodes <- tour_nodes[tour_nodes != (dummy_idx - 1)]  # Concorde may index from 0
-  
-  # Map back to original ATSP nodes: out(i) -> i, in(i) -> i
-  atsp_tour <- unique(((tour_nodes %% n) + 1))
-  
-  atsp_tour
-}
-
-con_big_w3 <- read_concorde_sol("~/Documents/concorde/TSP/W3solution.tour", edges_W3)
-
-concon2_w3 <- tibble(node_ID = con_big_w3, sequence = seq(1, length(con_big_w3), 1)) %>% 
-  left_join(key2_w3, by = "node_ID") %>%
-  rename(ID = sensor_ID) %>% 
-  select(ID, sequence)
-  
-#con_model <- calc_model_result(concon$ID, "W3") %>% rename("con" = pred_out)
-produce_metrics(concon2_w3, "W3", "concorde")
-
-opt_routes_w3 <- 
-  concon2_w3 %>% 
-  mutate(down = lag(ID)) %>% 
-    rename("up" = ID) %>% 
-    select(up, down) %>% drop_na()
-
-# actually determining how often the nodes follow proportion of time flowing sequence
-conc_props_w3 <- calc_props(opt_routes_w3, "W3")
-
-conc_props_w3 %>% 
-  filter(timescale == "30mins") %>% 
-  hist(prop)
-
-hist(conc_props_w3$prop)
-```
-```{r FB}
-keyz_fb <- 
-  FB_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    select(-up) #%>% as.matrix() %>% unname()
-#create an accurate key, old one is WRONG!!!
-key2_fb <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz_fb), 3, 4)),
-                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz_fb), 3, 4))), 1))
-
-edges_FB <- 
-  FB_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  #rename(labels = prop) %>% 
-  #filter(prop != 0) %>% 
-  mutate(prop = 1 - prop) %>% #%>% #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    mutate(
-    across(everything(), ~replace_na(.x, 1))
-  ) %>%
-    select(-up) %>% as.matrix() %>% unname()
-
-
-out_matrix_fb <- atsp_to_stsp(edges_FB)
-
-write_tsplib(out_matrix_fb, "~/Documents/concorde/FB.tsp")
-#/Users/johnmorgan/Documents/concorde/TSP/concorde -o FBsolution.tour /Users/johnmorgan/Documents/concorde/FB.tsp
-
-con_big_fb <- read_concorde_sol("~/Documents/concorde/TSP/FBsolution.tour", edges_FB)
-
-concon_fb <- tibble(node_ID = con_big_fb, sequence = seq(1, length(con_big_fb), 1)) %>% 
-  left_join(key2_fb, by = "node_ID") %>%
-  rename(ID = sensor_ID) %>% 
-  select(ID, sequence)
-  
-#con_model <- calc_model_result(concon$ID, "W3") %>% rename("con" = pred_out)
-produce_metrics(concon_fb, "FB", "concorde")
-
-opt_routes_fb <- 
-  tibble(node_ID = con_big_fb) %>% 
-  left_join(key2_fb, by = "node_ID") %>% 
-  mutate(down = lag(sensor_ID)) %>% 
-    rename("up" = sensor_ID) %>% 
-    select(up, down) %>% drop_na()
-
-# actually determining how often the nodes follow proportion of time flowing sequence
-hist(calc_props(opt_routes, "FB")$prop)
-conc_props_fb <- calc_props(opt_routes, "FB")
-```
-```{r ZZ}
-keyz_zz <- 
-  ZZ_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  #mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    select(-up) #%>% as.matrix() %>% unname()
-#create an accurate key, old one is WRONG!!!
-key2_zz <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz_zz), 3, 4)),
-                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz_zz), 3, 4))), 1))
-#set up edges and distance matrix, convert to TSP object
-
-#IF there are NAs, replace them with 1; results from when there is a node that flowed the whole time it was deployed along with another, and not deployed for part of the other one's deployment; happened most in FB
-
-edges_ZZ <- 
-  ZZ_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  #rename(labels = prop) %>% 
-  #filter(prop != 0) %>% 
-  mutate(prop = 1 - prop) %>%  #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    select(-up) %>% as.matrix() %>% unname()
-
-
-out_matrix_zz <- atsp_to_stsp(edges_ZZ)
-
-write_tsplib(out_matrix_zz, "~/Documents/concorde/ZZ.tsp")
-#/Users/johnmorgan/Documents/concorde/TSP/concorde -o ZZsolution.tour /Users/johnmorgan/Documents/concorde/ZZ.tsp
-
-con_big_zz <- read_concorde_sol("~/Documents/concorde/TSP/ZZsolution.tour", edges_ZZ)
-
-concon_zz <- tibble(node_ID = con_big_zz, sequence = seq(1, length(con_big_zz), 1)) %>% 
-  left_join(key2_zz, by = "node_ID") %>%
-  rename(ID = sensor_ID) %>% 
-  select(ID, sequence)
-  
-#con_model <- calc_model_result(concon$ID, "W3") %>% rename("con" = pred_out)
-produce_metrics(concon_zz, "ZZ", "concorde")
-
-opt_routes_zz <- 
-  tibble(node_ID = con_big_zz) %>% 
-  left_join(key2_zz, by = "node_ID") %>% 
-  mutate(down = lag(sensor_ID)) %>% 
-    rename("up" = sensor_ID) %>% 
-    select(up, down) %>% drop_na()
-
-# actually determining how often the nodes follow proportion of time flowing sequence
-conc_props_zz <- calc_props(opt_routes, "ZZ")
-
-
-all_conc <- rbind(conc_props_w3,
-                  conc_props_fb,
-                  conc_props_zz) %>% 
-  mutate(method = "Concorde TSP")
-```
-
-
-
-## Defining genearlized function
-```{r generalized-function-graph-solution}
-#define all possible methods
-#removed 3 methods
-all_methods = c("nearest_insertion", "random",
-  "cheapest_insertion", "farthest_insertion", "arbitrary_insertion",
-  "nn", "repetitive_nn")
-#methods <- c("random", "cheapest_insertion")
-
-general_graph <- function(combos, 
-                          shed, 
-                          methods = c("random", "cheapest_insertion"),
-                          two_opt = TRUE){
-#combos <- ZZ_IDs
-zzz <- length(combos)
-rep(combos, zzz)
-all_list <- c()
-for(z in 1:zzz){
-  all_list <- c(all_list, rep(combos[z], zzz))
-}
-
-all_combos_routes <- data.frame("up" = rep(combos, zzz),
-                                "down" = all_list)
-#run calc_support for all sheds and timesteps for relative position
-allcombosIn <- calc_props(all_combos_routes, shed)
-
-#methods <- c("random", "cheapest_insertion")
-keyz <- 
-  allcombosIn %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    select(-up) #%>% as.matrix() %>% unname()
-#create an accurate key, old one is WRONG!!!
-key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
-                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
-#set up edges and distance matrix, convert to TSP object
-
-#IF there are NAs, replace them with 1; results from when there is a node that flowed the whole time it was deployed along with another, and not deployed for part of the other one's deployment; happened most in FB
-edgesIn <- 
-  allcombosIn %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  #rename(labels = prop) %>% 
-  #filter(prop != 0) %>% 
-  mutate(prop = 1 - prop) %>% #%>% #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    mutate(
-    across(everything(), ~replace_na(.x, 1))
-  ) %>%
-    select(-up) %>% as.matrix() %>% unname()
-
-
-
-# reformat from atsp to tsp
-#tsp1 <- reformulate_ATSP_as_TSP(atsp)
-
-#FOR LOOP TO ITERATE THROUGH METHODS
-for(i in 1:length(methods)){
-  # Convert to TSP object
-atsp <- as.ATSP(edgesIn)
-  
-  atsp <- insert_dummy(atsp, label = "dummy")
-  tour <- solve_TSP(atsp, method = methods[i], 
-                    start = length(combos) + 1, two_opt = two_opt)
-  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
-
-  # Extract path, removing dummy node
-   path <- unname(cut_tour(tour, "dummy"))
-  #convert edges to format 
-  edges <- cbind(path[-length(path)], path[-1])
-  
-  #apply key to convert nodes to sensor IDs for algorithm
-opt_routes <- 
-  as.data.frame(edges) %>% 
-  rename("parent" = V2, "child" = V1) %>% 
- rename(node_ID = child) %>% 
-  left_join(key2, by = "node_ID") %>% 
-  rename(child = sensor_ID,
-         done = node_ID,
-         node_ID = parent) %>% 
-  left_join(key2, by = "node_ID") %>% 
-  rename(done2 = node_ID,
-         parent = sensor_ID) %>% 
-  select(parent, child)
-
-#prepare routes for algorithm
-routes_graph <- opt_routes %>% 
-  rename("up" = child,
-         "down" = parent) %>% drop_na()
-
-chain_output <- calc_props(routes_graph, shed) %>% 
-    mutate("method" = methods[i])
-
-    if(i == 1) ZZ_chain_outputs <- chain_output
-    if(i > 1) ZZ_chain_outputs <- rbind(ZZ_chain_outputs, chain_output)
-}
-return(ZZ_chain_outputs)
-}
-
-#test general graph solution
-ZZ_graph_solution <- general_graph(ZZ_IDs, "ZZ")
-
-ZZ_graph_solution %>% 
-  filter(timescale %in% c("30mins", "daily")#, hierarchy == "Flow Permanence"
-         ) %>% 
-  ggplot(aes(x = prop, y = after_stat(density))) +
-geom_density(aes(color = method), alpha = 0.5)+
-    geom_density(alpha = 0.5, lty = 3)+
-      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
-    theme_bw()+
-  ylim(c(0, 6.25))+
-  xlim(c(0,1))+
-  labs(title = "Distributions of Proportion of time Sequence Followed",
-       x = "Proportion of time followed",
-       y = "Density")+
-  facet_grid(~timescale)
-
-#separate function to output the path, for non-determinstic methods may result in a different chain than other function
-#can take multiple methods
-# True/false whether output includes visualization of the chain
-##works on a single method to develop a chain
-chain_solution <- function(combos, 
-                           shed, 
-                           methods = "cheapest_insertion", 
-                           plot = FALSE,
-                           two_opt = TRUE){
-#combos <- ZZ_IDs
-zzz <- length(combos)
-rep(combos, zzz)
-all_list <- c()
-for(z in 1:zzz){
-  all_list <- c(all_list, rep(combos[z], zzz))
-}
-
-all_combos_routes <- data.frame("up" = rep(combos, zzz),
-                                "down" = all_list)
-#run calc_support for all sheds and timesteps for relative position
-allcombosIn <- calc_props(all_combos_routes, shed)
-
-#methods <- c("random", "cheapest_insertion")
-keyz <- 
-  allcombosIn %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    select(-up) #%>% as.matrix() %>% unname()
-#create an accurate key, old one is WRONG!!!
-key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
-                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
-#set up edges and distance matrix, convert to TSP object
-
-#IF there are NAs, replace them with 1; results from when there is a node that flowed the whole time it was deployed along with another, and not deployed for part of the other one's deployment; happened most in FB
-edgesIn <- 
-  allcombosIn %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  #rename(labels = prop) %>% 
-  #filter(prop != 0) %>% 
-  mutate(prop = 1 - prop) %>% #%>% #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    mutate(
-    across(everything(), ~replace_na(.x, 1))
-  ) %>%
-    select(-up) %>% as.matrix() %>% unname()
-
-
-
-# reformat from atsp to tsp
-#tsp1 <- reformulate_ATSP_as_TSP(atsp)
-
-#FOR LOOP TO ITERATE THROUGH METHODS
-for(i in 1:length(methods)){
-  # Convert to TSP object
-atsp <- as.ATSP(edgesIn)
-  
-  atsp <- insert_dummy(atsp, label = "dummy")
-  tour <- solve_TSP(atsp, method = methods[i], start = length(combos) + 1, two_opt = two_opt)
-  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
-
-  # Extract path, removing dummy node
-   path <- unname(cut_tour(tour, "dummy"))
-  #convert edges to format 
-  #edges <- cbind(path[-length(path)], path[-1])
-   output <- data.frame("node_ID" = path) %>% 
-     left_join(key2, by = "node_ID") %>% 
-     mutate(method = methods[i])
-  
-    if(i == 1) ZZ_chain_outputs <- output
-    if(i > 1) ZZ_chain_outputs <- rbind(ZZ_chain_outputs, output)
-}
-
-
-
-chains_test <- ZZ_chain_outputs
-edges <- cbind(chains_test$node_ID[-length(chains_test$node_ID)], chains_test$node_ID[-1])
-
-chain_graph <- graph_from_edgelist(edges, directed = TRUE)
-
-V(chain_graph)$labels <- chains_test$sensor_ID
-
-ggmst <- fortify(chain_graph, layout = igraph::layout_as_tree(chain_graph))
-
-# if(plot == TRUE){
-# ggplot(ggmst, aes(x = x, y = y, xend = xend, yend = yend)) +
-#   geom_edges(color = "grey", arrow = grid::arrow(length = unit(6, "pt"),
-#                                                  type = "open")) +
-#   geom_nodes(color = "black", size = 3) +
-#   geom_nodetext(aes(label = labels),
-#                 fontface = "bold", color = "white", size = 1) +
-#   theme_blank()
-# }
-
-order <- ggmst %>% 
-  arrange(desc(y))
-
-#unique(order$labels)
-
-#perfecting chains function to just output a dataframe, with one column for the sequence number, and the other for sensor ID
-chains_output <- data.frame("ID" = unique(order$labels),
-           "sequence" = seq(1, length(unique(order$labels)), 1))
-
-return(chains_output)
-
-}
-chain_solution(ZZ_IDs, "ZZ", plot = TRUE)
-
-
-#generate chain solution for a series of methods, or the same method many times?
-#NOT FINISHED
-chain_solution_multiple <- function(combos, 
-                           shed, 
-                           methods = "cheapest_insertion", 
-                           plot = FALSE){
-#combos <- ZZ_IDs
-zzz <- length(combos)
-rep(combos, zzz)
-all_list <- c()
-for(z in 1:zzz){
-  all_list <- c(all_list, rep(combos[z], zzz))
-}
-
-all_combos_routes <- data.frame("up" = rep(combos, zzz),
-                                "down" = all_list)
-#run calc_support for all sheds and timesteps for relative position
-allcombosIn <- calc_props(all_combos_routes, shed)
-
-#methods <- c("random", "cheapest_insertion")
-keyz <- 
-  allcombosIn %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    select(-up) #%>% as.matrix() %>% unname()
-#create an accurate key, old one is WRONG!!!
-key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
-                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
-#set up edges and distance matrix, convert to TSP object
-
-#IF there are NAs, replace them with 1; results from when there is a node that flowed the whole time it was deployed along with another, and not deployed for part of the other one's deployment; happened most in FB
-edgesIn <- 
-  allcombosIn %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  #rename(labels = prop) %>% 
-  #filter(prop != 0) %>% 
-  mutate(prop = 1 - prop) %>% #%>% #weight will be opposite prop value
-  select(up, down, prop) %>% 
-    pivot_wider(names_from = down, values_from = prop) %>% 
-    mutate(
-    across(everything(), ~replace_na(.x, 1))
-  ) %>%
-    select(-up) %>% as.matrix() %>% unname()
-
-
-
-# reformat from atsp to tsp
-#tsp1 <- reformulate_ATSP_as_TSP(atsp)
-
-#FOR LOOP TO ITERATE THROUGH METHODS
-for(i in 1:length(methods)){
-  # Convert to TSP object
-atsp <- as.ATSP(edgesIn)
-  
-  atsp <- insert_dummy(atsp, label = "dummy")
-  tour <- solve_TSP(atsp, method = methods[i], start = length(combos) + 1, two_opt = TRUE)
-  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
-
-  # Extract path, removing dummy node
-   path <- unname(cut_tour(tour, "dummy"))
-  #convert edges to format 
-  #edges <- cbind(path[-length(path)], path[-1])
-   output <- data.frame("node_ID" = path) %>% 
-     left_join(key2, by = "node_ID") %>% 
-     mutate(method = methods[i])
-  
-    if(i == 1) ZZ_chain_outputs <- output
-    if(i > 1) ZZ_chain_outputs <- rbind(ZZ_chain_outputs, output)
-}
-
-
-
-chains_test <- ZZ_chain_outputs
-edges <- cbind(chains_test$node_ID[-length(chains_test$node_ID)], chains_test$node_ID[-1])
-
-chain_graph <- graph_from_edgelist(edges, directed = TRUE)
-
-V(chain_graph)$labels <- chains_test$sensor_ID
-
-ggmst <- fortify(chain_graph, layout = igraph::layout_as_tree(chain_graph))
-
-# if(plot == TRUE){
-# ggplot(ggmst, aes(x = x, y = y, xend = xend, yend = yend)) +
-#   geom_edges(color = "grey", arrow = grid::arrow(length = unit(6, "pt"),
-#                                                  type = "open")) +
-#   geom_nodes(color = "black", size = 3) +
-#   geom_nodetext(aes(label = labels),
-#                 fontface = "bold", color = "white", size = 1) +
-#   theme_blank()
-# }
-
-order <- ggmst %>% 
-  arrange(desc(y))
-
-#unique(order$labels)
-
-#perfecting chains function to just output a dataframe, with one column for the sequence number, and the other for sensor ID
-chains_output <- data.frame("ID" = unique(order$labels),
-           "sequence" = seq(1, length(unique(order$labels)), 1))
-
-return(chains_output)
-
-}
-```
-```{r applying-gen-func}
-#creating chains
-
-W3_cheap <- chain_solution(W3_IDs, "W3", methods = "cheapest_insertion")
-W3_random <- chain_solution(W3_IDs, "W3", methods = "random")
-
-FB_cheap <- chain_solution(FB_IDs, "FB", methods = "cheapest_insertion")
-FB_random <- chain_solution(FB_IDs, "FB", methods = "random")
-
-ZZ_cheap <- chain_solution(ZZ_IDs, "ZZ", methods = "cheapest_insertion")
-ZZ_random <- chain_solution(ZZ_IDs, "ZZ", methods = "random", two_opt = FALSE)
-
-```
-
-## Comparing all solutions to the TSP for every watershed
-```{r compare-graph-theory-solutions}
-all_graph_solutions <- rbind(general_graph(W3_IDs, "W3"),
-                             general_graph(FB_IDs, "FB"),
-                             general_graph(ZZ_IDs, "ZZ"))
-
-showcase <- rbind(general_graph(W3_IDs, "W3", all_methods),
-                             general_graph(FB_IDs, "FB", all_methods),
-                             general_graph(ZZ_IDs, "ZZ", all_methods))
-
-showcase %>% 
-  ggplot(aes(x = prop, y = after_stat(density))) +
-geom_density(aes(color = method, fill = method), alpha = 0.5)+
-    #geom_density(alpha = 0.5, lty = 3)+
-      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
-    theme_bw()+
-  #ylim(c(0, 6.25))+
-  xlim(c(0,1))+
-  labs(title = "Distributions of Proportion of time Sequence Followed",
-       x = "Proportion of time followed",
-       y = "Density")+
-  facet_grid(shed~timescale)
-```
-
-
-
 # Defining proportion of time flowing sequences
 My big graph theory solution provides the random hierarhcy and graph theory solution. All I need is the proportion of time flowing and maybe one based on topography... maybe drainage area or TWI?
 ```{r flow-permanence-W3}
@@ -3252,27 +1901,28 @@ wbt_wetness_index(sca = flowacc_output, #flow accumulation
                   output = twi_output)
 
 
-w3_uaa <- extract(rast(flowacc_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+w3_uaa <- 
+  terra::extract(rast(flowacc_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("uaa" = `X10mdem_flowacc`) %>% 
   as_tibble() %>% 
   pivot_longer(-ID)
 
-w3_tpi <- extract(rast(tpi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+w3_tpi <- terra::extract(rast(tpi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("tpi" = `X10mdem_tpi`) %>% 
   as_tibble() %>% 
   pivot_longer(-ID)
 
-w3_twi <- extract(rast(twi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+w3_twi <- terra::extract(rast(twi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("twi" = `X10mdem_twi`) %>% 
   as_tibble() %>% 
   pivot_longer(-ID)
 
-w3_slope <- extract(rast(slope_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+w3_slope <- terra::extract(rast(slope_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("slope" = `X10mdem_slope`) %>% 
   as_tibble() %>% 
   pivot_longer(-ID)
 
-w3_topo <- rbind(w3_uaa, w3_twi, w3_tpi, w3_slope, w3_curve)
+#w3_topo <- rbind(w3_uaa, w3_twi, w3_tpi, w3_slope, w3_curve)
 
 ```
 ```{r calculate-fb-topo}
@@ -3328,27 +1978,27 @@ wbt_wetness_index(sca = flowacc_output, #flow accumulation
                   slope = slope_output,
                   output = twi_output)
 
-fb_uaa <- extract(rast(flowacc_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+fb_uaa <- terra::extract(rast(flowacc_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("uaa" = `X10mdem_flowacc`) %>% 
   as_tibble() %>% 
   pivot_longer(-ID)
 
-fb_tpi <- extract(rast(tpi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+fb_tpi <- terra::extract(rast(tpi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("tpi" = `X10mdem_tpi`) %>% 
   as_tibble() %>% 
   pivot_longer(-ID)
 
-fb_twi <- extract(rast(twi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+fb_twi <- terra::extract(rast(twi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("twi" = `X10mdem_twi`) %>% 
   as_tibble() %>% 
   pivot_longer(-ID)
 
-fb_slope <- extract(rast(slope_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+fb_slope <- terra::extract(rast(slope_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("slope" = `X10mdem_slope`) %>% 
   as_tibble() %>% 
   pivot_longer(-ID)
 
-fb_topo <- rbind(fb_uaa, fb_tpi, fb_twi, fb_slope, fb_curve)
+#fb_topo <- rbind(fb_uaa, fb_tpi, fb_twi, fb_slope, fb_curve)
 ```
 ```{r calculate-zz-topo}
 #flow accumulation/upslope drainage area at 3 m resolution calculated earlier in markdown
@@ -3404,27 +2054,27 @@ wbt_wetness_index(sca = flowacc_output, #flow accumulation
                   slope = slope_output,
                   output = twi_output)
 
-zz_uaa <- extract(rast(flowacc_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+zz_uaa <- terra::extract(rast(flowacc_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("uaa" = `X10mdem_flowacc`) %>% 
   as_tibble() %>% 
   pivot_longer(-ID)
 
-zz_tpi <- extract(rast(tpi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+zz_tpi <- terra::extract(rast(tpi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("tpi" = `X10mdem_tpi`) %>% 
   as_tibble() %>% 
   pivot_longer(-ID)
 
-zz_twi <- extract(rast(twi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+zz_twi <- terra::extract(rast(twi_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("twi" = `X10mdem_twi`) %>% 
   as_tibble() %>% 
   pivot_longer(-ID)
 
-zz_slope <- extract(rast(slope_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
+zz_slope <- terra::extract(rast(slope_output), locs_shape, ID = FALSE, bind = TRUE) %>% 
   rename("slope" = `X10mdem_slope`) %>% 
   as_tibble() %>% 
   pivot_longer(-ID)
 
-zz_topo <- rbind(zz_uaa, zz_tpi, zz_twi, zz_slope, zz_curve)
+#zz_topo <- rbind(zz_uaa, zz_tpi, zz_twi, zz_slope, zz_curve)
 
 
 ```
@@ -3489,89 +2139,6 @@ zz_twi_sequence <- zz_twi %>%
 
 ```
 
-# Defining New Sequence- average prop value as parent node
-Calculate new sequence for figure 5:
-```{r combine}
-new_seq_w3 <- 
-  W3_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  group_by(down) %>% 
-  summarise(mean = mean(prop)) %>% 
-  arrange(desc(mean)) %>% 
-  mutate(up = as.numeric(substr(down, 3, 4)),
-         down = lag(up)) %>% 
-  select(down, up) %>% 
-  drop_na() 
-
-new_seq_fb <- 
-  FB_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  group_by(down) %>% 
-  summarise(mean = mean(prop)) %>% 
-  arrange(desc(mean)) %>% 
-  mutate(up = as.numeric(substr(down, 3, 4)),
-         down = lag(up)) %>% 
-  select(down, up) %>% 
-  drop_na()
-
-new_seq_zz <- 
-  ZZ_all_combos %>% 
-  filter(timescale == "30mins") %>% 
-  ungroup() %>% 
-  select(up, down, prop) %>% 
-  group_by(down) %>% 
-  summarise(mean = mean(prop)) %>% 
-  arrange(desc(mean)) %>% 
-  mutate(up = as.numeric(substr(down, 3, 4)),
-         down = lag(up)) %>% 
-  select(down, up) %>% 
-  drop_na()
-  
-# actually determining how often the nodes follow proportion of time flowing sequence
-all_new <- rbind(calc_props(new_seq_w3, "W3"),
-                calc_props(new_seq_fb, "FB"),
-                calc_props(new_seq_zz, "ZZ")) %>% 
-  mutate("method" = "Average Sequential Wetting")
-```
-
-Make them ID/sequence format
-```{r}
-#write wrapper functions to convert between the two forms easily
-#routes_w3 <- 
-  pks_w3 %>% 
-    filter(ID %in% W3_IDs) %>% 
-  arrange(desc(pk)) %>% 
-  mutate(down = lag(ID)) %>% 
-  rename("up" = ID) %>% drop_na() %>% 
-  select(up, down)
-
-#convert from up/down to ID/seq
-convert_to_IDseq <- function(input){
-
-  convert <-
-    input %>%
-    mutate(sequence = seq(1, length(input$up), 1)) %>%
-    rename(ID = down) %>%
-    select(ID, sequence)
-return(convert)
-}
-  
-
-#convert from ID/seq to up/down
-input <- W3_cheap
-
-  input %>% 
-    mutate(down = "")
-  mutate(up = as.numeric(substr(down, 3, 4)),
-         down = lag(up)) %>% 
-  select(down, up) %>% 
-  drop_na()
-```
-
 # Defining random sequences
 
 ```{r}
@@ -3601,6 +2168,279 @@ all_random <- rbind(calc_props(W3_random, "W3"),
   mutate(method = "Random")
 ```
 
+
+# BFS sequence
+Doing by BFS algorithm
+```{r W3}
+#pick a sensor randomly, then test every other sensor to see which has the best hierarchical behavior with that one. Proceed down the list without replacement
+
+combos <- W3_IDs
+#find the starting point
+
+for(t in 1:length(combos)){
+ #t <- 1
+begin <- combos[t]
+options_initial <- combos[combos != begin]
+options <- combos[combos != begin]
+
+routes <- data.frame("up" = rep(begin, length(options_initial)),
+                     "down" = options_initial)
+ for(x in 1:length(options)){
+ #x <- 1
+ #calc_props(routes[x], "W3")
+        out <- calc_props(routes, "W3") %>% filter(timescale == "30mins")
+
+        kep <- out[out$prop == max(out$prop),] #find the max prop value
+        kep <- kep[1,] #if tied, keep the first one/row
+  options <- options[options != substr(kep$down[1], 3, 4)] #create new options list
+  routes <- tibble("up" = substr(rep(kep$down[1], length(options)), 3, 4),
+                     "down" = options)
+  print(paste0("x = ",x))
+
+  if(x == 1) big_keep <- kep
+  if(x > 1) big_keep <- rbind(big_keep, kep)
+ }
+
+
+big_keep$start <- begin
+
+if(t == 1) biggest_keep <- big_keep
+  if(t > 1) biggest_keep <- rbind(biggest_keep, big_keep)
+}
+Sys.time()
+#[1] "2025-09-10 10:26:42 EDT"
+
+
+smart_iterate_w3_new <- biggest_keep
+#write_csv(smart_iterate_w3_new, "breadthfs_results.csv")
+smart_iterate_w3_new <- read_csv("breadthfs_results.csv")
+View(smart_iterate_w3_new)
+
+
+```
+```{r FB}
+# combos <- FB_IDs
+# #find the starting point
+# 
+# for(t in 1:length(combos)){
+#  #t <- 1
+# begin <- combos[t]
+# options_initial <- combos[combos != begin]
+# options <- combos[combos != begin]
+# 
+# routes <- data.frame("up" = rep(begin, length(options_initial)),
+#                      "down" = options_initial)
+#  for(x in 1:length(options)){
+#  #x <- 1
+#  #calc_props(routes[x], "W3")
+#         out <- calc_props(routes, "FB") %>% filter(timescale == "30mins")
+#         
+#         kep <- out[out$prop == max(out$prop),] #find the max prop value
+#         kep <- kep[1,] #if tied, keep the first one/row
+#   options <- options[options != substr(kep$down[1], 3, 4)] #create new options list
+#   routes <- tibble("up" = substr(rep(kep$down[1], length(options)), 3, 4),
+#                      "down" = options)
+#   print(paste0("x = ",x))
+# 
+#   if(x == 1) big_keep <- kep
+#   if(x > 1) big_keep <- rbind(big_keep, kep)
+#  }
+# 
+# 
+# big_keep$start <- begin
+# 
+# if(t == 1) biggest_keep <- big_keep
+#   if(t > 1) biggest_keep <- rbind(biggest_keep, big_keep)
+# }
+# Sys.time()
+# #[1] "2025-09-10 10:26:42 EDT"
+# 
+# 
+# smart_iterate_fb_new <- biggest_keep
+# write_csv(smart_iterate_fb_new, "breadthfs_resultsFB.csv")
+```
+```{r ZZ}
+# Sys.time()
+# 
+# combos <- ZZ_IDs
+# #find the starting point
+# 
+# for(t in 1:length(combos)){
+#  #t <- 1
+# begin <- combos[t]
+# options_initial <- combos[combos != begin]
+# options <- combos[combos != begin]
+# 
+# routes <- data.frame("up" = rep(begin, length(options_initial)),
+#                      "down" = options_initial)
+#  for(x in 1:length(options)){
+#  #x <- 1
+#  #calc_props(routes[x], "W3")
+#         out <- calc_props(routes, "ZZ") %>% filter(timescale == "30mins")
+#         
+#         kep <- out[out$prop == max(out$prop),] #find the max prop value
+#         kep <- kep[1,] #if tied, keep the first one/row
+#   options <- options[options != substr(kep$down[1], 3, 4)] #create new options list
+#   routes <- tibble("up" = substr(rep(kep$down[1], length(options)), 3, 4),
+#                      "down" = options)
+#   print(paste0("x = ",x))
+# 
+#   if(x == 1) big_keep <- kep
+#   if(x > 1) big_keep <- rbind(big_keep, kep)
+#  }
+# 
+# 
+# big_keep$start <- begin
+# 
+# if(t == 1) biggest_keep <- big_keep
+#   if(t > 1) biggest_keep <- rbind(biggest_keep, big_keep)
+# }
+# Sys.time()
+# #[1] "2025-09-10 10:26:42 EDT"
+# 
+# 
+# smart_iterate_zz_new <- biggest_keep
+# write_csv(smart_iterate_zz_new, "breadthfs_resultsZZ.csv")
+```
+Already run BFS, now can just read in results in future
+```{r}
+bfsW3 <- read_csv("breadthfs_results.csv")
+bfsFB <- read_csv("breadthfs_resultsFB.csv")
+bfsZZ <- read_csv("breadthfs_resultsZZ.csv")
+
+bfsZZ %>% group_by(start) %>% 
+  ggplot()+
+  geom_density(data = bfsZZ, 
+               aes(x = prop, y = after_stat(density), color = as.factor(start)))+
+  geom_density(data = filter(all_pk, timescale == "30mins" | shed == "ZZ"))+
+  aes(x = prop, y = after_stat(density))#+
+  
+  
+  smart_iterate_w3_new %>% 
+    select(start, up)
+    group_by(start) %>% 
+    nest(sequence = as.list(up))
+
+```
+```{r}
+just1 <- 
+bfsW3 %>% 
+  filter(start == 1) #%>% 
+  select(up, down) %>% 
+  mutate(up = as.numeric(substr(up, 3, 4))) %>% 
+  convert_to_IDseq()
+  
+ just1[rev(seq_len(nrow(just1))), ]
+
+convert_to_IDseq2 <- function(input){ 
+  #expecting input that is a df of up/down structure
+  # different than other function, where first row is the most upstream pair, or last in sequence
+
+  #make list in order of parent-child sequence
+  IDs <- c(input$down[1], input$up)
+  #make sequence ID column
+  sequence <- seq(1, length(input$up) + 1, 1)
+ 
+  convert <- tibble(ID = IDs,
+           sequence = sequence)
+  
+return(convert)
+}
+for(i in 1:length(unique(bfsW3$start))){
+out <- bfsW3 %>% 
+  select(up, down) %>% 
+  convert_to_IDseq
+  filter(event_id == i) %>% 
+  select(-event_id) %>%
+produce_metrics(., "W3", i)
+
+  if(i <= 1) allout <- out
+  if(i > 1) allout <- rbind(allout, out)
+}
+event_seqsW3_23_accuracy <- allout
+event_seqsW3_23_accuracy %>% 
+  filter(Accuracy == max(Accuracy))
+```
+
+
+# Event based sequences
+```{r}
+# created in DetermineActualSequence.qmd,a csv containing the activation sequence for each event for W3
+event_seqsW3_23 <- read_csv("W3event_sequences23.csv")
+event_seqsW3_24 <- read_csv("W3event_sequences24.csv")
+```
+
+```{r event-seqs-W3}
+# make loop and function to iterate through many sequences, and determine their accuracy through time
+# only for W3
+# apply_many <- function(input){
+#   model_out <- calc_model_result(input$ID, "W3")
+#   
+#   comparison_w3 <- input_w3 %>% 
+#   filter(mins %in% c(0, 30)) %>% 
+#   left_join(model_out, by = c("datetime", "ID")) %>% 
+#   select(-wshed, -mins) %>% 
+#   drop_na()
+#   
+#   comparison_w3$pred_eval <- mapply(get_eval_label, 
+#                                     comparison_w3$binary, 
+#                                     comparison_w3$pred_out)
+# 
+#   df_summary_time_w3 <- comparison_w3 %>%
+#   group_by(datetime) %>%
+#   summarize(
+#     pred_correct = sum(pred_eval == "correct"),
+#     total = n(),
+#     pred_accuracy = pred_correct / total
+#   )
+#   
+#   df_long_w3 <- df_summary_time_w3 %>%
+#   select(datetime, contains("accuracy")) %>% 
+#   tidyr::pivot_longer(cols = c(pred_accuracy),
+#                       names_to = "model", values_to = "accuracy")
+#   
+#   comparison_long_w3 <- 
+#   comparison_w3 %>% 
+#   select(datetime, ends_with("eval")) %>% 
+#     pivot_longer(-datetime) %>% 
+#   mutate(year = year(datetime))
+#   
+#   return(comparison_long_w3)
+# }
+# event_seqsW3_23 %>% 
+#   filter(event_id == 1) %>% 
+#   select(-event_id) %>% 
+# apply_many()
+
+#make data long for final plot
+
+for(i in 1:length(unique(event_seqsW3_23$event_id))){
+out <- event_seqsW3_23 %>% 
+  filter(event_id == i) %>% 
+  select(-event_id) %>%
+produce_metrics(., "W3", i)
+
+  if(i <= 1) allout <- out
+  if(i > 1) allout <- rbind(allout, out)
+}
+event_seqsW3_23_accuracy <- allout
+event_seqsW3_23_accuracy %>% 
+  filter(Accuracy == max(Accuracy))
+
+for(i in 1:length(unique(event_seqsW3_24$event_id))){
+out <- event_seqsW3_24 %>% 
+  filter(event_id == i) %>% 
+  select(-event_id) %>%
+produce_metrics(., "W3", i)
+
+  if(i <= 1) allout <- out
+  if(i > 1) allout <- rbind(allout, out)
+}
+event_seqsW3_24_accuracy <- allout
+event_seqsW3_24_accuracy %>% 
+  filter(Accuracy == max(Accuracy))
+
+```
 
 # Testing Sequences, running model
 This section contains all chunks used to test the effectiveness of a given sequence.  
@@ -3851,35 +2691,27 @@ get_eval_label <- function(true, pred) {
 
 get_eval_label(0,0)
 
-# comparison <- input_w3 %>% 
-#   filter(mins %in% c(0, 30)) %>% 
-#   left_join(model_out, by = c("datetime", "ID")) %>% 
-#   select(-wshed, -mins)
-# 
-# 
-# input_w3 %>% 
-#   filter(mins %in% c(0, 30)) %>% 
-#   left_join(cheap_model, by = c("datetime", "ID")) %>% 
-#   select(-wshed, -mins) %>%
-#   filter(datetime == ymd_hms("2023-08-08 04:00:00 UTC")) %>%  View()
 ```
 Run on W3
+Changes- make some way to run on an ensemble of sequences, and then keep the one that yields the highest accuracy?
+
+Can report the range of accuracies for the multitude of sequences from actual and optimized sequences
 ```{r W3}
 
 
 #running model
-cheap_model_w3 <- calc_model_result(W3_cheap$ID, "W3") %>%   
-  rename("cheapest" = pred_out)
+# cheap_model_w3 <- calc_model_result(W3_cheap$ID, "W3") %>%   
+#   rename("cheapest" = pred_out)
 pk_model_w3 <- calc_model_result(W3_pk_seq$ID, "W3") %>% 
   rename("pk" = pred_out)
-random_model_w3 <- calc_model_result(W3_random$down, "W3") %>% 
-  rename("random" = pred_out)
+# random_model_w3 <- calc_model_result(W3_random$down, "W3") %>% 
+#   rename("random" = pred_out)
 twi_model_w3 <- calc_model_result(w3_twi_sequence$ID, "W3") %>% 
   rename("twi" = pred_out)
-new_model_w3 <- calc_model_result(new_seq_w3$down, "W3") %>% 
-  rename("new" = pred_out)
-con_model_w3 <- calc_model_result(opt_routes_w3$down, "W3") %>% 
-  rename("concorde" = pred_out)
+# new_model_w3 <- calc_model_result(new_seq_w3$down, "W3") %>% 
+#   rename("new" = pred_out)
+# con_model_w3 <- calc_model_result(opt_routes_w3$down, "W3") %>% 
+#   rename("concorde" = pred_out)
 
 
 comparison_w3 <- input_w3 %>% 
@@ -3902,23 +2734,6 @@ comparison_w3$new_eval <- mapply(get_eval_label, comparison_w3$binary, compariso
 #comparison_w3$con_eval <- mapply(get_eval_label, comparison_w3$binary, comparison_w3$concorde)
 
 
-
-# comparison$comparison_cheap <- with(comparison, ifelse(
-#   cheapest_eval == pk_eval, "equal",
-#   ifelse(cheapest_eval == "correct", "cheap_better",
-#          ifelse(pk_eval == "correct", "pk_better", "neither_better"))
-# ))
-# comparison$comparison_random <- with(comparison, ifelse(
-#   random_eval == pk_eval, "equal",
-#   ifelse(random_eval == "correct", "cheap_better",
-#          ifelse(pk_eval == "correct", "pk_better", "neither_better"))
-# ))
-# comparison$comparison_twi <- with(comparison, ifelse(
-#   twi == pk_eval, "equal",
-#   ifelse(twi == "correct", "cheap_better",
-#          ifelse(pk_eval == "correct", "pk_better", "neither_better"))
-# ))
-
 #summarize through time
 df_summary_time_w3 <- comparison_w3 %>%
   group_by(datetime) %>%
@@ -3930,8 +2745,6 @@ df_summary_time_w3 <- comparison_w3 %>%
     new_correct = sum(new_eval == "correct"),
       new_correct = sum(new_eval == "correct"),
     #con_correct = sum(con_eval == "correct"),
-
-
     total = n(),
     cheap_accuracy = cheap_correct / total,
     pk_accuracy = pk_correct / total,
@@ -3939,8 +2752,6 @@ df_summary_time_w3 <- comparison_w3 %>%
     twi_accuracy = twi_correct / total,
     new_accuracy = new_correct / total#,
     #con_accuracy = con_correct / total
-
-
   )
 
 df_long_w3 <- df_summary_time_w3 %>%
@@ -3955,6 +2766,11 @@ comparison_long_w3 <-
   select(datetime, ends_with("eval")) %>% 
     pivot_longer(-datetime) %>% 
   mutate(year = year(datetime))
+
+                 
+
+```
+```{r plot-W3-model-accuracy}
 #final plot
 
 #plot of correct, ommission, and commission through time
@@ -3997,8 +2813,6 @@ test2 <- test %>%
   geom_bar(aes(x = (day_of_year), fill = value, y = prop), na.rm = TRUE, position="fill", stat="identity", width = 1)+
   scale_fill_manual(values = c("green","grey",  "orange"))+
   facet_grid(name~year)
-
-                 
 
 ```
 
@@ -5258,7 +4072,7 @@ geom_sf(data = w3_stic_locs_r %>% inner_join(states, by = "ID"),
 ```
 
 
-## Figure 5: Distributions of proportion of transitions that follow a sequence
+## Figure 6: Distributions of proportion of transitions that follow a sequence
 Distributions of prop values, with dashed lines for median, faceted by timescale and watershed, colored by method for determining sequence
 ```{r combine-and-plot}
 four_colors <- c("#231f20", "#bb4430", "#7ebdc2", "#f3dfa2")
@@ -6471,7 +5285,7 @@ zz_grid <- ZZ_all_combos %>%
 w3_grid + fb_grid + zz_grid
 ```
 
-## Figure 6: Chains
+## Figure 5: Chains
 Plot that will show multiple chains beside each other, and highlight where they are different
 ```{r}
 renum_w3_pk <- W3_pk_seq %>% 
@@ -7867,30 +6681,42 @@ ripe_zz <- ripe_zz[!is.infinite(rowSums(ripe_zz)),]
 w3_fit <-  lm(log_length ~ log_Q, data=ripe_w3)
 summary(w3_fit)
 w3_beta <- unname(w3_fit$coefficients[2])
+w3_beta_r2 <- unname(summary(w3_fit)$r.squared)
+
 #### Final Table ####
 topo <- data.frame("Watershed" = c("W3", "FB", "ZZ"),
                    "Drainage Area (ha)" = c(area_w3*100, area_fb*100, area_zz*100),
-                   "Maximum Drainage Density m/m^2" = c(length_w3 / area_w3,
+                   "Maximum Drainage Density m/m^2" = signif(c(length_w3 / area_w3,
                                                         length_fb / area_fb,
-                                                        length_zz / area_zz),
+                                                        length_zz / area_zz), 2),
                    "Slope" = c(w3_avg_slope$mean, fb_avg_slope$mean, zz_avg_slope$mean),
-                   "Elevation_lower" = c(w3_elev$min, fb_elev$min, zz_elev$min),
-                   "Elevation_upper" = c(w3_elev$max, fb_elev$max, zz_elev$max),
-                   "Expansion Coefficient (m)" = c(w3_beta,
-                                                   fb_beta,
-                                                   zz_beta),
+                   "Elevation_lower" = signif(c(w3_elev$min, fb_elev$min, zz_elev$min),2),
+                   "Elevation_upper" = signif(c(w3_elev$max, fb_elev$max, zz_elev$max),2),
+                   "Expansion Coefficient (m)" = c(signif(w3_beta, 3),
+                                                   "fb_beta",
+                                                   "zz_beta"),
+                   "Expansion Coefficient R^2" = c(signif(w3_beta_r2,2),
+                                                          "XXXX",
+                                                          "XXXX"),
                    "Approximate Spacing (m)" = c(100, 50,  75))
 
-p_load(rempsyc)
-
+names(topo) <- c("Watershed",
+                 "Drainage Area (ha)",
+                 "Maximum Drainage Density (m/m^2)",
+                   "Mean Slope (°)",
+                   "Elevation Min (m)",
+                   "Elevation Max (m)",
+                   "Expansion Coefficient",
+                 "Expansion Coefficient R^2",
+                   "Approximate Sensor Spacing (m)"
+)
 nice_table(
   topo
   )
+flextable::save_as_image(nice_table(
+  topo, width = 0.5
+  ), path = "table.png")
 
-```
-
-```{r}
-p_load(rempsyc)
 ```
 
 
@@ -8309,347 +7135,6 @@ kable(rbind(w3_acc, fb_acc, zz_acc), digits = 2)
 
 ```
 
-# Unused Figures
-## UNUSED: Accuracy of all models versus pk accuracy
-```{r W3}
-#trying to plot accuracy vs accuracy
-df_long2 <- df_summary_time_w3 %>%
-  select(datetime, cheap_accuracy, pk_accuracy, twi_accuracy, new_accuracy, con_accuracy) %>%
-  tidyr::pivot_longer(cols = c(twi_accuracy, new_accuracy, con_accuracy), 
-                      names_to = "model", values_to = "accuracy") %>% 
-    inner_join(w3_limbs, by = "datetime") %>% 
-  mutate(shed = "W3")
-
-four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
-
-df_long2 %>% 
-  ggplot()+
-  geom_point(aes(x = pk_accuracy, 
-                 y = accuracy, 
-                 size = Q_mm_day, color = model),
-             alpha = 0.5)+
-  scale_color_manual(values = five_colors)+
-  geom_abline()+
-  theme_minimal()+
-  lims(y = c(0, 1),
-       x = c(0, 1))+
-  facet_grid(~model)
-```
-```{r FB}
-#trying to plot accuracy vs accuracy
-
-#left join
-
-df_long2_fb <- df_summary_time_fb %>%
-  select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
-  tidyr::pivot_longer(cols = c(cheap_accuracy, random_accuracy, twi_accuracy), 
-                      names_to = "model", values_to = "accuracy") %>% 
-    inner_join(fb_limbs, by = "datetime")%>% 
-  mutate(shed = "FB")
-
-four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
-
-df_long2_fb %>% 
-  ggplot()+
-  geom_point(aes(x = pk_accuracy, 
-                 y = accuracy, 
-                 size = roll_mean, shape = event_type, color = model),
-             alpha = 0.5)+
-  scale_color_manual(values = c("#bb4430", "#231f20", "#f3dfa2"))+
-  geom_abline()+
-  theme_minimal()+
-  lims(y = c(0, 1),
-       x = c(0, 1))+
-  facet_grid(event_type~model)
-```
-```{r ZZ}
-#trying to plot accuracy vs accuracy
-
-#left join
-
-df_long2_zz <- df_summary_time_zz %>%
-  select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
-  tidyr::pivot_longer(cols = c(cheap_accuracy, random_accuracy, twi_accuracy), 
-                      names_to = "model", values_to = "accuracy") %>% 
-    inner_join(zz_limbs, by = "datetime")%>% 
-  mutate(shed = "ZZ")
-
-four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
-
-df_long2_zz %>% 
-  ggplot()+
-  geom_point(aes(x = pk_accuracy, 
-                 y = accuracy, 
-                 size = roll_mean, shape = event_type, color = model),
-             alpha = 0.5)+
-  scale_color_manual(values = c("#bb4430", "#231f20", "#f3dfa2"))+
-  geom_abline()+
-  theme_minimal()+
-  lims(y = c(0, 1),
-       x = c(0, 1))+
-  facet_grid(event_type~model)
-```
-Combine all of these, since they are not that different... breakup by watershed
-```{r}
-rbind(
-df_long2 %>% select(datetime, pk_accuracy, model, accuracy, event_type, shed),
-df_long2_fb %>% select(datetime, pk_accuracy, model, accuracy, event_type, shed),
-df_long2_zz %>% select(datetime, pk_accuracy, model, accuracy, event_type, shed)) %>% 
-  ggplot()+
-  geom_point(aes(x = pk_accuracy, 
-                 y = accuracy, shape = event_type, color = shed),
-             alpha = 0.5,
-             size = 2)+
-  scale_color_manual(values = shed_colors)+
-  geom_abline()+
-  theme_minimal()+
-  lims(y = c(0, 1),
-       x = c(0, 1))+
-  facet_grid(~model)
-
-
-```
-
-
-## UNUSED: Tile plot
-```{r W3}
-
-range01 <- function(x){(x-min(x))/(max(x)-min(x))}
-
-W3_twi_seq <- w3_twi_sequence %>% 
-  mutate(sequence = seq(1, length(ID), 1))
-
-w3_topo_norm <- w3_topo %>% 
-  group_by(name) %>% 
-  mutate(norm_value = range01(value))
-
-#tile plot, original vision
-rbind(W3_cheap %>% mutate(model = "cheapest"),
-      W3_pk_seq %>% mutate(model = "pk")) %>% #,
-     # W3_random %>% mutate(model = "random"),
-     # W3_twi_seq %>% mutate(model = "twi")) %>% 
-  left_join(w3_topo_norm, by = "ID", relationship = "many-to-many") %>% 
-  drop_na() %>% 
-  ggplot() +
-  geom_tile(aes(x = sequence, y = name, fill = norm_value))+
-  scale_fill_gradient(low = "white", 
-                      high = "black")+
-  facet_grid(rows = "model")
-
-#will it look better as a line?
-#w3_explain <- 
-rbind(W3_cheap %>% mutate(model = "cheapest"),
-      W3_pk_seq %>% mutate(model = "pk")) %>% #,
-     # W3_random %>% mutate(model = "random"),
-     # W3_twi_seq %>% mutate(model = "twi")) %>% 
-  left_join(w3_topo_norm, by = "ID", relationship = "many-to-many") %>% 
-  drop_na() %>%
-  mutate(shed = "W3") %>% 
-  ggplot(aes(x = sequence, y = norm_value, color = name)) +
-  geom_smooth(method = 'lm', se = FALSE)+
-  geom_point()+
-  facet_grid(name~model, scales = "free_x")+
-  theme_classic()
-```
-```{r}
-# Perform regressions and get significance
-rbind(W3_cheap %>% mutate(model = "cheapest"),
-      W3_pk_seq %>% mutate(model = "pk")) %>% #,
-     # W3_random %>% mutate(model = "random"),
-     # W3_twi_seq %>% mutate(model = "twi")) %>% 
-  left_join(w3_topo_norm, by = "ID", relationship = "many-to-many") %>% 
-  as_tibble() %>% 
-group_by(model) %>% 
-  do(model = lm(sequence ~ norm_value, data = .)) #%>%
-  mutate(p_value = summary(model)$coefficients["x", "Pr(>|t|)"]) #%>%
-  mutate(significant = p_value < 0.05)
-
-W3_pk_seq %>% mutate(model = "cheapest") %>% 
-  left_join(w3_topo_norm, by = "ID", relationship = "many-to-many") %>% 
-  as_tibble() %>% 
-  filter(name == "uaa") %>% 
-  lm(sequence ~ norm_value, data = .) %>% summary()
-group_by(name) %>% 
-  summarise(summary(lm(sequence ~ norm_value, data = .))$r.squared)
-  do(model = lm(sequence ~ norm_value, data = .)) %>% print()
-  mutate(p_value = summary(model)$coefficients["x", "Pr(>|t|)"]) #%>%
-  mutate(significant = p_value < 0.05)
-  
-  
-  
-  
-models <- data %>%
-  group_by(group) %>%
-  do(model = lm(y ~ x, data = .)) %>%
-  mutate(p_value = summary(model)$coefficients["x", "Pr(>|t|)"]) %>%
-  mutate(significant = p_value < 0.05)
-
-# Merge significance information back to the original data
-data_with_significance <- left_join(data, models %>% select(group, significant), by = "group")
-
-# Plotting
-ggplot(data_with_significance, aes(x = x, y = y, color = group)) +
-  geom_point() +
-  geom_smooth(data = . %>% filter(significant), method = "lm", se = FALSE) + # Only plot significant lines
-  labs(title = "Trend Lines for Significant Relationships Only",
-       subtitle = "Based on p-value < 0.05 for slope",
-       x = "X-axis", y = "Y-axis") +
-  theme_minimal()
-```
-
-
-```{r FB}
-
-FB_twi_seq <- fb_twi_sequence %>% 
-  mutate(sequence = seq(1, length(ID), 1))
-
-fb_topo_norm <- fb_topo %>% 
-  group_by(name) %>% 
-  mutate(norm_value = range01(value))
-
-#tile plot, original vision
-rbind(FB_cheap %>% mutate(model = "cheapest"),
-      FB_pk_seq %>% mutate(model = "pk")) %>%
-  left_join(fb_topo_norm, by = "ID", relationship = "many-to-many") %>% 
-  drop_na() %>% 
-  ggplot() +
-  geom_tile(aes(x = sequence, y = name, fill = norm_value))+
-  scale_fill_gradient(low = "white", 
-                      high = "black")+
-  facet_grid(rows = "model")
-
-#will it look better as a line?
-fb_explain <- rbind(FB_cheap %>% mutate(model = "cheapest"),
-      FB_pk_seq %>% mutate(model = "pk")) %>% #,
-     # W3_random %>% mutate(model = "random"),
-     # W3_twi_seq %>% mutate(model = "twi")) %>% 
-  left_join(fb_topo_norm, by = "ID", relationship = "many-to-many") %>% 
-  mutate(shed = "FB") %>% 
-  drop_na()
-  ggplot() +
-  geom_smooth(aes(x = sequence, y = norm_value, color = name))+
-  facet_grid(~model, scales = "free_x")+
-  theme_classic()
-  
-rbind(FB_cheap %>% mutate(model = "cheapest"),
-      FB_pk_seq %>% mutate(model = "pk")) %>% #,
-     # W3_random %>% mutate(model = "random"),
-     # W3_twi_seq %>% mutate(model = "twi")) %>% 
-  left_join(w3_topo_norm, by = "ID", relationship = "many-to-many") %>% 
-  drop_na() %>%
-  mutate(shed = "FB") %>% 
-  ggplot(aes(x = sequence, y = norm_value, color = name)) +
-  geom_smooth(method = 'lm', se = FALSE)+
-  geom_point()+
-  facet_grid(name~model, scales = "free_x")+
-  theme_classic()
-```
-```{r ZZ}
-
-ZZ_twi_seq <- zz_twi_sequence %>% 
-  mutate(sequence = seq(1, length(ID), 1))
-
-zz_topo_norm <- zz_topo %>% 
-  group_by(name) %>% 
-  mutate(norm_value = range01(value))
-
-#tile plot, original vision
-rbind(ZZ_cheap %>% mutate(model = "cheapest"),
-      ZZ_pk_seq %>% mutate(model = "pk")) %>%
-  left_join(zz_topo_norm, by = "ID", relationship = "many-to-many") %>% 
-  drop_na() %>% 
-  ggplot() +
-  geom_tile(aes(x = sequence, y = name, fill = norm_value))+
-  scale_fill_gradient(low = "white", 
-                      high = "black")+
-  facet_grid(rows = "model")
-
-#will it look better as a line?
-zz_explain <- rbind(ZZ_cheap %>% mutate(model = "cheapest"),
-      ZZ_pk_seq %>% mutate(model = "pk")) %>% #,
-     # W3_random %>% mutate(model = "random"),
-     # W3_twi_seq %>% mutate(model = "twi")) %>% 
-  left_join(zz_topo_norm, by = "ID", relationship = "many-to-many") %>% 
-  mutate(shed = "ZZ")
-  drop_na() %>% 
-  ggplot() +
-  geom_smooth(aes(x = sequence, y = norm_value, color = name))+
-  facet_grid(~model, scales = "free_x")+
-  theme_classic()
-```
-```{r combine-as-lines}
-rbind(w3_explain, fb_explain, zz_explain) %>% 
-  ggplot() +
-  geom_smooth(aes(x = sequence, y = norm_value, color = name), method = 'lm', se = FALSE)+
-  facet_grid(model~shed, scales = "free_x")+
-  theme_classic()
-
-#lm(sequence ~ )
-
-```
-
-
-
-## UNUSED: Change in Q, versus accuracy
-```{r dQ}
-#calculate the delta Q
-df_long2 %>% 
-  mutate(dQ = abs(Q_mm_day - lag(Q_mm_day))) %>% 
-  ggplot()+
-  geom_point(aes(x = dQ, y = pk_accuracy, color = event_type))
-
-df_long2_fb %>% 
-  mutate(dQ = abs(roll_mean - lag(roll_mean))) %>% 
-  ggplot()+
-  geom_point(aes(x = dQ, y = pk_accuracy, color = event_type))+
-  lims(x = c(0,0.75))
-
-df_long2_zz %>% 
-  mutate(dQ = abs(roll_mean - lag(roll_mean))) %>% 
-  ggplot()+
-  geom_point(aes(x = dQ, y = pk_accuracy, color = event_type))+
-  lims(x = c(0,0.25))
-```
-```{r number-of-transitions}
-
-df_long2 %>%
-  filter(model == "cheap_accuracy") %>% 
-  left_join(num_trans_w3, by = "datetime") %>% 
-  ggplot()+
-  geom_point(aes(x = number_of_nodes, y = pk_accuracy, color = state_change),
-             size = 2, alpha = 0.5)
-
-df_long2_fb %>% 
-  filter(model == "cheap_accuracy") %>% 
-  left_join(num_trans_fb, by = "datetime") %>% 
-  ggplot()+
-  geom_point(aes(x = number_of_nodes, y = pk_accuracy, color = state_change),
-             size = 2, alpha = 0.5)
-
-df_long2_zz %>% 
-  filter(model == "cheap_accuracy") %>% 
-  left_join(num_trans_zz, by = "datetime") %>% 
-  ggplot()+
-  geom_point(aes(x = number_of_nodes, y = pk_accuracy, color = state_change),
-             size = 2, alpha = 0.5)
-
-rbind(df_long2 %>%
-  filter(model == "cheap_accuracy") %>% 
-  left_join(num_trans_w3, by = "datetime") %>% 
-        select(datetime, pk_accuracy, shed, number_of_nodes, state_change),
-  df_long2_fb %>% 
-  filter(model == "cheap_accuracy") %>% 
-  left_join(num_trans_fb, by = "datetime")%>% 
-        select(datetime, pk_accuracy, shed, number_of_nodes, state_change),
-  df_long2_zz %>% 
-  filter(model == "cheap_accuracy") %>% 
-  left_join(num_trans_zz, by = "datetime") %>% 
-        select(datetime, pk_accuracy, shed, number_of_nodes, state_change)) %>% 
-  ggplot()+
-  geom_point(aes(x = number_of_nodes, y = pk_accuracy, color = state_change),
-             size = 2, alpha = 0.5)+
-  facet_wrap(~shed)
-```
 # Testing many random sequences
 What if we test 100 different cheapest_insertions?
 ```{r 10-cheapest-ZZ}
@@ -9990,109 +8475,1784 @@ plot(g,
 
 ```
 
-#ITERATING SMART ONCE AGAIN
-Doing by BFS algorithm that I accidentally invented lol
-```{r iterating-smart-W3}
-#pick a sensor randomly, then test every other sensor to see which has the best hierarchical behavior with that one. Proceed down the list without replacement
-options(dplyr.summarise.inform = FALSE)
-options(dplyr.mutate_all.inform = FALSE)
 
 
-#combos <- unique(combos$up)
-#with modern function, do not need input
-#[1] "2025-09-10 10:12:20 EDT"
+# DEPREC
+# Graph theory sequences
+## Determine all possible combinations, or the full graph
+Determine all possible combinations
+```{r W3}
+input <- rbind(bind23, bind24) %>%
+  filter(wshed == "W3", mins %in% c(0, 30)) %>%
+  select(datetime, binary, ID) %>%
+  #mutate(ID = paste0("r_",ID)) %>% 
+  pivot_wider(names_from = ID, values_from = binary)
+
 combos <- W3_IDs
-#find the starting point
 
-for(t in 1:length(combos)){
- #t <- 1
-begin <- combos[t]
-options_initial <- combos[combos != begin]
-options <- combos[combos != begin]
-
-routes <- data.frame("up" = rep(begin, length(options_initial)),
-                     "down" = options_initial)
- for(x in 1:length(options)){
- #x <- 1
- #calc_props(routes[x], "W3")
-        out <- calc_props(routes, "W3") %>% filter(timescale == "30mins")
-        
-        kep <- out[out$prop == max(out$prop),] #find the max prop value
-        kep <- kep[1,] #if tied, keep the first one/row
-  options <- options[options != substr(kep$down[1], 3, 4)] #create new options list
-  routes <- tibble("up" = substr(rep(kep$down[1], length(options)), 3, 4),
-                     "down" = options)
-  print(paste0("x = ",x))
-
-  if(x == 1) big_keep <- kep
-  if(x > 1) big_keep <- rbind(big_keep, kep)
- }
-
-
-big_keep$start <- begin
-
-if(t == 1) biggest_keep <- big_keep
-  if(t > 1) biggest_keep <- rbind(biggest_keep, big_keep)
+#create empty list to hold repeated node IDs
+zzz <- length(combos)
+all_list <- c()
+for(z in 1:zzz){
+  all_list <- c(all_list, rep(combos[z], zzz))
 }
-Sys.time()
-#[1] "2025-09-10 10:26:42 EDT"
+#create data frame with all possible combinations
+W3_combos_routes <- data.frame("up" = rep(combos, zzz),
+                                "down" = all_list)
+#Run suite of functions to determine proportion of time that state changes follow the parent -> child relationship
+W3_all_combos <- calc_props(W3_combos_routes, "W3")
+
+#general_graph(W3_IDs, "W3", methods = c("cheapest_insertion"), two_opt = TRUE)
+```
 
 
-smart_iterate_w3_new <- biggest_keep
-write_csv(smart_iterate_w3_new, "breadthfs_results.csv")
-View(smart_iterate_w3_new)
-smart_iterate_w3_new %>% group_by(start) #%>% 
+
+```{r FB}
+#set routes for all 3 watersheds
+input <- rbind(bind23, bind24) %>%
+  filter(wshed == "FB", mins %in% c(0, 30)) %>%
+  select(datetime, binary, ID) %>%
+  #mutate(ID = paste0("r_",ID)) %>% 
+  pivot_wider(names_from = ID, values_from = binary)
+
+combos <- FB_IDs
+zzz <- length(combos)
+rep(combos, zzz)
+all_list <- c()
+for(z in 1:zzz){
+  all_list <- c(all_list, rep(combos[z], zzz))
+}
+
+all_combos_routes <- data.frame("up" = rep(combos, zzz),
+                                "down" = all_list)
+
+#run calc_support for all sheds and timesteps for relative position
+FB_all_combos <- calc_props(all_combos_routes, "FB")
+```
+```{r ZZ}
+#set routes for all 3 watersheds
+
+input <- rbind(bind23, bind24) %>%
+  filter(wshed == "ZZ", mins %in% c(0, 30)) %>%
+  select(datetime, binary, ID) %>%
+  #mutate(ID = paste0("r_",ID)) %>% 
+  pivot_wider(names_from = ID, values_from = binary)
+
+combos <- ZZ_IDs
+zzz <- length(combos)
+rep(combos, zzz)
+all_list <- c()
+for(z in 1:zzz){
+  all_list <- c(all_list, rep(combos[z], zzz))
+}
+
+all_combos_routes <- data.frame("up" = rep(combos, zzz),
+                                "down" = all_list)
+#run calc_support for all sheds and timesteps for relative position
+ZZ_all_combos <- calc_props(all_combos_routes, "ZZ")
+```
+
+What if I tried to show this in some way- map where each sensor was the average prop value when it is a parent?
+```{r}
+parents <- W3_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  rename(parent = down, child = up) %>% 
+  group_by(parent) %>% 
+  summarise(mean_parent = mean(prop)) %>% 
+  rename(ID = parent)
+  
+childs <- W3_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  rename(parent = down, child = up) %>% 
+  group_by(child) %>% 
+  summarise(mean_child = mean(prop)) %>% 
+  rename(ID = child)
+
+left_join(parents, childs, by = "ID") %>% 
+  ggplot(aes(x = mean_parent, y = mean_child))+
+  geom_point()
+
+parents <- FB_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  rename(parent = down, child = up) %>% 
+  group_by(parent) %>% 
+  summarise(mean_parent = mean(prop)) %>% 
+  rename(ID = parent)
+  
+childs <- FB_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  rename(parent = down, child = up) %>% 
+  group_by(child) %>% 
+  summarise(mean_child = mean(prop)) %>% 
+  rename(ID = child)
+
+left_join(parents, childs, by = "ID") %>% 
+  ggplot(aes(x = mean_parent, y = mean_child))+
+  geom_point()
+```
+
+## Find a path through the full graph using the TSP
+For each watershed, find the best chain using solutions to traveling salesman problem.  Testing every method for solving the TSP manually.  Done before developing the generalized function below.   
+```{r W3}
+#define all possible methods
+#removed 3 methods
+methods <- c("nearest_insertion", "random",
+  "cheapest_insertion", "farthest_insertion", "arbitrary_insertion",
+  "nn", "repetitive_nn")
+
+# methods <- c("random",
+#   "cheapest_insertion")
+
+#set up edges and distance matrix, convert to TSP object
+edges_W3 <- 
+  W3_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) %>% as.matrix() %>% unname()
+
+keyz <- 
+  W3_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) #%>% as.matrix() %>% unname()
+#create an accurate key, old one is WRONG!!!
+key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
+                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
+
+# Convert to TSP object
+
+#FOR LOOP TO ITERATE THROUGH METHODS
+for(i in 1:length(methods)){
+  atsp <- as.ATSP(edges_W3)
+
+    atsp <- insert_dummy(atsp, label = "dummy")
+  tour <- solve_TSP(atsp, method = methods[i], two_opt = TRUE)
+    #tour <- solve_TSP(tour, method = "two_opt")
+
+  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
+
+  # Extract path, removing dummy node
+  path <- as.integer(tour)
+  path <- path[labels(tour)[path] != "dummy"]
+  #convert edges to format 
+  edges <- cbind(path[-length(path)], path[-1])
+  
+  #apply key to convert nodes to sensor IDs for algorithm
+opt_routes <- 
+  as.data.frame(edges) %>% 
+  rename("parent" = V2, "child" = V1) %>% 
+ rename(node_ID = child) %>% 
+  left_join(key2, by = "node_ID") %>% 
+  rename(child = sensor_ID,
+         done = node_ID,
+         node_ID = parent) %>% 
+  left_join(key2, by = "node_ID") %>% 
+  rename(done2 = node_ID,
+         parent = sensor_ID) %>% 
+  select(parent, child)
+
+#prepare routes for algorithm
+routes_graph <- opt_routes %>% 
+  rename("up" = child,
+         "down" = parent) %>% drop_na()
+
+chain_output <- calc_props(routes_graph, "W3") %>% 
+    mutate("method" = methods[i])
+
+    if(i == 1) all_chain_outputs <- chain_output
+    if(i > 1) all_chain_outputs <- rbind(all_chain_outputs, chain_output)
+}
+
+all_chain_outputs %>% 
+  filter(timescale %in% c("30mins", "daily")#, hierarchy == "Flow Permanence"
+         ) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(color = method), alpha = 0.5)+
+    geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  ylim(c(0, 6.25))+
+  xlim(c(0,1))+
+  labs(title = "Distributions of Proportion of time Sequence Followed",
+       subtitle = "0011 and 1100 removed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  facet_grid(~timescale)
+
+```
+
+```{r fooling around}
+# 8/12/25, fooling around
+keyz <- 
+  W3_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) #%>% as.matrix() %>% unname()
+#create an accurate key, old one is WRONG!!!
+key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
+                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
+
+
+edges_W3 <- 
+  W3_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) %>% as.matrix() %>% unname()
+
+  #concorde solver?
+#downloaded concorde but could not figure out how to get it working
+concorde_path("/Users/johnmorgan/Documents/concorde/TSP")
+
+data("USCA312")
+
+## run concorde in verbose mode (-v) with fast cuts only (-V)
+solve_TSP(USCA312, method = "concorde", control = list(clo = "-v -V"))
+
+#now try applying
+atsp <- as.ATSP(edges_W3)
+
+    atsp <- insert_dummy(atsp, label = "dummy")
+  tour <- solve_TSP(atsp, method = "concorde", as_TSP = TRUE, precision = 6, two_opt = TRUE)
+  #control = list(clo = "-B")
+    #tour <- solve_TSP(atsp, method = "cheapest_insertion", as_TSP = TRUE, two_opt = TRUE)
+
+    #tour <- solve_TSP(tour, method = "two_opt")
+
+  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
+
+  # Extract path, removing dummy node
+  path <- as.integer(tour)
+  path <- path[labels(tour)[path] != "dummy"]
+  #convert edges to format 
+  edges <- cbind(path[-length(path)], path[-1])
+  
+con_sol <- c(edges[,1], edges[25,2])
+
+concon <- tibble(ID = con_sol, sequence = seq(1, length(con_sol), 1))
+concon <- tibble(node_ID = con_sol, sequence = seq(1, length(con_sol), 1)) %>% 
+  left_join(key2, by = "node_ID") %>%
+  rename(ID = sensor_ID) %>% 
+  select(ID, sequence)
+  
+
+#con_model <- calc_model_result(concon$ID, "W3") %>% rename("con" = pred_out)
+produce_metrics(concon, "W3", "concorde")
+
+
+#acc_0.755 <- concon
+
+#trying another thing
+C_int <- round(1e6 * edges_W3)
+diag(C_int) <- max(C_int) + 1L
+
+
+reformed <- reformulate_ATSP_as_TSP(atsp)
+
+write_TSPLIB(reformed, file = "myinstance.tsp")
+
+sol <- as.integer(scan("~/Documents/concorde/myinstance.sol", quiet = TRUE)[-1])
+
+read_delim("~/Documents/concorde/myinstance.sol", delim = " ")
+
+as.TOUR(sol+1)
+
+n_orig <- 26
+map_to_atsp <- function(id) {
+  if (id < n_orig) {
+    return(id)
+  } else if (id < 2 * n_orig) {
+    return(id - n_orig)
+  } else {
+    return(NA)  # dummy
+  }
+}
+tour_atsp <- vapply(sol, map_to_atsp, integer(1))
+tour_atsp <- tour_atsp[!is.na(tour_atsp)]         # remove dummy
+tour_atsp <- tour_atsp[!duplicated(tour_atsp)]    # keep first visit only
+
+
+filter_ATSP_as_TSP_dummies(as.TOUR(sol+1))
+
+```
+
+Trying again, but filtering out every edge with a prop value less than 50%
+```{r W3}
+#define all possible methods
+#removed 3 methods
+methods <- c("nearest_insertion", "random",
+  "cheapest_insertion", "farthest_insertion", "arbitrary_insertion",
+  "nn", "repetitive_nn")
+
+methods <- c(
+  "cheapest_insertion")
+
+#set up edges and distance matrix, convert to TSP object
+edges_W3 <- 
+  W3_all_combos %>% 
+  mutate(prop = case_when(prop < 0.5 ~ NA,
+                          prop >= 0.5 ~ prop)) %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) %>% as.matrix() %>% unname()
+edges_W3[is.na(edges_W3)] <- 1
+
+keyz <- 
+  W3_all_combos %>% 
+    #filter(prop > 0.5) %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) #%>% as.matrix() %>% unname()
+#create an accurate key, old one is WRONG!!!
+key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
+                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
+
+# Convert to TSP object
+
+#FOR LOOP TO ITERATE THROUGH METHODS
+#for(i in 1:length(methods)){
+i <- 1
+  atsp <- as.ATSP(edges_W3)
+
+    atsp <- insert_dummy(atsp, label = "dummy")
+  tour <- solve_TSP(atsp, method = methods[i], two_opt = TRUE)
+    #tour <- solve_TSP(tour, method = "two_opt")
+
+  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
+
+  # Extract path, removing dummy node
+  path <- as.integer(tour)
+  path <- path[labels(tour)[path] != "dummy"]
+  path
+  #convert edges to format 
+  #edges <- cbind(path[-length(path)], path[-1])
+  
+  #apply key to convert nodes to sensor IDs for algorithm
+opt_routes <- 
+  tibble(node_ID = path,
+         sequence = seq(1, length(path), 1)) %>% 
+  left_join(key2, by = "node_ID") %>% 
+  rename(ID = sensor_ID) %>% 
+  select(ID, sequence)
+
+produce_metrics(opt_routes, "W3", "test")
+
+```
+
+Trying one more thing- what if the sequence was defined in order by average prop value when it is the parent?
+```{r}
+#new_seq <- 
+  W3_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  rename(parent = down,
+         child = up) %>% 
+  group_by(parent) %>% 
+  summarise(mean = mean(prop),
+            sd = sd(prop)) %>% 
+  arrange(desc(mean)) %>% View()
+  mutate(sequence = seq(1, length(con_big), 1)) %>% 
+  rename(ID = parent) %>% 
+  mutate(ID = as.numeric(substr(ID, 3, 4))) %>% 
+  select(ID, sequence)
+  #filter(prop != 0) %>% 
+  
+produce_metrics(new_seq, "W3", "ordered")
+
+
+w3_pk_renum <- W3_pk_seq %>% 
+  filter(ID %in% (W3_IDs)) %>% 
+  mutate(sequence = seq(1, 26, 1))
+new_seq %>% 
+  left_join(w3_pk_renum, by = "ID") %>% 
+View()
+```
+New sequence is just as good as proportion of time flowing, but definitely a different sequence... definitely related to the number of transitions I think
+
+Calculate new sequence for figure 5:
+```{r}
+new_seq <- 
+  W3_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  rename(parent = down,
+         child = up) %>% 
+  group_by(parent) %>% 
+  summarise(mean = mean(prop),
+            sd = sd(prop)) %>% 
+  arrange(desc(mean)) %>% #View()
+  mutate(sequence = seq(1, length(25), 1)) %>% 
+  rename(ID = parent) %>% 
+  mutate(ID = as.numeric(substr(ID, 3, 4))) %>% 
+  select(ID, sequence)
+  
+opt_routes <- 
+  new_seq %>% 
+  mutate(down = lag(ID)) %>% 
+    rename("up" = ID) %>% 
+    select(up, down) %>% drop_na()
+  
+calc_props(opt_routes, "W3")
+```
+
+
+```{r FB-analysis}
+#define all possible methods
+#removed 3 methods
+methods <- c("nearest_insertion", "random",
+  "cheapest_insertion", "farthest_insertion", "arbitrary_insertion",
+  "nn", "repetitive_nn")
+
+#methods <- c("random", "cheapest_insertion")
+keyz <- 
+  FB_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) #%>% as.matrix() %>% unname()
+#create an accurate key, old one is WRONG!!!
+key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
+                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
+#set up edges and distance matrix, convert to TSP object
+
+#IF there are NAs, replace them with 1; results from when there is a node that flowed the whole time it was deployed along with another, and not deployed for part of the other one's deployment; happened most in FB
+edges_FB <- 
+  FB_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>% #%>% #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    mutate(
+    across(everything(), ~replace_na(.x, 1))
+  ) %>%
+    select(-up) %>% as.matrix() %>% unname()
+
+#FOR LOOP TO ITERATE THROUGH METHODS
+for(i in 1:length(methods)){
+  atsp <- as.ATSP(edges_FB)
+  atsp <- insert_dummy(atsp, label = "dummy")
+  tour <- solve_TSP(atsp, method = methods[i])#, two_opt = TRUE)
+  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
+
+  # Extract path, removing dummy node
+  path <- as.integer(tour)
+  path <- path[labels(tour)[path] != "dummy"]
+  #convert edges to format 
+  edges <- cbind(path[-length(path)], path[-1])
+  
+  #apply key to convert nodes to sensor IDs for algorithm
+opt_routes <- 
+  as.data.frame(edges) %>% 
+  rename("parent" = V2, "child" = V1) %>% 
+ rename(node_ID = child) %>% 
+  left_join(key2, by = "node_ID") %>% 
+  rename(child = sensor_ID,
+         done = node_ID,
+         node_ID = parent) %>% 
+  left_join(key2, by = "node_ID") %>% 
+  rename(done2 = node_ID,
+         parent = sensor_ID) %>% 
+  select(parent, child)
+
+#prepare routes for algorithm
+routes_graph <- opt_routes %>% 
+  rename("up" = child,
+         "down" = parent) %>% drop_na()
+
+chain_output <- calc_props(routes_graph, "FB") %>% 
+    mutate("method" = methods[i])
+
+    if(i == 1) FB_chain_outputs <- chain_output
+    if(i > 1) FB_chain_outputs <- rbind(FB_chain_outputs, chain_output)
+}
+
+
+#plots for committee meeting
+FB_chain_outputs %>% 
+  filter(timescale %in% c("30mins", "daily")#, hierarchy == "Flow Permanence"
+         ) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(color = method), alpha = 0.5)+
+    geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  ylim(c(0, 6.25))+
+  xlim(c(0,1))+
+  labs(title = "Distributions of Proportion of time Sequence Followed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  facet_grid(~timescale)
+
+```
+```{r ZZ-analysis}
+#define all possible methods
+#removed 3 methods
+methods <- c("nearest_insertion", "random",
+  "cheapest_insertion", "farthest_insertion", "arbitrary_insertion",
+  "nn", "repetitive_nn")
+
+#methods <- c("random", "cheapest_insertion")
+keyz <- 
+  ZZ_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) #%>% as.matrix() %>% unname()
+#create an accurate key, old one is WRONG!!!
+key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
+                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
+#set up edges and distance matrix, convert to TSP object
+
+#IF there are NAs, replace them with 1; results from when there is a node that flowed the whole time it was deployed along with another, and not deployed for part of the other one's deployment; happened most in FB
+edges_ZZ <- 
+  ZZ_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>% #%>% #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    mutate(
+    across(everything(), ~replace_na(.x, 1))
+  ) %>%
+    select(-up) %>% as.matrix() %>% unname()
+
+
+
+# reformat from atsp to tsp
+#tsp1 <- reformulate_ATSP_as_TSP(atsp)
+
+#FOR LOOP TO ITERATE THROUGH METHODS
+for(i in 1:length(methods)){
+  # Convert to TSP object
+atsp <- as.ATSP(edges_ZZ)
+  
+  atsp <- insert_dummy(atsp, label = "dummy")
+  tour <- solve_TSP(atsp, method = methods[i], start = length(ZZ_IDs) + 1)#, start = 25)#, two_opt = TRUE)
+  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
+
+  # Extract path, removing dummy node
+   path <- unname(cut_tour(tour, "dummy"))
+  #convert edges to format 
+  edges <- cbind(path[-length(path)], path[-1])
+  
+  #apply key to convert nodes to sensor IDs for algorithm
+opt_routes <- 
+  as.data.frame(edges) %>% 
+  rename("parent" = V2, "child" = V1) %>% 
+ rename(node_ID = child) %>% 
+  left_join(key2, by = "node_ID") %>% 
+  rename(child = sensor_ID,
+         done = node_ID,
+         node_ID = parent) %>% 
+  left_join(key2, by = "node_ID") %>% 
+  rename(done2 = node_ID,
+         parent = sensor_ID) %>% 
+  select(parent, child)
+
+#prepare routes for algorithm
+routes_graph <- opt_routes %>% 
+  rename("up" = child,
+         "down" = parent) %>% drop_na()
+
+chain_output <- calc_props(routes_graph, "ZZ") %>% 
+    mutate("method" = methods[i])
+
+    if(i == 1) ZZ_chain_outputs <- chain_output
+    if(i > 1) ZZ_chain_outputs <- rbind(ZZ_chain_outputs, chain_output)
+}
+
+
+#plots for committee meeting
+ZZ_chain_outputs %>% 
+  filter(timescale %in% c("30mins", "daily")#, hierarchy == "Flow Permanence"
+         ) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(color = method), alpha = 0.5)+
+    geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  ylim(c(0, 6.25))+
+  xlim(c(0,1))+
+  labs(title = "Distributions of Proportion of time Sequence Followed",
+       subtitle = "0011 and 1100 removed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  facet_grid(~timescale)
+
+
+atsp <- as.ATSP(edges_ZZ)
+  
+  atsp <- insert_dummy(atsp, label = "dummy")
+  tour <- solve_TSP(atsp, method = methods[4], start = length(ZZ_IDs) + 1)#, two_opt = TRUE)
+  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
+
+  # Extract path, removing dummy node
+  #path <- as.integer(tour)
+  path <- unname(cut_tour(tour, "dummy"))
+  #convert edges to format 
+  edges <- cbind(path[-length(path)], path[-1])
+
+
+
+# Create a chain graph from the path
+edges <- cbind(path[-length(path)], path[-1])
+chain_graph <- graph_from_edgelist(edges, directed = TRUE)
+plot(chain_graph,
+       layout = layout_nicely(chain_graph),
+     edge.arrow.size = 0.25,
+  vertex.size = 10,
+  vertex.label.cex = 0.75)
+
+ggnet <- fortify(chain_graph, layout = igraph::layout_nicely(chain_graph))
+ggplot(ggnet, aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_edges(color = "grey", arrow = grid::arrow(length = unit(6, "pt"),
+                                                 type = "open")) +
+  geom_nodes(color = "black", size = 8) +
+  # geom_nodetext(aes(label =LETTERS[ path ]),
+  #               fontface = "bold", color = "white", size = 3) +
+  theme_blank()
+```
+```{r plot-chain}
+edges2 <- all_graph_solutions %>% 
+  filter(shed == "W3", method == "random", timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down) %>% as.matrix()
+chain_graph <- graph_from_edgelist(edges2, directed = TRUE)
+plot(chain_graph)
+
+ggmst <- fortify(chain_graph, layout = igraph::layout_as_tree(chain_graph))
+ggplot(ggmst, aes(x = x, y = y, xend = xend, yend = yend)) +
+  geom_edges(color = "grey", arrow = grid::arrow(length = unit(6, "pt"),
+                                                 type = "open")) +
+  geom_nodes(color = "black", size = 3) +
+  geom_nodetext(aes(label = name),
+                fontface = "bold", color = "white", size = 1) +
+  theme_blank()
+```
+
+Make a map of the activation sequence
+```{r}
+
+```
+
+## Concorde solver
+```{r}
+edges_W3 <- 
+  W3_all_combos %>% 
+  mutate(prop = case_when(prop < 0.5 ~ NA,
+                          prop >= 0.5 ~ prop)) %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) %>% as.matrix() %>% unname()
+edges_W3[is.na(edges_W3)] <- 1
+```
+
+
+```{r W3}
+keyz_w3 <- 
+  W3_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) #%>% as.matrix() %>% unname()
+#create an accurate key, old one is WRONG!!!
+key2_w3 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz_w3), 3, 4)),
+                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz_w3), 3, 4))), 1))
+
+edges_W3 <- 
+  W3_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) %>% as.matrix() %>% unname()
+
+
+
+# 1. JV-transform + dummy
+atsp_to_stsp <- function(cost_mat, dummy_cost = 0) {
+  n <- nrow(cost_mat)
+  M <- max(cost_mat) * n + 1  # big constant
+  
+  # JV transform: create 2n x 2n symmetric matrix
+  sym_mat <- matrix(M, nrow = 2*n, ncol = 2*n)
+  
+  # link in->out copies (zero cost)
+  for (i in 1:n) {
+    sym_mat[i, n+i] <- 0
+    sym_mat[n+i, i] <- 0
+  }
+  
+  # original costs from out(i) to in(j)
+  for (i in 1:n) {
+    for (j in 1:n) {
+      if (i != j) {
+        sym_mat[n+i, j] <- cost_mat[i, j]
+        sym_mat[j, n+i] <- cost_mat[i, j]
+      }
+    }
+  }
+  
+  # Add dummy node
+  sym_with_dummy <- matrix(M, nrow = 2*n + 1, ncol = 2*n + 1)
+  sym_with_dummy[1:(2*n), 1:(2*n)] <- sym_mat
+  
+  dummy_idx <- 2*n + 1
+  # Connect dummy to all "in" nodes with dummy_cost
+  sym_with_dummy[dummy_idx, 1:n] <- dummy_cost
+  sym_with_dummy[1:n, dummy_idx] <- dummy_cost
+  
+  # return symmetric matrix
+  sym_with_dummy
+}
+
+out_matrix_w3 <- atsp_to_stsp(edges_W3)
+# 2. Write TSPLIB file
+write_tsplib <- function(sym_mat, file) {
+  tsp_obj <- TSP(as.dist(sym_mat))
+  write_TSPLIB(tsp_obj, file = file)
+}
+
+write_tsplib(out_matrix_w3, "~/Documents/concorde/W3.tsp")
+
+#/Users/johnmorgan/Documents/concorde/TSP/concorde -o W3solution.tour /Users/johnmorgan/Documents/concorde/W3.tsp
+
+# 3. Read Concorde .sol and convert to ATSP tour
+read_concorde_sol <- function(sol_file, cost_mat) {
+  n <- nrow(cost_mat)
+  tour_nodes <- scan(sol_file, what = integer(), quiet = TRUE)
+  
+  # Remove first line if it's length
+  if (length(tour_nodes) == n + 1 || length(tour_nodes) == 2*n + 1 || length(tour_nodes) == 2*n + 2) {
+    # If first number equals length of tour, drop it
+    if (tour_nodes[1] == length(tour_nodes) - 1) {
+      tour_nodes <- tour_nodes[-1]
+    }
+  }
+  
+  # Remove dummy index if present
+  dummy_idx <- 2*n + 1
+  tour_nodes <- tour_nodes[tour_nodes != (dummy_idx - 1)]  # Concorde may index from 0
+  
+  # Map back to original ATSP nodes: out(i) -> i, in(i) -> i
+  atsp_tour <- unique(((tour_nodes %% n) + 1))
+  
+  atsp_tour
+}
+
+con_big_w3 <- read_concorde_sol("~/Documents/concorde/TSP/W3solution.tour", edges_W3)
+
+concon2_w3 <- tibble(node_ID = con_big_w3, sequence = seq(1, length(con_big_w3), 1)) %>% 
+  left_join(key2_w3, by = "node_ID") %>%
+  rename(ID = sensor_ID) %>% 
+  select(ID, sequence)
+  
+#con_model <- calc_model_result(concon$ID, "W3") %>% rename("con" = pred_out)
+produce_metrics(concon2_w3, "W3", "concorde")
+
+opt_routes_w3 <- 
+  concon2_w3 %>% 
+  mutate(down = lag(ID)) %>% 
+    rename("up" = ID) %>% 
+    select(up, down) %>% drop_na()
+
+# actually determining how often the nodes follow proportion of time flowing sequence
+conc_props_w3 <- calc_props(opt_routes_w3, "W3")
+
+conc_props_w3 %>% 
+  filter(timescale == "30mins") %>% 
+  hist(prop)
+
+hist(conc_props_w3$prop)
+```
+```{r FB}
+keyz_fb <- 
+  FB_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) #%>% as.matrix() %>% unname()
+#create an accurate key, old one is WRONG!!!
+key2_fb <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz_fb), 3, 4)),
+                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz_fb), 3, 4))), 1))
+
+edges_FB <- 
+  FB_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>% #%>% #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    mutate(
+    across(everything(), ~replace_na(.x, 1))
+  ) %>%
+    select(-up) %>% as.matrix() %>% unname()
+
+
+out_matrix_fb <- atsp_to_stsp(edges_FB)
+
+write_tsplib(out_matrix_fb, "~/Documents/concorde/FB.tsp")
+#/Users/johnmorgan/Documents/concorde/TSP/concorde -o FBsolution.tour /Users/johnmorgan/Documents/concorde/FB.tsp
+
+con_big_fb <- read_concorde_sol("~/Documents/concorde/TSP/FBsolution.tour", edges_FB)
+
+concon_fb <- tibble(node_ID = con_big_fb, sequence = seq(1, length(con_big_fb), 1)) %>% 
+  left_join(key2_fb, by = "node_ID") %>%
+  rename(ID = sensor_ID) %>% 
+  select(ID, sequence)
+  
+#con_model <- calc_model_result(concon$ID, "W3") %>% rename("con" = pred_out)
+produce_metrics(concon_fb, "FB", "concorde")
+
+opt_routes_fb <- 
+  tibble(node_ID = con_big_fb) %>% 
+  left_join(key2_fb, by = "node_ID") %>% 
+  mutate(down = lag(sensor_ID)) %>% 
+    rename("up" = sensor_ID) %>% 
+    select(up, down) %>% drop_na()
+
+# actually determining how often the nodes follow proportion of time flowing sequence
+hist(calc_props(opt_routes, "FB")$prop)
+conc_props_fb <- calc_props(opt_routes, "FB")
+```
+```{r ZZ}
+keyz_zz <- 
+  ZZ_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) #%>% as.matrix() %>% unname()
+#create an accurate key, old one is WRONG!!!
+key2_zz <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz_zz), 3, 4)),
+                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz_zz), 3, 4))), 1))
+#set up edges and distance matrix, convert to TSP object
+
+#IF there are NAs, replace them with 1; results from when there is a node that flowed the whole time it was deployed along with another, and not deployed for part of the other one's deployment; happened most in FB
+
+edges_ZZ <- 
+  ZZ_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) %>% as.matrix() %>% unname()
+
+
+out_matrix_zz <- atsp_to_stsp(edges_ZZ)
+
+write_tsplib(out_matrix_zz, "~/Documents/concorde/ZZ.tsp")
+#/Users/johnmorgan/Documents/concorde/TSP/concorde -o ZZsolution.tour /Users/johnmorgan/Documents/concorde/ZZ.tsp
+
+con_big_zz <- read_concorde_sol("~/Documents/concorde/TSP/ZZsolution.tour", edges_ZZ)
+
+concon_zz <- tibble(node_ID = con_big_zz, sequence = seq(1, length(con_big_zz), 1)) %>% 
+  left_join(key2_zz, by = "node_ID") %>%
+  rename(ID = sensor_ID) %>% 
+  select(ID, sequence)
+  
+#con_model <- calc_model_result(concon$ID, "W3") %>% rename("con" = pred_out)
+produce_metrics(concon_zz, "ZZ", "concorde")
+
+opt_routes_zz <- 
+  tibble(node_ID = con_big_zz) %>% 
+  left_join(key2_zz, by = "node_ID") %>% 
+  mutate(down = lag(sensor_ID)) %>% 
+    rename("up" = sensor_ID) %>% 
+    select(up, down) %>% drop_na()
+
+# actually determining how often the nodes follow proportion of time flowing sequence
+conc_props_zz <- calc_props(opt_routes, "ZZ")
+
+
+all_conc <- rbind(conc_props_w3,
+                  conc_props_fb,
+                  conc_props_zz) %>% 
+  mutate(method = "Concorde TSP")
+```
+
+
+
+## Defining genearlized function
+```{r generalized-function-graph-solution}
+#define all possible methods
+#removed 3 methods
+all_methods = c("nearest_insertion", "random",
+  "cheapest_insertion", "farthest_insertion", "arbitrary_insertion",
+  "nn", "repetitive_nn")
+#methods <- c("random", "cheapest_insertion")
+
+general_graph <- function(combos, 
+                          shed, 
+                          methods = c("random", "cheapest_insertion"),
+                          two_opt = TRUE){
+#combos <- ZZ_IDs
+zzz <- length(combos)
+rep(combos, zzz)
+all_list <- c()
+for(z in 1:zzz){
+  all_list <- c(all_list, rep(combos[z], zzz))
+}
+
+all_combos_routes <- data.frame("up" = rep(combos, zzz),
+                                "down" = all_list)
+#run calc_support for all sheds and timesteps for relative position
+allcombosIn <- calc_props(all_combos_routes, shed)
+
+#methods <- c("random", "cheapest_insertion")
+keyz <- 
+  allcombosIn %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) #%>% as.matrix() %>% unname()
+#create an accurate key, old one is WRONG!!!
+key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
+                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
+#set up edges and distance matrix, convert to TSP object
+
+#IF there are NAs, replace them with 1; results from when there is a node that flowed the whole time it was deployed along with another, and not deployed for part of the other one's deployment; happened most in FB
+edgesIn <- 
+  allcombosIn %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>% #%>% #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    mutate(
+    across(everything(), ~replace_na(.x, 1))
+  ) %>%
+    select(-up) %>% as.matrix() %>% unname()
+
+
+
+# reformat from atsp to tsp
+#tsp1 <- reformulate_ATSP_as_TSP(atsp)
+
+#FOR LOOP TO ITERATE THROUGH METHODS
+for(i in 1:length(methods)){
+  # Convert to TSP object
+atsp <- as.ATSP(edgesIn)
+  
+  atsp <- insert_dummy(atsp, label = "dummy")
+  tour <- solve_TSP(atsp, method = methods[i], 
+                    start = length(combos) + 1, two_opt = two_opt)
+  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
+
+  # Extract path, removing dummy node
+   path <- unname(cut_tour(tour, "dummy"))
+  #convert edges to format 
+  edges <- cbind(path[-length(path)], path[-1])
+  
+  #apply key to convert nodes to sensor IDs for algorithm
+opt_routes <- 
+  as.data.frame(edges) %>% 
+  rename("parent" = V2, "child" = V1) %>% 
+ rename(node_ID = child) %>% 
+  left_join(key2, by = "node_ID") %>% 
+  rename(child = sensor_ID,
+         done = node_ID,
+         node_ID = parent) %>% 
+  left_join(key2, by = "node_ID") %>% 
+  rename(done2 = node_ID,
+         parent = sensor_ID) %>% 
+  select(parent, child)
+
+#prepare routes for algorithm
+routes_graph <- opt_routes %>% 
+  rename("up" = child,
+         "down" = parent) %>% drop_na()
+
+chain_output <- calc_props(routes_graph, shed) %>% 
+    mutate("method" = methods[i])
+
+    if(i == 1) ZZ_chain_outputs <- chain_output
+    if(i > 1) ZZ_chain_outputs <- rbind(ZZ_chain_outputs, chain_output)
+}
+return(ZZ_chain_outputs)
+}
+
+#test general graph solution
+ZZ_graph_solution <- general_graph(ZZ_IDs, "ZZ")
+
+ZZ_graph_solution %>% 
+  filter(timescale %in% c("30mins", "daily")#, hierarchy == "Flow Permanence"
+         ) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(color = method), alpha = 0.5)+
+    geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  ylim(c(0, 6.25))+
+  xlim(c(0,1))+
+  labs(title = "Distributions of Proportion of time Sequence Followed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  facet_grid(~timescale)
+
+#separate function to output the path, for non-determinstic methods may result in a different chain than other function
+#can take multiple methods
+# True/false whether output includes visualization of the chain
+##works on a single method to develop a chain
+chain_solution <- function(combos, 
+                           shed, 
+                           methods = "cheapest_insertion", 
+                           plot = FALSE,
+                           two_opt = TRUE){
+#combos <- ZZ_IDs
+zzz <- length(combos)
+rep(combos, zzz)
+all_list <- c()
+for(z in 1:zzz){
+  all_list <- c(all_list, rep(combos[z], zzz))
+}
+
+all_combos_routes <- data.frame("up" = rep(combos, zzz),
+                                "down" = all_list)
+#run calc_support for all sheds and timesteps for relative position
+allcombosIn <- calc_props(all_combos_routes, shed)
+
+#methods <- c("random", "cheapest_insertion")
+keyz <- 
+  allcombosIn %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) #%>% as.matrix() %>% unname()
+#create an accurate key, old one is WRONG!!!
+key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
+                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
+#set up edges and distance matrix, convert to TSP object
+
+#IF there are NAs, replace them with 1; results from when there is a node that flowed the whole time it was deployed along with another, and not deployed for part of the other one's deployment; happened most in FB
+edgesIn <- 
+  allcombosIn %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>% #%>% #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    mutate(
+    across(everything(), ~replace_na(.x, 1))
+  ) %>%
+    select(-up) %>% as.matrix() %>% unname()
+
+
+
+# reformat from atsp to tsp
+#tsp1 <- reformulate_ATSP_as_TSP(atsp)
+
+#FOR LOOP TO ITERATE THROUGH METHODS
+for(i in 1:length(methods)){
+  # Convert to TSP object
+atsp <- as.ATSP(edgesIn)
+  
+  atsp <- insert_dummy(atsp, label = "dummy")
+  tour <- solve_TSP(atsp, method = methods[i], start = length(combos) + 1, two_opt = two_opt)
+  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
+
+  # Extract path, removing dummy node
+   path <- unname(cut_tour(tour, "dummy"))
+  #convert edges to format 
+  #edges <- cbind(path[-length(path)], path[-1])
+   output <- data.frame("node_ID" = path) %>% 
+     left_join(key2, by = "node_ID") %>% 
+     mutate(method = methods[i])
+  
+    if(i == 1) ZZ_chain_outputs <- output
+    if(i > 1) ZZ_chain_outputs <- rbind(ZZ_chain_outputs, output)
+}
+
+
+
+chains_test <- ZZ_chain_outputs
+edges <- cbind(chains_test$node_ID[-length(chains_test$node_ID)], chains_test$node_ID[-1])
+
+chain_graph <- graph_from_edgelist(edges, directed = TRUE)
+
+V(chain_graph)$labels <- chains_test$sensor_ID
+
+ggmst <- fortify(chain_graph, layout = igraph::layout_as_tree(chain_graph))
+
+# if(plot == TRUE){
+# ggplot(ggmst, aes(x = x, y = y, xend = xend, yend = yend)) +
+#   geom_edges(color = "grey", arrow = grid::arrow(length = unit(6, "pt"),
+#                                                  type = "open")) +
+#   geom_nodes(color = "black", size = 3) +
+#   geom_nodetext(aes(label = labels),
+#                 fontface = "bold", color = "white", size = 1) +
+#   theme_blank()
+# }
+
+order <- ggmst %>% 
+  arrange(desc(y))
+
+#unique(order$labels)
+
+#perfecting chains function to just output a dataframe, with one column for the sequence number, and the other for sensor ID
+chains_output <- data.frame("ID" = unique(order$labels),
+           "sequence" = seq(1, length(unique(order$labels)), 1))
+
+return(chains_output)
+
+}
+chain_solution(ZZ_IDs, "ZZ", plot = TRUE)
+
+
+#generate chain solution for a series of methods, or the same method many times?
+#NOT FINISHED
+chain_solution_multiple <- function(combos, 
+                           shed, 
+                           methods = "cheapest_insertion", 
+                           plot = FALSE){
+#combos <- ZZ_IDs
+zzz <- length(combos)
+rep(combos, zzz)
+all_list <- c()
+for(z in 1:zzz){
+  all_list <- c(all_list, rep(combos[z], zzz))
+}
+
+all_combos_routes <- data.frame("up" = rep(combos, zzz),
+                                "down" = all_list)
+#run calc_support for all sheds and timesteps for relative position
+allcombosIn <- calc_props(all_combos_routes, shed)
+
+#methods <- c("random", "cheapest_insertion")
+keyz <- 
+  allcombosIn %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  mutate(prop = 1 -prop) %>%  #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    select(-up) #%>% as.matrix() %>% unname()
+#create an accurate key, old one is WRONG!!!
+key2 <- data.frame(sensor_ID = as.numeric(substr(colnames(keyz), 3, 4)),
+                   node_ID = seq(1, length(as.numeric(substr(colnames(keyz), 3, 4))), 1))
+#set up edges and distance matrix, convert to TSP object
+
+#IF there are NAs, replace them with 1; results from when there is a node that flowed the whole time it was deployed along with another, and not deployed for part of the other one's deployment; happened most in FB
+edgesIn <- 
+  allcombosIn %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  #rename(labels = prop) %>% 
+  #filter(prop != 0) %>% 
+  mutate(prop = 1 - prop) %>% #%>% #weight will be opposite prop value
+  select(up, down, prop) %>% 
+    pivot_wider(names_from = down, values_from = prop) %>% 
+    mutate(
+    across(everything(), ~replace_na(.x, 1))
+  ) %>%
+    select(-up) %>% as.matrix() %>% unname()
+
+
+
+# reformat from atsp to tsp
+#tsp1 <- reformulate_ATSP_as_TSP(atsp)
+
+#FOR LOOP TO ITERATE THROUGH METHODS
+for(i in 1:length(methods)){
+  # Convert to TSP object
+atsp <- as.ATSP(edgesIn)
+  
+  atsp <- insert_dummy(atsp, label = "dummy")
+  tour <- solve_TSP(atsp, method = methods[i], start = length(combos) + 1, two_opt = TRUE)
+  #tour <- filter_ATSP_as_TSP_dummies(tour, atsp)
+
+  # Extract path, removing dummy node
+   path <- unname(cut_tour(tour, "dummy"))
+  #convert edges to format 
+  #edges <- cbind(path[-length(path)], path[-1])
+   output <- data.frame("node_ID" = path) %>% 
+     left_join(key2, by = "node_ID") %>% 
+     mutate(method = methods[i])
+  
+    if(i == 1) ZZ_chain_outputs <- output
+    if(i > 1) ZZ_chain_outputs <- rbind(ZZ_chain_outputs, output)
+}
+
+
+
+chains_test <- ZZ_chain_outputs
+edges <- cbind(chains_test$node_ID[-length(chains_test$node_ID)], chains_test$node_ID[-1])
+
+chain_graph <- graph_from_edgelist(edges, directed = TRUE)
+
+V(chain_graph)$labels <- chains_test$sensor_ID
+
+ggmst <- fortify(chain_graph, layout = igraph::layout_as_tree(chain_graph))
+
+# if(plot == TRUE){
+# ggplot(ggmst, aes(x = x, y = y, xend = xend, yend = yend)) +
+#   geom_edges(color = "grey", arrow = grid::arrow(length = unit(6, "pt"),
+#                                                  type = "open")) +
+#   geom_nodes(color = "black", size = 3) +
+#   geom_nodetext(aes(label = labels),
+#                 fontface = "bold", color = "white", size = 1) +
+#   theme_blank()
+# }
+
+order <- ggmst %>% 
+  arrange(desc(y))
+
+#unique(order$labels)
+
+#perfecting chains function to just output a dataframe, with one column for the sequence number, and the other for sensor ID
+chains_output <- data.frame("ID" = unique(order$labels),
+           "sequence" = seq(1, length(unique(order$labels)), 1))
+
+return(chains_output)
+
+}
+```
+```{r applying-gen-func}
+#creating chains
+
+W3_cheap <- chain_solution(W3_IDs, "W3", methods = "cheapest_insertion")
+W3_random <- chain_solution(W3_IDs, "W3", methods = "random")
+
+FB_cheap <- chain_solution(FB_IDs, "FB", methods = "cheapest_insertion")
+FB_random <- chain_solution(FB_IDs, "FB", methods = "random")
+
+ZZ_cheap <- chain_solution(ZZ_IDs, "ZZ", methods = "cheapest_insertion")
+ZZ_random <- chain_solution(ZZ_IDs, "ZZ", methods = "random", two_opt = FALSE)
+
+```
+
+## Comparing all solutions to the TSP for every watershed
+```{r compare-graph-theory-solutions}
+all_graph_solutions <- rbind(general_graph(W3_IDs, "W3"),
+                             general_graph(FB_IDs, "FB"),
+                             general_graph(ZZ_IDs, "ZZ"))
+
+showcase <- rbind(general_graph(W3_IDs, "W3", all_methods),
+                             general_graph(FB_IDs, "FB", all_methods),
+                             general_graph(ZZ_IDs, "ZZ", all_methods))
+
+showcase %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(color = method, fill = method), alpha = 0.5)+
+    #geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  #ylim(c(0, 6.25))+
+  xlim(c(0,1))+
+  labs(title = "Distributions of Proportion of time Sequence Followed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  facet_grid(shed~timescale)
+```
+
+
+
+
+# Defining New Sequence- average prop value as parent node
+Calculate new sequence for figure 5:
+```{r combine}
+new_seq_w3 <- 
+  W3_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  group_by(down) %>% 
+  summarise(mean = mean(prop)) %>% 
+  arrange(desc(mean)) %>% 
+  mutate(up = as.numeric(substr(down, 3, 4)),
+         down = lag(up)) %>% 
+  select(down, up) %>% 
+  drop_na() 
+
+new_seq_fb <- 
+  FB_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  group_by(down) %>% 
+  summarise(mean = mean(prop)) %>% 
+  arrange(desc(mean)) %>% 
+  mutate(up = as.numeric(substr(down, 3, 4)),
+         down = lag(up)) %>% 
+  select(down, up) %>% 
+  drop_na()
+
+new_seq_zz <- 
+  ZZ_all_combos %>% 
+  filter(timescale == "30mins") %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  group_by(down) %>% 
+  summarise(mean = mean(prop)) %>% 
+  arrange(desc(mean)) %>% 
+  mutate(up = as.numeric(substr(down, 3, 4)),
+         down = lag(up)) %>% 
+  select(down, up) %>% 
+  drop_na()
+  
+# actually determining how often the nodes follow proportion of time flowing sequence
+all_new <- rbind(calc_props(new_seq_w3, "W3"),
+                calc_props(new_seq_fb, "FB"),
+                calc_props(new_seq_zz, "ZZ")) %>% 
+  mutate("method" = "Average Sequential Wetting")
+```
+
+Make them ID/sequence format
+```{r}
+#write wrapper functions to convert between the two forms easily
+#routes_w3 <- 
+  pks_w3 %>% 
+    filter(ID %in% W3_IDs) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(down = lag(ID)) %>% 
+  rename("up" = ID) %>% drop_na() %>% 
+  select(up, down)
+
+#convert from up/down to ID/seq
+convert_to_IDseq <- function(input){
+
+  convert <-
+    input %>%
+    mutate(sequence = seq(1, length(input$up), 1)) %>%
+    rename(ID = down) %>%
+    select(ID, sequence)
+return(convert)
+}
+  
+
+#convert from ID/seq to up/down
+input <- W3_cheap
+
+  input %>% 
+    mutate(down = "")
+  mutate(up = as.numeric(substr(down, 3, 4)),
+         down = lag(up)) %>% 
+  select(down, up) %>% 
+  drop_na()
+```
+
+
+# Unused Figures
+## UNUSED: Accuracy of all models versus pk accuracy
+```{r W3}
+#trying to plot accuracy vs accuracy
+df_long2 <- df_summary_time_w3 %>%
+  select(datetime, cheap_accuracy, pk_accuracy, twi_accuracy, new_accuracy, con_accuracy) %>%
+  tidyr::pivot_longer(cols = c(twi_accuracy, new_accuracy, con_accuracy), 
+                      names_to = "model", values_to = "accuracy") %>% 
+    inner_join(w3_limbs, by = "datetime") %>% 
+  mutate(shed = "W3")
+
+four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
+
+df_long2 %>% 
   ggplot()+
-  geom_density(data = smart_iterate_w3_new, 
-               aes(x = prop, y = after_stat(density), color = as.factor(start)))+
-  geom_density(data = filter(all_pk, timescale == "30mins" | shed == "W3"))+
-  aes(x = prop, y = after_stat(density))#+
-  
-  
-  smart_iterate_w3_new %>% 
-    select(start, up)
-    group_by(start) %>% 
-    nest(sequence = as.list(up))
+  geom_point(aes(x = pk_accuracy, 
+                 y = accuracy, 
+                 size = Q_mm_day, color = model),
+             alpha = 0.5)+
+  scale_color_manual(values = five_colors)+
+  geom_abline()+
+  theme_minimal()+
+  lims(y = c(0, 1),
+       x = c(0, 1))+
+  facet_grid(~model)
+```
+```{r FB}
+#trying to plot accuracy vs accuracy
+
+#left join
+
+df_long2_fb <- df_summary_time_fb %>%
+  select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
+  tidyr::pivot_longer(cols = c(cheap_accuracy, random_accuracy, twi_accuracy), 
+                      names_to = "model", values_to = "accuracy") %>% 
+    inner_join(fb_limbs, by = "datetime")%>% 
+  mutate(shed = "FB")
+
+four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
+
+df_long2_fb %>% 
+  ggplot()+
+  geom_point(aes(x = pk_accuracy, 
+                 y = accuracy, 
+                 size = roll_mean, shape = event_type, color = model),
+             alpha = 0.5)+
+  scale_color_manual(values = c("#bb4430", "#231f20", "#f3dfa2"))+
+  geom_abline()+
+  theme_minimal()+
+  lims(y = c(0, 1),
+       x = c(0, 1))+
+  facet_grid(event_type~model)
+```
+```{r ZZ}
+#trying to plot accuracy vs accuracy
+
+#left join
+
+df_long2_zz <- df_summary_time_zz %>%
+  select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy) %>%
+  tidyr::pivot_longer(cols = c(cheap_accuracy, random_accuracy, twi_accuracy), 
+                      names_to = "model", values_to = "accuracy") %>% 
+    inner_join(zz_limbs, by = "datetime")%>% 
+  mutate(shed = "ZZ")
+
+four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
+
+df_long2_zz %>% 
+  ggplot()+
+  geom_point(aes(x = pk_accuracy, 
+                 y = accuracy, 
+                 size = roll_mean, shape = event_type, color = model),
+             alpha = 0.5)+
+  scale_color_manual(values = c("#bb4430", "#231f20", "#f3dfa2"))+
+  geom_abline()+
+  theme_minimal()+
+  lims(y = c(0, 1),
+       x = c(0, 1))+
+  facet_grid(event_type~model)
+```
+Combine all of these, since they are not that different... breakup by watershed
+```{r}
+rbind(
+df_long2 %>% select(datetime, pk_accuracy, model, accuracy, event_type, shed),
+df_long2_fb %>% select(datetime, pk_accuracy, model, accuracy, event_type, shed),
+df_long2_zz %>% select(datetime, pk_accuracy, model, accuracy, event_type, shed)) %>% 
+  ggplot()+
+  geom_point(aes(x = pk_accuracy, 
+                 y = accuracy, shape = event_type, color = shed),
+             alpha = 0.5,
+             size = 2)+
+  scale_color_manual(values = shed_colors)+
+  geom_abline()+
+  theme_minimal()+
+  lims(y = c(0, 1),
+       x = c(0, 1))+
+  facet_grid(~model)
+
 
 ```
 
 
-This is actually a breadth-first-search algorithm....
+## UNUSED: Tile plot
+```{r W3}
+
+range01 <- function(x){(x-min(x))/(max(x)-min(x))}
+
+W3_twi_seq <- w3_twi_sequence %>% 
+  mutate(sequence = seq(1, length(ID), 1))
+
+w3_topo_norm <- w3_topo %>% 
+  group_by(name) %>% 
+  mutate(norm_value = range01(value))
+
+#tile plot, original vision
+rbind(W3_cheap %>% mutate(model = "cheapest"),
+      W3_pk_seq %>% mutate(model = "pk")) %>% #,
+     # W3_random %>% mutate(model = "random"),
+     # W3_twi_seq %>% mutate(model = "twi")) %>% 
+  left_join(w3_topo_norm, by = "ID", relationship = "many-to-many") %>% 
+  drop_na() %>% 
+  ggplot() +
+  geom_tile(aes(x = sequence, y = name, fill = norm_value))+
+  scale_fill_gradient(low = "white", 
+                      high = "black")+
+  facet_grid(rows = "model")
+
+#will it look better as a line?
+#w3_explain <- 
+rbind(W3_cheap %>% mutate(model = "cheapest"),
+      W3_pk_seq %>% mutate(model = "pk")) %>% #,
+     # W3_random %>% mutate(model = "random"),
+     # W3_twi_seq %>% mutate(model = "twi")) %>% 
+  left_join(w3_topo_norm, by = "ID", relationship = "many-to-many") %>% 
+  drop_na() %>%
+  mutate(shed = "W3") %>% 
+  ggplot(aes(x = sequence, y = norm_value, color = name)) +
+  geom_smooth(method = 'lm', se = FALSE)+
+  geom_point()+
+  facet_grid(name~model, scales = "free_x")+
+  theme_classic()
+```
 ```{r}
-
-starts <- unique(smart_iterate_w3_new$start)
-
-starts[1]
-smart_iterate_w3_new %>% 
-  filter(start == starts[1]) %>% 
+# Perform regressions and get significance
+rbind(W3_cheap %>% mutate(model = "cheapest"),
+      W3_pk_seq %>% mutate(model = "pk")) %>% #,
+     # W3_random %>% mutate(model = "random"),
+     # W3_twi_seq %>% mutate(model = "twi")) %>% 
+  left_join(w3_topo_norm, by = "ID", relationship = "many-to-many") %>% 
   as_tibble() %>% 
-  select(up, down) %>% 
-  #mutate(up = substr(up, 3, 4)) %>% 
-  convert_to_IDseq() %>% 
-  mutate(ID = as.numeric(substr(ID, 3, 4)))
+group_by(model) %>% 
+  do(model = lm(sequence ~ norm_value, data = .)) #%>%
+  mutate(p_value = summary(model)$coefficients["x", "Pr(>|t|)"]) #%>%
+  mutate(significant = p_value < 0.05)
 
-#testing every method
-for(i in 1:length(starts)){
-
-  chain <- smart_iterate_w3_new %>% 
-    filter(start == starts[i]) %>% 
-    as_tibble() %>% 
-    select(up, down) %>% 
-    convert_to_IDseq() %>% 
-    mutate(ID = as.numeric(substr(ID, 3, 4)))
+W3_pk_seq %>% mutate(model = "cheapest") %>% 
+  left_join(w3_topo_norm, by = "ID", relationship = "many-to-many") %>% 
+  as_tibble() %>% 
+  filter(name == "uaa") %>% 
+  lm(sequence ~ norm_value, data = .) %>% summary()
+group_by(name) %>% 
+  summarise(summary(lm(sequence ~ norm_value, data = .))$r.squared)
+  do(model = lm(sequence ~ norm_value, data = .)) %>% print()
+  mutate(p_value = summary(model)$coefficients["x", "Pr(>|t|)"]) #%>%
+  mutate(significant = p_value < 0.05)
   
-  output <- produce_metrics(chain, "W3", starts[i])
   
-  if(i == 1) many_chains <- output
-  if(i > 1) many_chains <- rbind(many_chains, output)
-}
+  
+  
+models <- data %>%
+  group_by(group) %>%
+  do(model = lm(y ~ x, data = .)) %>%
+  mutate(p_value = summary(model)$coefficients["x", "Pr(>|t|)"]) %>%
+  mutate(significant = p_value < 0.05)
 
-all_methods_acc <- many_chains
+# Merge significance information back to the original data
+data_with_significance <- left_join(data, models %>% select(group, significant), by = "group")
 
-View(all_methods_acc)
-all_methods_acc %>% filter(Accuracy == max(Accuracy))
+# Plotting
+ggplot(data_with_significance, aes(x = x, y = y, color = group)) +
+  geom_point() +
+  geom_smooth(data = . %>% filter(significant), method = "lm", se = FALSE) + # Only plot significant lines
+  labs(title = "Trend Lines for Significant Relationships Only",
+       subtitle = "Based on p-value < 0.05 for slope",
+       x = "X-axis", y = "Y-axis") +
+  theme_minimal()
+```
 
 
-smart_iterate_w3_new
+```{r FB}
 
+FB_twi_seq <- fb_twi_sequence %>% 
+  mutate(sequence = seq(1, length(ID), 1))
+
+fb_topo_norm <- fb_topo %>% 
+  group_by(name) %>% 
+  mutate(norm_value = range01(value))
+
+#tile plot, original vision
+rbind(FB_cheap %>% mutate(model = "cheapest"),
+      FB_pk_seq %>% mutate(model = "pk")) %>%
+  left_join(fb_topo_norm, by = "ID", relationship = "many-to-many") %>% 
+  drop_na() %>% 
+  ggplot() +
+  geom_tile(aes(x = sequence, y = name, fill = norm_value))+
+  scale_fill_gradient(low = "white", 
+                      high = "black")+
+  facet_grid(rows = "model")
+
+#will it look better as a line?
+fb_explain <- rbind(FB_cheap %>% mutate(model = "cheapest"),
+      FB_pk_seq %>% mutate(model = "pk")) %>% #,
+     # W3_random %>% mutate(model = "random"),
+     # W3_twi_seq %>% mutate(model = "twi")) %>% 
+  left_join(fb_topo_norm, by = "ID", relationship = "many-to-many") %>% 
+  mutate(shed = "FB") %>% 
+  drop_na()
+  ggplot() +
+  geom_smooth(aes(x = sequence, y = norm_value, color = name))+
+  facet_grid(~model, scales = "free_x")+
+  theme_classic()
+  
+rbind(FB_cheap %>% mutate(model = "cheapest"),
+      FB_pk_seq %>% mutate(model = "pk")) %>% #,
+     # W3_random %>% mutate(model = "random"),
+     # W3_twi_seq %>% mutate(model = "twi")) %>% 
+  left_join(w3_topo_norm, by = "ID", relationship = "many-to-many") %>% 
+  drop_na() %>%
+  mutate(shed = "FB") %>% 
+  ggplot(aes(x = sequence, y = norm_value, color = name)) +
+  geom_smooth(method = 'lm', se = FALSE)+
+  geom_point()+
+  facet_grid(name~model, scales = "free_x")+
+  theme_classic()
+```
+```{r ZZ}
+
+ZZ_twi_seq <- zz_twi_sequence %>% 
+  mutate(sequence = seq(1, length(ID), 1))
+
+zz_topo_norm <- zz_topo %>% 
+  group_by(name) %>% 
+  mutate(norm_value = range01(value))
+
+#tile plot, original vision
+rbind(ZZ_cheap %>% mutate(model = "cheapest"),
+      ZZ_pk_seq %>% mutate(model = "pk")) %>%
+  left_join(zz_topo_norm, by = "ID", relationship = "many-to-many") %>% 
+  drop_na() %>% 
+  ggplot() +
+  geom_tile(aes(x = sequence, y = name, fill = norm_value))+
+  scale_fill_gradient(low = "white", 
+                      high = "black")+
+  facet_grid(rows = "model")
+
+#will it look better as a line?
+zz_explain <- rbind(ZZ_cheap %>% mutate(model = "cheapest"),
+      ZZ_pk_seq %>% mutate(model = "pk")) %>% #,
+     # W3_random %>% mutate(model = "random"),
+     # W3_twi_seq %>% mutate(model = "twi")) %>% 
+  left_join(zz_topo_norm, by = "ID", relationship = "many-to-many") %>% 
+  mutate(shed = "ZZ")
+  drop_na() %>% 
+  ggplot() +
+  geom_smooth(aes(x = sequence, y = norm_value, color = name))+
+  facet_grid(~model, scales = "free_x")+
+  theme_classic()
+```
+```{r combine-as-lines}
+rbind(w3_explain, fb_explain, zz_explain) %>% 
+  ggplot() +
+  geom_smooth(aes(x = sequence, y = norm_value, color = name), method = 'lm', se = FALSE)+
+  facet_grid(model~shed, scales = "free_x")+
+  theme_classic()
+
+#lm(sequence ~ )
+
+```
+
+
+
+## UNUSED: Change in Q, versus accuracy
+```{r dQ}
+#calculate the delta Q
+df_long2 %>% 
+  mutate(dQ = abs(Q_mm_day - lag(Q_mm_day))) %>% 
+  ggplot()+
+  geom_point(aes(x = dQ, y = pk_accuracy, color = event_type))
+
+df_long2_fb %>% 
+  mutate(dQ = abs(roll_mean - lag(roll_mean))) %>% 
+  ggplot()+
+  geom_point(aes(x = dQ, y = pk_accuracy, color = event_type))+
+  lims(x = c(0,0.75))
+
+df_long2_zz %>% 
+  mutate(dQ = abs(roll_mean - lag(roll_mean))) %>% 
+  ggplot()+
+  geom_point(aes(x = dQ, y = pk_accuracy, color = event_type))+
+  lims(x = c(0,0.25))
+```
+```{r number-of-transitions}
+
+df_long2 %>%
+  filter(model == "cheap_accuracy") %>% 
+  left_join(num_trans_w3, by = "datetime") %>% 
+  ggplot()+
+  geom_point(aes(x = number_of_nodes, y = pk_accuracy, color = state_change),
+             size = 2, alpha = 0.5)
+
+df_long2_fb %>% 
+  filter(model == "cheap_accuracy") %>% 
+  left_join(num_trans_fb, by = "datetime") %>% 
+  ggplot()+
+  geom_point(aes(x = number_of_nodes, y = pk_accuracy, color = state_change),
+             size = 2, alpha = 0.5)
+
+df_long2_zz %>% 
+  filter(model == "cheap_accuracy") %>% 
+  left_join(num_trans_zz, by = "datetime") %>% 
+  ggplot()+
+  geom_point(aes(x = number_of_nodes, y = pk_accuracy, color = state_change),
+             size = 2, alpha = 0.5)
+
+rbind(df_long2 %>%
+  filter(model == "cheap_accuracy") %>% 
+  left_join(num_trans_w3, by = "datetime") %>% 
+        select(datetime, pk_accuracy, shed, number_of_nodes, state_change),
+  df_long2_fb %>% 
+  filter(model == "cheap_accuracy") %>% 
+  left_join(num_trans_fb, by = "datetime")%>% 
+        select(datetime, pk_accuracy, shed, number_of_nodes, state_change),
+  df_long2_zz %>% 
+  filter(model == "cheap_accuracy") %>% 
+  left_join(num_trans_zz, by = "datetime") %>% 
+        select(datetime, pk_accuracy, shed, number_of_nodes, state_change)) %>% 
+  ggplot()+
+  geom_point(aes(x = number_of_nodes, y = pk_accuracy, color = state_change),
+             size = 2, alpha = 0.5)+
+  facet_wrap(~shed)
 ```
