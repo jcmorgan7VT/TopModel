@@ -19,6 +19,8 @@ Use previously created script with functions for processing salt dilutions.
 source("calcQ.R")
 q_combined <- rbind(
 calcQ("./salt_dilutions/FB/FB_8_1") %>% mutate("shed" = "FB"),
+# calcQ_noK("./salt_dilutions/FB/FB_8_1", mean_k)%>% mutate("shed" = "FB"),
+
 #calcQ("./salt_dilutions/FB/FB_6_23_fail") %>% mutate("shed" = "FB"),
 calcQ("./salt_dilutions/ZZ/ZZ_8_1")%>% mutate("shed" = "ZZ"),
 calcQ("./salt_dilutions/ZZ/ZZ_7_1")%>% mutate("shed" = "ZZ"),
@@ -27,11 +29,11 @@ calcQ("./salt_dilutions/ZZ/ZZ_6_21")%>% mutate("shed" = "ZZ"),
 
 #no k
 calcQ_noK("./salt_dilutions/FB/FB_7_1", mean(c(0.0001120716, 2.621858e-06))) %>% mutate("shed" = "FB"),
-calcQ_noK("./salt_dilutions/FB/FB_6_23_Success", mean(c(0.0001120716, 2.621858e-06))) %>% mutate("shed" = "FB"),
+calcQ_noK("./salt_dilutions/FB/FB_6_23_Success", mean_k) %>% mutate("shed" = "FB"),
 
-#missing FB 8_5, no k and no upstream logger
+#missing FB 8_5, no k and no upstream logger. The k used is not really based on anything I think...
 # ZZ_8_5, no k and no upstream logger
-calcQ_noK_oneL("./salt_dilutions/FB/FB_8_5", mean(c(0.0001120716, 2.621858e-06))) %>% mutate("shed" = "FB"),
+calcQ_noK_oneL("./salt_dilutions/FB/FB_8_5", 0.0002120716) %>% mutate("shed" = "FB"),
 calcQ_noK_oneL("./salt_dilutions/ZZ/ZZ_8_5", mean(c(9.453437e-05, 4.017994e-06,
                                                     3.962093e-05, 9.693616e-05)))%>% mutate("shed" = "ZZ")
 )
@@ -145,7 +147,7 @@ processed_fb_stage24 <- FB_water24 %>%
   left_join(FB_air24, by = "DATETIME") %>% 
   mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
   mutate(stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701) %>% 
-    filter(DATETIME <= ymd_hms("2024-08-06 10:30:00 UTC")) %>% 
+    filter(DATETIME <= ymd_hms("2024-07-20 16:00:00 UTC")) %>% 
   mutate(minutes = minute(DATETIME)) %>% 
   filter(minutes %in% c(0, 30)) %>% 
   mutate(roll_mean = rollapply(stage_cm ,48,mean,align='center',fill=NA),
@@ -176,7 +178,8 @@ processed_fb_stage25 <- FB_water25 %>%
   left_join(FB_air25, by = "DATETIME") %>% 
   mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
   mutate(stage_cm = ((diff_psi*1000) / (997 * 9.8)) * 100 * 0.393701) %>% 
-    filter(DATETIME >= ymd_hms(max(processed_fb_stage_24$DATETIME))) %>% 
+    filter(DATETIME >= ymd_hms("2024-07-20 04:00:00 UTC"),
+           DATETIME <= ymd_hms("2024-08-10 19:30:00 UTC")) %>% 
   mutate(minutes = minute(DATETIME)) %>% 
   filter(minutes %in% c(0, 30)) %>% 
   mutate(roll_mean = rollapply(stage_cm ,24,mean,align='center',fill=NA),
@@ -188,31 +191,38 @@ fb_all <- rbind(processed_fb_stage25, processed_fb_stage24, processed_fb_stage23
   rename("datetime" = DATETIME) %>% 
   drop_na()
 
-fb_all %>% 
-  ggplot(aes(x = datetime, y = roll_mean))+
+processed_fb_stage25 %>% 
+  ggplot(aes(x = DATETIME, y = roll_mean))+
   geom_line()+
+  theme_classic()
+
+fb_all %>% 
+  ggplot(aes(x = datetime))+
+    geom_point(aes(y = stage_cm))+
+  geom_line(aes(y = roll_mean), color = "grey")+
   theme_classic()
 
 ```
 ```{r fit-stage-discharge}
 
-
+fb_all %>% 
+  filter(datetime == "2024-08-01 11:00:00 UTC")
 # processed salt dilutions
-dilutionsFB <- q_combined %>% filter(shed == "FB") %>% 
+dilutionsFB <- 
+  q_combined %>% filter(shed == "FB") %>% 
   mutate(datetime = ymd_hms(datetime),
          datetime = round_date(datetime, unit = minutes(30))) %>% 
   #rename(DATETIME = datetime) %>% 
   left_join(fb_all, by = "datetime")
 dilutionsFB
 
-#plot(log(dilutions$roll_mean), log(dilutions$discharge))
+plot((dilutionsFB$roll_mean), (dilutionsFB$discharge))
 
 # fitting linear equation
 fb_stage_Q_model <- lm(dilutions$discharge ~ dilutions$roll_mean)
-
+summary(fb_stage_Q_model)
 #try exponential model
-dilutionsFB_mod <- dilutionsFB[-3,]
-model_exp <- lm(log(dilutionsFB_mod$discharge)~ log(dilutionsFB_mod$roll_mean))
+model_exp <- lm(log(dilutionsFB$discharge)~ log(dilutionsFB$roll_mean))
 summary(model_exp)
 
 #mutate(Q = roll_mean * fb_stage_Q_model$coefficients[2] +  fb_stage_Q_model$coefficients[1])
@@ -221,10 +231,30 @@ summary(model_exp)
 # L/s discharge units
 fb_all %>% 
   mutate(Q = exp(log(roll_mean) * model_exp$coefficients[2] +  model_exp$coefficients[1])) %>%
+# convert Q to mm/day
   ggplot(aes(x = datetime, y = Q))+
   geom_line()
 
+### Convert L/s to mm/day
+LPers_to_mmPerDay <- function(Q, area){
+  # anticipating L/s, watershed area in km^2
+  Q1 <- Q * 86400 # convert days to seconds
+  Q2 <- Q1 * 0.001 # convert L to m^3
+  Q3 <- Q2 * 1E9 # convert m^3 to mm^3
+  
+  area_mm2 <- area * 1E12 # convert area to mm^2
+  Q4 <- Q3 / area_mm2 # divide mm^3/day by area mm^2 for mm/day
+  return(Q4)
+}
+# discharge not really the same order of magnitude...
 
+fb_all %>% 
+  mutate(Q = exp(log(roll_mean) * model_exp$coefficients[2] +  model_exp$coefficients[1])) %>%
+  mutate(FB_Q_mm_day = LPers_to_mmPerDay(Q, area_fb)) %>% 
+inner_join(w3_limbs) %>% 
+  select(datetime, FB_Q_mm_day, Q_mm_day) %>% 
+  ggplot(aes(x = Q_mm_day, y = FB_Q_mm_day))+
+  geom_point()
 
 # plot of discharge
 discharge_df$event_type[is.na(discharge_df$event_type)] <- "baseflow"
@@ -373,6 +403,12 @@ processed_zz_stage24 <- ZZ_water24 %>%
   filter(minutes %in% c(0, 30)) %>% 
   mutate(roll_mean = rollapply(stage_cm ,24,mean,align='center',fill=NA)) %>% 
   drop_na()
+
+processed_zz_stage24 %>% 
+  ggplot(aes(x = DATETIME))+
+    geom_point(aes(y = stage_cm))+
+  geom_line(aes(y = roll_mean), color = "grey")+
+  theme_classic()
 #### 2025 ####
 # in 2025, units are kPa, not psi
 ZZ_air25 <-
@@ -394,7 +430,8 @@ processed_zz_stage25 <- ZZ_water25 %>%
   left_join(ZZ_air25, by = "DATETIME") %>% 
   mutate(diff_psi = pressure_psi_water - pressure_psi_air) %>% 
   mutate(stage_cm = ((diff_psi*1000) / (997 * 9.8)) * 100 * 0.393701) %>% 
-  filter(DATETIME >= ymd_hms(max(processed_zz_stage24$DATETIME))) %>%
+  filter(DATETIME >= ymd_hms(max(processed_zz_stage24$DATETIME)),
+         DATETIME <= ymd_hms("2024-08-10 19:30:00 UTC")) %>%
   mutate(minutes = minute(DATETIME)) %>% 
   filter(minutes %in% c(0, 30)) %>% 
   mutate(roll_mean = rollapply(stage_cm ,24,mean,align='center',fill=NA)) %>% 
@@ -402,7 +439,9 @@ processed_zz_stage25 <- ZZ_water25 %>%
 
 #### combined ####
 #View(processed_zz_stage)
-processed_zz_stage25 %>%
+rbind(processed_zz_stage23,
+      processed_zz_stage24,
+      processed_zz_stage25) %>%
   ggplot()+
     geom_line(aes(x = DATETIME, y = stage_cm))+
     geom_line(aes(x = DATETIME, y = roll_mean), color = "grey")+  theme_classic()+
@@ -415,11 +454,11 @@ processed_zz_stage25 %>%
 #Read in measurements from 2024
 
 # processed salt dilutions
-dilutions <- q_combined %>% filter(shed == "ZZ") %>% 
+dilutionsZZ <- q_combined %>% filter(shed == "ZZ") %>% 
   mutate(datetime = round_date(datetime, unit = minutes(30))) %>% 
   rename(DATETIME = datetime) %>% 
   left_join(processed_zz_stage, by = "DATETIME")
-dilutions
+dilutionsZZ
 
 ZZ_water %>% 
   left_join(ZZ_air, by = "DATETIME") %>% 

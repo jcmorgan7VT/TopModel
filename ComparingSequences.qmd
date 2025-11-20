@@ -6587,7 +6587,7 @@ area_w3 <- expanse(w3_outline)/(1000 * 1000) #km^2
 ```
 
 drainage density is just stream length (m) divided by area of shed (m^2)
-```{r drainage-density}
+```{r calculate-values}
 ## W3
 #determine total stream length
 w3_net <- vect("./carrieZigZag/w3_network.shp")
