@@ -6606,7 +6606,7 @@ fb_outline <- as.polygons(rast(fb_shed), extent=FALSE)
 
 length_fb <- sum(perim(fb_net))/1000 #km
 #determine watershed area
-area_fb <- expanse(fb_outline)/(1000 * 1000) #m^2
+area_fb <- expanse(fb_outline)/1e6 #km^2
 length_fb / area_fb
 
 ## ZZ

@@ -26,10 +26,12 @@ calcQ("./salt_dilutions/ZZ/ZZ_8_1")%>% mutate("shed" = "ZZ"),
 calcQ("./salt_dilutions/ZZ/ZZ_7_1")%>% mutate("shed" = "ZZ"),
 #calcQ("./salt_dilutions/ZZ/ZZ_6_23") %>% mutate("shed" = "ZZ"),#different timestep, after fixing gave negative number
 calcQ("./salt_dilutions/ZZ/ZZ_6_21")%>% mutate("shed" = "ZZ"),
+calcQ("./salt_dilutions/FB/FB_6_23_fail") %>% mutate("shed" = "FB"),
 
 #no k
 calcQ_noK("./salt_dilutions/FB/FB_7_1", mean(c(0.0001120716, 2.621858e-06))) %>% mutate("shed" = "FB"),
 calcQ_noK("./salt_dilutions/FB/FB_6_23_Success", mean_k) %>% mutate("shed" = "FB"),
+
 
 #missing FB 8_5, no k and no upstream logger. The k used is not really based on anything I think...
 # ZZ_8_5, no k and no upstream logger
@@ -108,7 +110,7 @@ processed_fb_stage23 <- FB_water23 %>%
          stage_cm = ((diff_psi*6894.76) / (997 * 9.8)) * 100 * 0.393701,
          minutes = minute(DATETIME)) %>% 
   filter(DATETIME > ymd_hms("2023-07-22 00:00:00"),
-         DATETIME < ymd_hms("2023-11-12 00:00:00")) %>% 
+         DATETIME < ymd_hms("2023-10-10 00:00:00")) %>% 
   filter(!(DATETIME >= ymd_hms("2023-09-20 00:00:00") & 
           DATETIME <= ymd_hms("2023-09-22 00:00:00"))) %>% 
   filter(minutes %in% c(0, 30)) %>% 
@@ -117,7 +119,8 @@ processed_fb_stage23 <- FB_water23 %>%
 
 
 processed_fb_stage23 %>% 
-  ggplot(aes(x = DATETIME, y = roll_mean))+
+  mutate(Q = exp((roll_mean) * log(model_exp$coefficients[2]) +  model_exp$coefficients[1])) %>%
+  ggplot(aes(x = DATETIME, y = Q))+
   geom_line()+
   theme_classic()
 #output processed salt dilutions
@@ -191,7 +194,8 @@ fb_all <- rbind(processed_fb_stage25, processed_fb_stage24, processed_fb_stage23
   rename("datetime" = DATETIME) %>% 
   drop_na()
 
-processed_fb_stage25 %>% 
+processed_fb_stage23 %>% 
+  drop_na() %>% 
   ggplot(aes(x = DATETIME, y = roll_mean))+
   geom_line()+
   theme_classic()
@@ -204,9 +208,6 @@ fb_all %>%
 
 ```
 ```{r fit-stage-discharge}
-
-fb_all %>% 
-  filter(datetime == "2024-08-01 11:00:00 UTC")
 # processed salt dilutions
 dilutionsFB <- 
   q_combined %>% filter(shed == "FB") %>% 
@@ -216,45 +217,62 @@ dilutionsFB <-
   left_join(fb_all, by = "datetime")
 dilutionsFB
 
-plot((dilutionsFB$roll_mean), (dilutionsFB$discharge))
+
+test <- data.frame(
+  x = seq(1, 20, 1)
+)
+
 
 # fitting linear equation
 fb_stage_Q_model <- lm(dilutions$discharge ~ dilutions$roll_mean)
 summary(fb_stage_Q_model)
 #try exponential model
-model_exp <- lm(log(dilutionsFB$discharge)~ log(dilutionsFB$roll_mean))
+model_exp <- lm(log(dilutionsFB$discharge)~ log(dilutionsFB$stage_cm))
 summary(model_exp)
+
+a <- coef(model_exp)[1]   # intercept on log scale
+b <- coef(model_exp)[2]   # slope
+
+
+
 
 #mutate(Q = roll_mean * fb_stage_Q_model$coefficients[2] +  fb_stage_Q_model$coefficients[1])
 
 # applying exponential equation
 # L/s discharge units
 fb_all %>% 
-  mutate(Q = exp(log(roll_mean) * model_exp$coefficients[2] +  model_exp$coefficients[1])) %>%
+  mutate(Q = exp(a) * stage_cm^b) %>% 
 # convert Q to mm/day
-  ggplot(aes(x = datetime, y = Q))+
+  ggplot(aes(x = datetime, y = (Q)))+
   geom_line()
 
 ### Convert L/s to mm/day
+# LPers_to_mmPerDay <- function(Q, area){
+#   # anticipating L/s, watershed area in km^2
+#   Q1 <- Q * 86400 # convert days to seconds
+#   Q2 <- Q1 * 0.001 # convert L to m^3
+#   Q3 <- Q2 * 1E9 # convert m^3 to mm^3
+#   
+#   area_mm2 <- area * 1E12 # convert area to mm^2
+#   Q4 <- Q3 / area_mm2 # divide mm^3/day by area mm^2 for mm/day
+#   return(Q4)
+# }
+
 LPers_to_mmPerDay <- function(Q, area){
-  # anticipating L/s, watershed area in km^2
-  Q1 <- Q * 86400 # convert days to seconds
-  Q2 <- Q1 * 0.001 # convert L to m^3
-  Q3 <- Q2 * 1E9 # convert m^3 to mm^3
+  # Q in L/s
+  # area in km^2
   
-  area_mm2 <- area * 1E12 # convert area to mm^2
-  Q4 <- Q3 / area_mm2 # divide mm^3/day by area mm^2 for mm/day
-  return(Q4)
+  Q_m3_day <- Q * 86400 * 0.001     # L/s → m3/day
+  area_m2  <- area * 1e6            # km2 → m2
+  
+  mm_day <- (Q_m3_day / area_m2) * 1000  # m → mm
+  
+  return(mm_day)
 }
 # discharge not really the same order of magnitude...
+dilutionsFB %>% 
+  mutate(mmperday = LPers_to_mmPerDay(discharge, area_fb))
 
-fb_all %>% 
-  mutate(Q = exp(log(roll_mean) * model_exp$coefficients[2] +  model_exp$coefficients[1])) %>%
-  mutate(FB_Q_mm_day = LPers_to_mmPerDay(Q, area_fb)) %>% 
-inner_join(w3_limbs) %>% 
-  select(datetime, FB_Q_mm_day, Q_mm_day) %>% 
-  ggplot(aes(x = Q_mm_day, y = FB_Q_mm_day))+
-  geom_point()
 
 # plot of discharge
 discharge_df$event_type[is.na(discharge_df$event_type)] <- "baseflow"
@@ -266,9 +284,80 @@ discharge_df %>%
   geom_point()
 
 ```
+```{r plots-to-identify-problem}
+# plot showing my measurement points and the power law curve fit to them
+test2 <- test %>% 
+mutate(y = exp(a) * x^b)
+
+ggplot()+
+  geom_point(data = dilutionsFB,
+             aes(x = stage_cm,
+                 y = discharge))+
+  geom_line(data = test2,
+             aes(x = x, 
+                 y = y),
+             col = "red")+
+  labs(x = "Stage (cm)",
+       y = "Salt-dilution Q (L/s)",
+       title = "Stage-Discharge, FB")+
+  theme_classic()
+
+
+# Getting W3 discharge in to compare
+q_23_bind <- 
+  q_23_f %>% 
+  select(DATETIME, Discharge_ls) %>% 
+  rename("datetime" = DATETIME
+         )
+q_24_bind <- 
+  q_24_f %>% 
+  select(datetime, Q_cfs) %>% 
+  mutate(Discharge_ls = Q_cfs * 28.316847) %>% 
+    select(-Q_cfs)
+
+w3_exp <- rbind(q_23_bind, q_24_bind) %>% 
+  #filter(DATETIME > start & DATETIME < stop) %>% 
+  mutate("Q_mm_day" = LPers_to_mmPerDay(Discharge_ls, 0.4260021))
+
+
+# plot to show FB discharge conversion problem
+fb_all %>% 
+  mutate(Q = exp(a) * stage_cm^b) %>% 
+  #mutate(Q = exp(roll_mean * model_exp$coefficients[2] +  model_exp$coefficients[1])) %>%
+  # I don't know why, but it is just off by 100x
+  mutate(FB_Q_mm_day = LPers_to_mmPerDay(Q, area_fb)) %>% 
+inner_join(w3_exp) %>% 
+  #select(datetime, FB_Q_mm_day, Q_mm_day) %>% 
+  ggplot(aes(x = Q_mm_day, y = FB_Q_mm_day))+
+  labs(x = "W3 Discharge (mm/day)",
+       y = "FB Discharge x 100 (mm/day)",
+       title = "FB discharge problem")+
+  geom_point(alpha = 0.2)+
+  # lims(x = c(0, 50),
+  #      y = c(0, 50))+
+  theme_classic()
+
+
+fb_all %>% 
+  mutate(Q = exp(a) * stage_cm^b) %>% 
+  #mutate(Q = exp(roll_mean * model_exp$coefficients[2] +  model_exp$coefficients[1])) %>%
+  # I don't know why, but it is just off by 100x
+  mutate(FB_Q_mm_day = LPers_to_mmPerDay(Q, area_fb)*100) %>% 
+inner_join(w3_exp) %>% 
+  #select(datetime, FB_Q_mm_day, Q_mm_day) %>% 
+  ggplot(aes(x = Discharge_ls, y = Q))+
+  labs(x = "W3 Discharge (L/s)",
+       y = "FB Discharge (L/s)",
+       title = "FB discharge problem")+
+  geom_point(alpha = 0.2)+
+  theme_classic()
+```
+
 
 ```{r identify-events}
 #identifying events
+fb_all <- processed_fb_stage23 %>% 
+  drop_na()
 bf <- baseflowB(fb_all$roll_mean, alpha = 0.99)
 
 
