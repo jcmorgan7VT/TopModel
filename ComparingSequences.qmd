@@ -2171,6 +2171,8 @@ all_random <- rbind(calc_props(W3_random, "W3"),
 
 
 # BFS sequence
+
+11/23/25 - can improve BFS by checking every
 Doing by BFS algorithm
 ```{r W3}
 #pick a sensor randomly, then test every other sensor to see which has the best hierarchical behavior with that one. Proceed down the list without replacement
@@ -2375,6 +2377,7 @@ event_seqsW3_23 <- read_csv("W3event_sequences23.csv")
 event_seqsW3_24 <- read_csv("W3event_sequences24.csv")
 ```
 
+
 ```{r event-seqs-W3}
 # make loop and function to iterate through many sequences, and determine their accuracy through time
 # only for W3
@@ -2453,6 +2456,128 @@ best_event_seqW3 <-
   event_seqsW3_23 %>% 
   filter(event_id == 2) %>% 
   select(ID, Sequence)
+```
+```{r event-seqs-FB}
+
+FBall_events <- read_csv("FB_events.csv") %>% 
+  rename(datetime = DATETIME)
+
+ttt <- 
+input_fb %>%
+  inner_join(FBall_events,  by = c("datetime")) %>% 
+    filter(binary == 1) %>% 
+    group_by(ID, event_id) %>% 
+    summarise(start_of_flow = min(datetime)) %>% 
+    arrange(start_of_flow) %>% 
+  drop_na()
+
+#write a for loop to go through event ids, calculate the sequence for each event, and then find an "average" sequence
+for(i in 1:length(unique(ttt$event_id))){
+  event <- unique(ttt$event_id)[i]
+  
+  sequenced_event <- filter(ttt, event_id == event) %>% 
+    arrange(start_of_flow) %>% 
+      rowid_to_column("Sequence")
+  
+  if(i == 1) all_events <- sequenced_event
+  if(i > 1) all_events <- rbind(all_events, sequenced_event)
+}
+
+# Define sequences to then test using my suite of functions
+all_eventsfb <- all_events
+all_eventsfb_sequences <- all_eventsfb %>% 
+  select(-start_of_flow)
+write_csv(all_eventsfb_sequences, "FBevent_sequences.csv")
+# add the end of each event
+
+#make data long for final plot
+
+for(i in 1:length(unique(all_eventsfb_sequences$event_id))){
+out <- all_eventsfb_sequences %>% 
+  filter(event_id == i) %>% 
+  select(-event_id) %>%
+produce_metrics(., "FB", i)
+
+  if(i <= 1) allout <- out
+  if(i > 1) allout <- rbind(allout, out)
+}
+event_seqsFB_accuracy <- allout
+event_seqsFB_accuracy
+event_seqsFB_accuracy %>% 
+  filter(Accuracy == max(Accuracy))
+
+#only 14 sensors in sequence
+best_event_seqFB <- 
+  all_eventsfb %>% 
+  filter(event_id == 14) %>% 
+  select(ID, Sequence)
+```
+
+```{r FB-plots}
+#For each event, plot the grid of presence/absence data in any order
+
+binary_colors <- c("#DB995A", "#586BA4")
+
+end_of_events <- discharge_df_24 %>% 
+    group_by(event_id) %>% 
+    summarise(start_of_event = min(datetime) + days(1),
+              end_of_event = max(datetime) - days(1))
+
+
+all_events_readyfb <- all_eventsfb %>% 
+  select(-start_of_flow)
+
+# tile plot of presence and absence data
+input_fb  %>% 
+  inner_join(FBall_events, by = "datetime") %>% 
+  filter(event_type != "baseflow") %>% 
+  left_join(all_events_readyfb) %>% 
+  ggplot(aes(x = datetime))+
+  geom_tile(aes(y = Sequence, fill = as.character(binary)))+
+  scale_y_continuous("Observed Activation Order")+
+  #facet_grid(~name, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary_colors,
+                    breaks = c(0, 1),
+                    labels = c("Dry", "Wet"),
+                    name = ""
+                    )+
+  #geom_vline(aes(xintercept = start_of_event))+
+   # geom_vline(aes(xintercept = end_of_event))+
+
+  facet_wrap(~event_id, scales = "free")+
+  labs(#title = "Very dry to very wet",
+       #subtitle = "W3, 10/20 - 10/22, 2023",
+       x = "")+
+  theme_classic()+
+    theme(legend.position="right",
+          axis.title.y = element_text(angle = 90))
+
+
+input_fb  %>% 
+  inner_join(FBall_events, by = "datetime") %>% 
+  filter(event_type != "baseflow") %>% 
+  left_join(all_events_readyfb) %>% 
+  filter(event_id == 12) %>% 
+  select(ID, Sequence) %>% unique()
+
+#create a second plot with each of the identified events highlighed on hydrograph
+end_of_events <- discharge_df_24 %>% 
+    group_by(event_id) %>% 
+    summarise(start_of_event = min(datetime) + days(1),
+              end_of_event = max(datetime) - days(1))
+
+input_w3  %>% filter(datetime < stop24,
+                     datetime >= start24) %>% 
+  left_join(discharge_df_24) %>% 
+  left_join(end_of_events, by = "event_id") %>% 
+  #filter(event_type != "baseflow") %>% 
+  left_join(all_events_ready) %>% 
+  ggplot(aes(x = datetime))+
+  geom_rect(aes(xmin = start_of_event, xmax = end_of_event, ymin = 0, ymax = 50, fill = as.character(event_id)), na.rm = TRUE)+
+  geom_line(aes(y = Q_mm_day))+
+  scale_fill_discrete(na.value = "transparent")
+
 ```
 
 # Testing Sequences, running model
