@@ -242,7 +242,7 @@ calculate_hierarchy_combos <- function(routes, input, timestep){
 
 #fantastic four function has been modified, to do average daily state. Removed hourly and 4 hr time blocks
 fantastic_four_combos <- function(routes, shed){
-  theFour <- c("30mins", "daily")
+  theFour <- c("30mins")
   
   for(q in 1:length(theFour)){
     #if statements to detect timescale, calculate appropriate inputs
@@ -255,28 +255,7 @@ fantastic_four_combos <- function(routes, shed){
       pivot_wider(names_from = ID, values_from = binary)
     timestep <- minutes(30)
   } 
-  else if(timescale == "daily"){
-    input <- rbind(input_w3, input_fb, input_zz) %>%
-      filter(wshed == shed) %>% 
-      mutate(
-             "day" = day(datetime),
-             "month" = month(datetime),
-             "year" = year(datetime)) %>% 
-      group_by(day, month, year, ID) %>%
-      summarise(avg_state = mean(binary)) %>% 
-      ungroup() %>% 
-      mutate(avg_state = round(avg_state)) %>% 
-      rename("binary" = avg_state) %>% 
-      mutate("datetime" = ymd_hms(paste0(year,"-",month,"-",day," ","00:00:00"))) %>% 
-      select(datetime, binary, ID) %>%
-      mutate(ID = paste0("r_", ID)) %>%
-          arrange(datetime) %>% 
-      pivot_wider(names_from = ID, values_from = binary)
-    timestep <- days(1)
-  } 
-  else {
-    stop("Not a timescale anticipated!")
-  }
+  
     out <- calculate_hierarchy_combos(routes, input, timestep)
     out$timescale <- theFour[q]
     
@@ -358,6 +337,21 @@ convert_to_updown <- function(input){
   drop_na()
   
   return(convert)
+}
+
+convert_to_IDseq2 <- function(input){ 
+  #expecting input that is a df of up/down structure
+  # different than other function, where first row is the most upstream pair, or last in sequence
+  input2 <- input#input[rev(seq_len(nrow(input))), ]
+  #make list in order of parent-child sequence
+  IDs <- c(input2$up[1], input2$down)
+  #make sequence ID column
+  sequence <- seq(1, length(input2$up) + 1, 1)
+ 
+  convert <- tibble(ID = as.numeric(substr(IDs,3,4)),
+           sequence = sequence)
+  
+return(convert)
 }
 ```
 
@@ -2172,7 +2166,50 @@ all_random <- rbind(calc_props(W3_random, "W3"),
 
 # BFS sequence
 
-11/23/25 - can improve BFS by checking every
+create look-up table of all combinations of prop values
+Do not need to implement for other two sheds I think
+```{r W3}
+input <- rbind(bind23, bind24) %>%
+  filter(wshed == "W3", mins %in% c(0, 30)) %>%
+  select(datetime, binary, ID) %>%
+  #mutate(ID = paste0("r_",ID)) %>% 
+  pivot_wider(names_from = ID, values_from = binary)
+
+combos <- W3_IDs
+
+#create empty list to hold repeated node IDs
+zzz <- length(combos)
+all_list <- c()
+for(z in 1:zzz){
+  all_list <- c(all_list, rep(combos[z], zzz))
+}
+#create data frame with all possible combinations
+W3_combos_routes <- data.frame("up" = rep(combos, zzz),
+                                "down" = all_list)
+#Run suite of functions to determine proportion of time that state changes follow the parent -> child relationship
+W3_all_combos <- calc_props(W3_combos_routes, "W3")
+
+lookup_table <- W3_all_combos %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  mutate(child = as.numeric(substr(up, 3, 4)),
+         parent = as.numeric(substr(down, 3, 4))) %>% 
+  select(-c(up, down)) %>% 
+  pivot_wider(names_from = parent, values_from = prop)
+
+tall_lookup <- 
+  W3_all_combos %>% 
+  ungroup() %>% 
+  select(up, down, prop) %>% 
+  mutate(child = as.numeric(substr(up, 3, 4)),
+         parent = as.numeric(substr(down, 3, 4))) %>% 
+  select(-c(up, down))
+  
+
+#general_graph(W3_IDs, "W3", methods = c("cheapest_insertion"), two_opt = TRUE)
+```
+
+## Running BFS Algorithm
 Doing by BFS algorithm
 ```{r W3}
 #pick a sensor randomly, then test every other sensor to see which has the best hierarchical behavior with that one. Proceed down the list without replacement
@@ -2306,12 +2343,15 @@ View(smart_iterate_w3_new)
 # write_csv(smart_iterate_zz_new, "breadthfs_resultsZZ.csv")
 ```
 
+## Skip run, read results
 Already run BFS, now can just read in results in future
-```{r BFS-results}
+```{r read-csv-BFS-results}
 bfsW3 <- read_csv("breadthfs_results.csv")
 bfsFB <- read_csv("breadthfs_resultsFB.csv")
 bfsZZ <- read_csv("breadthfs_resultsZZ.csv")
 
+
+# optional plot of the density plot of prop values, compared to pk
 bfsZZ %>% group_by(start) %>% 
   ggplot()+
   geom_density(data = bfsZZ, 
@@ -2326,65 +2366,146 @@ bfsZZ %>% group_by(start) %>%
     nest(sequence = as.list(up))
 
 ```
-```{r}
 
-
+## determine average sequence
+```{r W3}
+# for loop to go through all of the seeds, convert to IDseq format
 for(i in 1:length(unique(bfsW3$start))){
 out <- bfsW3 %>% 
+  filter(start == i) %>% 
   select(up, down) %>% 
-  convert_to_IDseq
-  filter(event_id == i) %>% 
-  select(-event_id) %>%
-produce_metrics(., "W3", i)
+  # make sure to use convert 2, so that the upstream most is not lost
+  convert_to_IDseq2() %>% 
+  mutate(sensor_id = ID,
+         event_id = i) %>% 
+  select(event_id, sensor_id)
 
   if(i <= 1) allout <- out
   if(i > 1) allout <- rbind(allout, out)
 }
-event_seqsW3_23_accuracy <- allout
-event_seqsW3_23_accuracy %>% 
-  filter(Accuracy == max(Accuracy))
+#View(allout)
 
+# use average activation sequence function to find the average sequence from all BFS seeds
+bfs_avg_seq <- average_activation_sequence(data.frame(allout))
 
-best_bfs_seqW3 <- 
-  bfsW3 %>% 
-  filter(start == 2) %>% 
-  select(up, down) %>% 
-  convert_to_IDseq2()
+average_bfs_seq <- as.numeric(bfs_avg_seq$consensus_sequence)
+
+best_bfs_w3 <- tibble(ID = average_bfs_seq,
+       sequence = seq(1, length(average_bfs_seq), 1))
+
+# calculate accuracy of the average sequence
+tibble(ID = average_bfs_seq,
+       Sequence = seq(1, length(average_bfs_seq), 1)) %>% 
+produce_metrics(., "W3", "average")
+
+# # Original method of finding the best of the 26 BFS sequences
+# for(i in 1:length(unique(bfsW3$start))){
+# out <- bfsW3 %>% 
+#   select(up, down) %>% 
+#   convert_to_IDseq
+#   filter(event_id == i) %>% 
+#   select(-event_id) %>%
+# produce_metrics(., "W3", i)
+# 
+#   if(i <= 1) allout <- out
+#   if(i > 1) allout <- rbind(allout, out)
+# }
+# event_seqsW3_23_accuracy <- allout
+# event_seqsW3_23_accuracy %>% 
+#   filter(Accuracy == max(Accuracy))
+# 
+# 
+# best_bfs_seqW3 <- 
+#   bfsW3 %>% 
+#   filter(start == 2) %>% 
+#   select(up, down) %>% 
+#   convert_to_IDseq2()
   
 #(just1[rev(seq_len(nrow(just1))), ])
 
-convert_to_IDseq2 <- function(input){ 
-  #expecting input that is a df of up/down structure
-  # different than other function, where first row is the most upstream pair, or last in sequence
-  input2 <- input#input[rev(seq_len(nrow(input))), ]
-  #make list in order of parent-child sequence
-  IDs <- c(input2$up[1], input2$down)
-  #make sequence ID column
-  sequence <- seq(1, length(input2$up) + 1, 1)
- 
-  convert <- tibble(ID = as.numeric(substr(IDs,3,4)),
-           sequence = sequence)
-  
-return(convert)
+
+```
+```{r FB}
+# for loop to go through all of the seeds, convert to IDseq format
+for(i in 1:length(unique(bfsFB$start))){
+out <- bfsFB %>% 
+  filter(start == i) %>% 
+  select(up, down) %>% 
+  # make sure to use convert 2, so that the upstream most is not lost
+  convert_to_IDseq2() %>% 
+  mutate(sensor_id = ID,
+         event_id = i) %>% 
+  select(event_id, sensor_id)
+
+  if(i <= 1) allout <- out
+  if(i > 1) allout <- rbind(allout, out)
 }
+#View(allout)
+
+# use average activation sequence function to find the average sequence from all BFS seeds
+bfs_avg_seq <- average_activation_sequence(data.frame(allout))
+
+average_bfs_seq <- as.numeric(bfs_avg_seq$consensus_sequence)
+
+best_bfs_fb <- tibble(ID = average_bfs_seq,
+       sequence = seq(1, length(average_bfs_seq), 1))
+
+# calculate accuracy of the average sequence
+tibble(ID = average_bfs_seq,
+       Sequence = seq(1, length(average_bfs_seq), 1)) %>% 
+produce_metrics(., "FB", "average")
+
+
+```
+```{r ZZ}
+# for loop to go through all of the seeds, convert to IDseq format
+for(i in 1:length(unique(bfsZZ$start))){
+out <- bfsZZ %>% 
+  filter(start == i) %>% 
+  select(up, down) %>% 
+  # make sure to use convert 2, so that the upstream most is not lost
+  convert_to_IDseq2() %>% 
+  mutate(sensor_id = ID,
+         event_id = i) %>% 
+  select(event_id, sensor_id)
+
+  if(i <= 1) allout <- out
+  if(i > 1) allout <- rbind(allout, out)
+}
+#View(allout)
+
+# use average activation sequence function to find the average sequence from all BFS seeds
+bfs_avg_seq <- average_activation_sequence(data.frame(allout))
+
+average_bfs_seq <- as.numeric(bfs_avg_seq$consensus_sequence)
+
+best_bfs_zz <- tibble(ID = average_bfs_seq,
+       sequence = seq(1, length(average_bfs_seq), 1))
+
+# calculate accuracy of the average sequence
+tibble(ID = average_bfs_seq,
+       Sequence = seq(1, length(average_bfs_seq), 1)) %>% 
+produce_metrics(., "ZZ", "average")
+
+convert_to_updown(best_bfs_zz) %>% 
+  calc_props(., "ZZ")
+```
+
+```{r format-for-density-plot}
+all_bfs <- rbind(
+convert_to_updown(best_bfs_w3) %>% 
+  calc_props(., "W3"),
+convert_to_updown(best_bfs_fb) %>% 
+  calc_props(., "FB"),
+convert_to_updown(best_bfs_zz) %>% 
+  calc_props(., "ZZ"))
 ```
 
 
 # Event based sequences
-```{r}
-# created in DetermineActualSequence.qmd,a csv containing the activation sequence for each event for W3
-event_seqsW3_23 <- read_csv("W3event_sequences23.csv")
-event_seqsW3_24 <- read_csv("W3event_sequences24.csv")
-```
 
-```{r}
-tibble(ID = average_event_seq,
-       Sequence = seq(1, length(average_event_seq), 1)) %>% 
-produce_metrics(., "W3", "average")
-
-```
-
-
+Old method to determine the best sequence of the event sequences
+Instead of looking at all of the event sequences and finding the best one, I am using pairwise comparison to determine the "average" sequence.
 ```{r event-seqs-W3}
 # make loop and function to iterate through many sequences, and determine their accuracy through time
 # only for W3
@@ -2519,6 +2640,96 @@ best_event_seqFB <-
   filter(event_id == 14) %>% 
   select(ID, Sequence)
 ```
+
+```{r skip-analysis-read-results}
+# created in DetermineActualSequence.qmd,a csv containing the activation sequence for each event for W3
+event_seqsW3_23 <- read_csv("W3event_sequences23.csv")
+event_seqsW3_24 <- read_csv("W3event_sequences24.csv")
+```
+
+## Determine average sequence, using pairwise comparison
+```{r pairwise-comparison-find-average-seq}
+
+# perhaps terrible practice, but I am loading and unloading the packages within the function...
+average_activation_sequence <- function(data, 
+                                        sensor_col = "sensor_id", 
+                                        event_col = "event_id") {
+  
+p_load(stringdist, DECIPHER)
+  # ---- 1. Extract sequences from dataframe order ----
+  data <- data[order(data[[event_col]]), ]
+  seqs <- split(data[[sensor_col]], data[[event_col]])
+  
+  # ---- 2. Identify all unique sensors ----
+  all_sensors <- sort(unique(unlist(seqs)))
+  n <- length(all_sensors)
+  
+  # Precedence matrix: P[i,j] = fraction where i occurs before j
+  P <- matrix(NA, nrow = n, ncol = n,
+              dimnames = list(all_sensors, all_sensors))
+  
+  # ---- 3. Compute precedence probabilities ----
+  for (s1 in all_sensors) {
+    for (s2 in all_sensors) {
+      
+      if (s1 == s2) next
+      
+      total <- 0
+      wins  <- 0
+      
+      for (seq in seqs) {
+        # Only count events where both sensors appear
+        if (s1 %in% seq && s2 %in% seq) {
+          total <- total + 1
+          if (match(s1, seq) < match(s2, seq)) wins <- wins + 1
+        }
+      }
+      
+      if (total > 0) {
+        P[as.character(s1), as.character(s2)] <- wins / total
+      }
+    }
+  }
+  
+  # ---- 4. Compute global precedence score for each sensor ----
+  # Score = average probability sensor occurs before others
+  score <- rowMeans(P, na.rm = TRUE)
+  
+  # ---- 5. Consensus activation sequence ----
+  consensus_sequence <- names(sort(score, decreasing = TRUE))
+  
+  p_unload(stringdist, DECIPHER)
+  # ---- 6. Return everything ----
+  list(
+    sequences = seqs,
+    precedence_matrix = P,
+    precedence_scores = score,
+    consensus_sequence = consensus_sequence
+  )
+  
+
+}
+
+result <- average_activation_sequence(data)
+
+average_event_seq <- as.numeric(result$consensus_sequence)
+
+```
+
+```{r W3}
+# format the average sequence
+best_event_seq <- tibble(ID = average_event_seq,
+       sequence = seq(1, length(average_event_seq), 1))
+
+# report accuracy of average event sequence when modeled
+tibble(ID = average_event_seq,
+       Sequence = seq(1, length(average_event_seq), 1)) %>% 
+produce_metrics(., "W3", "average")
+
+```
+
+
+
 
 ```{r FB-plots}
 #For each event, plot the grid of presence/absence data in any order
@@ -2752,6 +2963,83 @@ comparison <- input_w3 %>%
   select(-wshed, -mins)
 ```
 
+```{r trouble-shooting}
+# trouble shootiung
+calc_model_result(W3_pk_seq$ID, "W3")
+
+#calc_model_result <- function(input_sequence, shed){
+input_sequence <- W3_pk_seq$ID
+shed <- "W3"
+  input <- if(shed == "W3") input_w3
+  else if (shed == "FB") input_fb
+  else if (shed == "ZZ") input_zz
+  
+number_activated <- 
+  input %>% 
+  #left_join(W3_cheap, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins)) %>% 
+  mutate(deployed = length(binary)) %>% 
+  #arrange(sequence) %>% 
+      #filter(binary == 1) %>% 
+    summarise(number_flowing = length(binary[binary == 1]),
+            deployed = list(unique(ID))) #%>% View()
+
+#W3_pk_seq$ID[W3_pk_seq$ID %in% unlist(number_activated$deployed[1])]
+
+# 2. Dataframe with timestamps and how many nodes to activate
+
+# Fixed full node sequence
+full_node_sequence <- input_sequence
+
+# Sample activation schedule
+activation_schedule <- number_activated
+
+# Function to generate a single activation row with NA for missing nodes
+    '%!in%' <- function(x,y)!('%in%'(x,y))
+
+generate_activation_row <- function(datetime, n_active, available_nodes) {
+  #n_active <- activation_schedule$number_flowing[1]
+  #available_nodes <- unlist(activation_schedule$deployed[1])
+  # Order available nodes based on full sequence
+  ordered_available <- full_node_sequence[full_node_sequence %in% available_nodes]
+  
+    #not_deployed <- full_node_sequence[full_node_sequence %!in% (available_nodes)]
+
+
+  
+  # Identify the first `n_active` nodes to activate
+  activated_nodes <- head(ordered_available, n_active)
+  # ordered_available
+  # activated_nodes
+  # full_node_sequence
+  output <- tibble("datetime" = datetime,
+             "ID" = full_node_sequence,
+             "binary" = 0) %>% 
+    #mutate(binary = case_when(ID %in% ordered_available ~ 0)) %>% 
+    mutate(binary = case_when(
+                              ID %in% activated_nodes ~ 1,
+                              ID %!in% ordered_available ~ NA,
+                              TRUE ~ 0))
+  return(output)
+}
+
+# Apply the function to each row of the activation schedule
+
+#model_out <- 
+  Map(generate_activation_row, 
+    datetime = activation_schedule$datetime, 
+    n_active = activation_schedule$number_flowing, 
+    available_nodes = activation_schedule$deployed) %>% dplyr::bind_rows() %>% 
+  dplyr::rename(pred_out = binary)
+
+return(model_out)
+}
+
+#Testing function on W3
+```
+
+
 Now make a function to calc the model result using this method
 ```{r define calc-model-result function}
 #new method, incorporating missing nodes at different timesteps
@@ -2818,7 +3106,7 @@ model_out <- Map(generate_activation_row,
     datetime = activation_schedule$datetime, 
     n_active = activation_schedule$number_flowing, 
     available_nodes = activation_schedule$deployed) %>% dplyr::bind_rows() %>% 
-  rename(pred_out = binary)
+  dplyr::rename(pred_out = binary)
 
 return(model_out)
 }
@@ -4242,9 +4530,8 @@ geom_density(aes(color = method, fill = method), alpha = 0.5)+
 fixed_combined <- 
 rbind(all_pk,
       all_twi, 
-      all_new,
-      #all_conc,
-      all_random
+      all_bfs,
+      all_event
       ) 
 
 four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
@@ -5426,14 +5713,16 @@ w3_grid + fb_grid + zz_grid
 ## Figure 5: Chains
 Plot that will show multiple chains beside each other, and highlight where they are different
 ```{r chains-plot}
+# Use pk as the basis for color scheme
+# renumber so that 1 is the most persistent
 renum_w3_pk <- W3_pk_seq %>% 
   mutate(method = "Proportion of Time Flowing", x = 1) %>% 
   filter(ID %in% W3_IDs) %>% 
-  mutate(sequence = seq(1, 26, 1))
-
+  mutate(sequence = seq(26, 1, -1))
+# define column for color
 color_key <- renum_w3_pk %>% 
   select(ID, sequence) %>% 
-  rename(color_ID = sequence)
+  dplyr::rename(color_ID = sequence)
   
 renum_w3_pk <- renum_w3_pk %>% left_join(color_key, by = "ID")
 
@@ -5446,23 +5735,17 @@ renum_w3_twi <- w3_twi_sequence %>%
 renum_w3_bfs <- best_bfs_seqW3 %>% 
   mutate(method = "BFS", x = 2) %>% 
   left_join(color_key, by = "ID")
-renum_w3_event <- best_event_seqW3 %>% 
+
+renum_w3_event <- best_event_seq %>% 
   mutate(method = "Event based sequence", x = 4) %>% 
-  rename(sequence = Sequence) %>% 
   left_join(color_key, by = "ID")
 
-#best_bfs_seqW3
-#best_event_seqW3
-
 #Make dataframe to contain the locations of points
-rbind(#mutate(W3_cheap, method = "cheapest_insertion",x = 1),
+rbind(
       renum_w3_pk,
-      #mutate(convert_to_IDseq(W3_random), method = "random", x = 3),
-       renum_w3_bfs,
+      renum_w3_bfs,
       renum_w3_event,
       renum_w3_twi
-     
-      #mutate(convert_to_IDseq(opt_routes_w3), method = "con", x = 6)
       ) %>% 
   mutate(#method = str_wrap(method, 10),
          method = fct_relevel(method, c("Proportion of Time Flowing",
@@ -5472,7 +5755,7 @@ rbind(#mutate(W3_cheap, method = "cheapest_insertion",x = 1),
                                 "Event based sequence"
                                 ))
          ) %>% 
-  mutate(text_ID = abs(color_ID-26)) %>% 
+  mutate(text_ID = abs(color_ID-26)+1) %>% 
   ggplot()+
   geom_point(aes(x = method, y = sequence, color = color_ID), size = 5)+
   geom_text(aes(x = method, y = sequence, 
@@ -6962,104 +7245,6 @@ twi_plot <- plot_conf_mat(conf_twi,      title = "TWI")
 
 (cheap_plot + pk_plot) / (random_plot + twi_plot)
 ```
-
-Error in function, trying to figure it out
-```{r}
-#produce_metrics <- function(chain, shed, method){
-chain <- W3_pk_seq
-shed <- "W3"
-method = "pk"
-# calculate the number of flowing nodes at each timestep
-  if(shed == "W3"){
-    number_activated <-
-      input_w3 %>%
-      group_by(datetime) %>%
-      select(-c(wshed, mins)) %>%
-      filter(binary == 1) %>%
-      summarise(number_flowing = length(binary))
-  } 
-  else if(shed == "FB"){
-    number_activated <-
-      input_fb %>%
-      group_by(datetime) %>%
-      select(-c(wshed, mins)) %>%
-      filter(binary == 1) %>%
-      summarise(number_flowing = length(binary))
-  }
-  else if(shed == "ZZ"){
-    number_activated <-
-      input_zz %>%
-      group_by(datetime) %>%
-      select(-c(wshed, mins)) %>%
-      filter(binary == 1) %>%
-      summarise(number_flowing = length(binary))
-  }
-
-#make a dataframe where each row is a date, with a list of the active or inactive nodes according to a hierarchy
-
-  model_result <- calc_model_result(chain$ID, shed)
-
-#combine all model results
-  if(shed == "W3"){
-    comparison <- input_w3 %>%
-      filter(mins %in% c(0, 30)) %>%
-      left_join(model_result, by = c("datetime", "ID")) %>%
-      select(-wshed, -mins) %>%
-      drop_na()
-  } 
-  else if(shed == "FB"){
-    comparison <- input_fb %>%
-      filter(mins %in% c(0, 30)) %>%
-      left_join(model_result, by = c("datetime", "ID")) %>%
-      select(-wshed, -mins) %>%
-      drop_na()
-  }
-  else if(shed == "ZZ"){
-    comparison <- input_zz %>%
-      filter(mins %in% c(0, 30)) %>%
-      left_join(model_result, by = c("datetime", "ID")) %>%
-      select(-wshed, -mins) %>%
-      drop_na()
-  }
-
-
-#chat gpt method to compare them
-get_eval_label <- function(true, pred) {
-  if (true == 1 && pred == 1) return("correct")
-  if (true == 0 && pred == 0) return("correct")
-  if (true == 1 && pred == 0) return("omission")
-  if (true == 0 && pred == 1) return("commission")
-}
-#get_eval_label(0,0)
-#apply get_eval function to each model run
-comparison$pred_eval <- mapply(get_eval_label, 
-                                   comparison$binary, 
-                                   comparison$pred_out)
-
-# ---- STEP 3: Define helper function to extract performance metrics ----
-get_metrics <- function(pred, true) {
-  cm <- confusionMatrix(factor(pred), factor(true), positive = "1")
-  data.frame(
-    Accuracy = cm$overall["Accuracy"],
-    Kappa = cm$overall["Kappa"],
-    Sensitivity = cm$byClass["Sensitivity"],
-    Specificity = cm$byClass["Specificity"],
-    Precision = cm$byClass["Precision"],
-    F1 = cm$byClass["F1"]
-  )
-}
-
-# ---- STEP 4: Summarize performance for all models ----
-metrics_df <- tibble(get_metrics(comparison$pred_out, comparison$binary)) %>% 
-  mutate(shed = shed,
-         method = method)
-#output <- list(metrics = metrics_df, sequence = ZZ_cheap)
-#make data long for final plot
-return(metrics_df)
-}
-
-```
-
 
 Can probably delete the chunk below, and keep one with pred_out instead
 ```{r produce-accuracy-metrics}

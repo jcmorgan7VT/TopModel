@@ -266,7 +266,6 @@ input_w3  %>% filter(datetime < stop_23,
 
 ```
 
-
 #### 2024
 ```{r W3-2024-id_events}
 #identifying events
@@ -982,71 +981,7 @@ names(data)
 
 Just use all of the sequnces from events in my calc_props suite of functions, and in the modeling exercise
 
-Maybe foolishly, try Chatgpt one more time...
-```{r}
 
-p_load(stringdist, DECIPHER)
-p_unload(stringdist, DECIPHER)
-
-average_activation_sequence <- function(data, 
-                                        sensor_col = "sensor_id", 
-                                        event_col = "event_id") {
-  
-  # ---- 1. Extract sequences from dataframe order ----
-  data <- data[order(data[[event_col]]), ]
-  seqs <- split(data[[sensor_col]], data[[event_col]])
-  
-  # ---- 2. Identify all unique sensors ----
-  all_sensors <- sort(unique(unlist(seqs)))
-  n <- length(all_sensors)
-  
-  # Precedence matrix: P[i,j] = fraction where i occurs before j
-  P <- matrix(NA, nrow = n, ncol = n,
-              dimnames = list(all_sensors, all_sensors))
-  
-  # ---- 3. Compute precedence probabilities ----
-  for (s1 in all_sensors) {
-    for (s2 in all_sensors) {
-      
-      if (s1 == s2) next
-      
-      total <- 0
-      wins  <- 0
-      
-      for (seq in seqs) {
-        # Only count events where both sensors appear
-        if (s1 %in% seq && s2 %in% seq) {
-          total <- total + 1
-          if (match(s1, seq) < match(s2, seq)) wins <- wins + 1
-        }
-      }
-      
-      if (total > 0) {
-        P[as.character(s1), as.character(s2)] <- wins / total
-      }
-    }
-  }
-  
-  # ---- 4. Compute global precedence score for each sensor ----
-  # Score = average probability sensor occurs before others
-  score <- rowMeans(P, na.rm = TRUE)
-  
-  # ---- 5. Consensus activation sequence ----
-  consensus_sequence <- names(sort(score, decreasing = TRUE))
-  
-  # ---- 6. Return everything ----
-  list(
-    sequences = seqs,
-    precedence_matrix = P,
-    precedence_scores = score,
-    consensus_sequence = consensus_sequence
-  )
-}
-
-result <- average_activation_sequence(data)
-
-average_event_seq <- as.numeric(result$consensus_sequence)
-```
 
 
 # DEPREC
