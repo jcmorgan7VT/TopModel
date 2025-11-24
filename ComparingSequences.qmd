@@ -80,7 +80,7 @@ ZZ_IDs <- intersect(zz_deployed24, zz_deployed23)
 
 bind24 <- data_24 %>% 
   dplyr::select(datetime, number, wshed, binary, mins) %>% 
-  rename("ID" = number)%>% 
+  dplyr::rename("ID" = number)%>% 
   filter(mins %in% c(0, 30))
 
 
@@ -2375,6 +2375,13 @@ return(convert)
 # created in DetermineActualSequence.qmd,a csv containing the activation sequence for each event for W3
 event_seqsW3_23 <- read_csv("W3event_sequences23.csv")
 event_seqsW3_24 <- read_csv("W3event_sequences24.csv")
+```
+
+```{r}
+tibble(ID = average_event_seq,
+       Sequence = seq(1, length(average_event_seq), 1)) %>% 
+produce_metrics(., "W3", "average")
+
 ```
 
 
@@ -6955,6 +6962,104 @@ twi_plot <- plot_conf_mat(conf_twi,      title = "TWI")
 
 (cheap_plot + pk_plot) / (random_plot + twi_plot)
 ```
+
+Error in function, trying to figure it out
+```{r}
+#produce_metrics <- function(chain, shed, method){
+chain <- W3_pk_seq
+shed <- "W3"
+method = "pk"
+# calculate the number of flowing nodes at each timestep
+  if(shed == "W3"){
+    number_activated <-
+      input_w3 %>%
+      group_by(datetime) %>%
+      select(-c(wshed, mins)) %>%
+      filter(binary == 1) %>%
+      summarise(number_flowing = length(binary))
+  } 
+  else if(shed == "FB"){
+    number_activated <-
+      input_fb %>%
+      group_by(datetime) %>%
+      select(-c(wshed, mins)) %>%
+      filter(binary == 1) %>%
+      summarise(number_flowing = length(binary))
+  }
+  else if(shed == "ZZ"){
+    number_activated <-
+      input_zz %>%
+      group_by(datetime) %>%
+      select(-c(wshed, mins)) %>%
+      filter(binary == 1) %>%
+      summarise(number_flowing = length(binary))
+  }
+
+#make a dataframe where each row is a date, with a list of the active or inactive nodes according to a hierarchy
+
+  model_result <- calc_model_result(chain$ID, shed)
+
+#combine all model results
+  if(shed == "W3"){
+    comparison <- input_w3 %>%
+      filter(mins %in% c(0, 30)) %>%
+      left_join(model_result, by = c("datetime", "ID")) %>%
+      select(-wshed, -mins) %>%
+      drop_na()
+  } 
+  else if(shed == "FB"){
+    comparison <- input_fb %>%
+      filter(mins %in% c(0, 30)) %>%
+      left_join(model_result, by = c("datetime", "ID")) %>%
+      select(-wshed, -mins) %>%
+      drop_na()
+  }
+  else if(shed == "ZZ"){
+    comparison <- input_zz %>%
+      filter(mins %in% c(0, 30)) %>%
+      left_join(model_result, by = c("datetime", "ID")) %>%
+      select(-wshed, -mins) %>%
+      drop_na()
+  }
+
+
+#chat gpt method to compare them
+get_eval_label <- function(true, pred) {
+  if (true == 1 && pred == 1) return("correct")
+  if (true == 0 && pred == 0) return("correct")
+  if (true == 1 && pred == 0) return("omission")
+  if (true == 0 && pred == 1) return("commission")
+}
+#get_eval_label(0,0)
+#apply get_eval function to each model run
+comparison$pred_eval <- mapply(get_eval_label, 
+                                   comparison$binary, 
+                                   comparison$pred_out)
+
+# ---- STEP 3: Define helper function to extract performance metrics ----
+get_metrics <- function(pred, true) {
+  cm <- confusionMatrix(factor(pred), factor(true), positive = "1")
+  data.frame(
+    Accuracy = cm$overall["Accuracy"],
+    Kappa = cm$overall["Kappa"],
+    Sensitivity = cm$byClass["Sensitivity"],
+    Specificity = cm$byClass["Specificity"],
+    Precision = cm$byClass["Precision"],
+    F1 = cm$byClass["F1"]
+  )
+}
+
+# ---- STEP 4: Summarize performance for all models ----
+metrics_df <- tibble(get_metrics(comparison$pred_out, comparison$binary)) %>% 
+  mutate(shed = shed,
+         method = method)
+#output <- list(metrics = metrics_df, sequence = ZZ_cheap)
+#make data long for final plot
+return(metrics_df)
+}
+
+```
+
 
 Can probably delete the chunk below, and keep one with pred_out instead
 ```{r produce-accuracy-metrics}
