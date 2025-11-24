@@ -24,7 +24,8 @@ library(pacman)
 p_load(tidyverse, terra, tidyterra, whitebox, scales, wesanderson, caret, plotly,ggnewscale, sf, elevatr, patchwork, ggspatial, zoo, igraph, TSP, ggnetwork, knitr, #intergraph, ggpubr, #purrr, spatialEco, 
        hydroEvents,ggbreak,
        maptools,
-       rempsyc # make nice table
+       rempsyc, # make nice table
+       ggpubr # some functions for graphing, central tendency
 )
 #whitebox::install_whitebox()
 
@@ -2502,11 +2503,510 @@ convert_to_updown(best_bfs_zz) %>%
 ```
 
 
-# Event based sequences
+# Event based sequences   
+All code for analysis below, but skippable; results preserved in saved .csv files.  
+
+## Identify events and define sequences
+Originally in DetermineActualSequence, brought here in the great reconciliation of scripts.
+
+### W3
+```{r prepare-discharge-W3}
+#from TestingFrameworks script
+
+#read in discharge from W3-- input to Carrie's model, discharge in L/s
+#q <- read_csv("https://portal.edirepository.org/nis/dataviewer?packageid=knb-lter-hbr.1.17&entityid=efc477b3ef1bb3dd8b9355c9115cd849")
+#write.csv(q, "HB_5minQ.csv")
+q <- read_csv("HB_5minQ.csv")
+
+#find the range of dates that I need discharge for
+start <- min(input_w3$datetime)
+stop <- max(input_w3$datetime)
+
+#filtering discharge down to the range of dates
+q_23 <- q %>% 
+  filter(DATETIME > start & DATETIME < stop) %>% 
+  #convert to mm/day.
+  #converting instantaneous streamflow to mm/day by taking measurement, and scaling   it up as if that was the discharge for the whole day. It is not, it is just at that   moment, but should fix any units/order of magnitude issues
+  mutate("Q_mm_day" = Discharge_ls * 0.001 * 86400 / 420000 * 1000) 
+q_23$mins <- minute(q_23$DATETIME)
+
+#removing times that are not coincident with STIC observations
+q_23_f <- filter(q_23, mins %in% c(0, 30))
+
+ggplot(q_23_f, aes(x  = DATETIME, y = Q_mm_day))+
+  geom_line()+
+  labs(title = "Discharge from W3, July to Nov 2023",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()
+
+#also read in provisional 2024 data
+q_24 <- read_csv("w3_discharge_24.csv")
+
+#find the range of dates that I need discharge for
+start24 <- ymd_hms("2024-05-15 00:00:00 UTC")
+stop24 <- max(input_w3$datetime)
+
+#filtering discharge down to the range of dates
+q_24 <- q_24 %>% 
+  mutate(datetime = mdy_hm(datetime)) %>% 
+  filter(datetime > start24 & datetime < stop24)  
+q_24$mins <- minute(q_24$datetime)
+
+#removing times that are not coincident with STIC observations
+q_24_f <- filter(q_24, mins %in% c(0, 30))
+
+ggplot(q_24_f, aes(x  = datetime, y = Q_mmperday))+
+  geom_line()+
+  labs(title = "Discharge from W3, May to July 2024",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()
+
+#get discharge ready to bind to my other data
+q_23_bind <- 
+  q_23_f %>% 
+  select(DATETIME, Q_mm_day) %>% 
+  rename("datetime" = DATETIME
+         )
+
+q_24_bind <- 
+  q_24_f %>% 
+  select(datetime, Q_mmperday) %>% 
+  rename("Q_mm_day" = Q_mmperday)
+```
+
+```{r W3-2023-id_events}
+# Example: discharge dataframe with datetime and discharge
+discharge_df <- q_23_plotting %>% 
+  select(datetime, Q_mm_day)
+
+bf = baseflowB(q_23_plotting$Q_mm_day, alpha = 0.925)
+
+
+#subtract baseflow from discharge
+#PoT_res = eventPOT(q_23_plotting$Q_mm_day - bf$bf, threshold = 1, min.diff = 1)
+#min.diff = 30
+PoT_res = eventPOT(q_23_plotting$Q_mm_day - bf$bf, threshold = 0.5, min.diff = 96)
+#plot the events
+plotEvents(data = q_23_plotting$Q_mm_day, events = PoT_res, xlab = "Index", ylab = "Flow (ML/day)", colpnt = "#E41A1C", colline = "#377EB8", main = "eventPOT")
+
+# Copy of your event table
+events <- limbs(data = q_23_plotting$Q_mm_day, 
+               dates =NULL, 
+               events = PoT_res, 
+               to.plot = FALSE)
+events <- events %>% 
+  mutate(ris.srt = ris.srt - 48,
+         fal.end = fal.end + 48)
+events[1,6] <- 1
+events[10,9] <- 4511
+
+#now, extract just the start column, then get each window and run through scoring algorithm
+
+# Initialize the event_type column
+discharge_df$event_type <- NA_character_
+discharge_df$event_id <- NA_integer_
+
+# Assign "rising" and "falling" from event definitions
+for (i in seq_len(nrow(events))) {
+  ev <- events[i, ]
+  discharge_df$event_id[ev$ris.srt:ev$fal.end] <- i  # Event ID for rising+falling
+  
+  # Rising limb
+  if (!is.na(ev$ris.srt) && !is.na(ev$ris.end) && ev$ris.srt <= ev$ris.end) {
+    discharge_df$event_type[ev$ris.srt:ev$ris.end] <- "rising"
+  }
+  
+  # Falling limb
+  if (!is.na(ev$fal.srt) && !is.na(ev$fal.end) && ev$fal.srt <= ev$fal.end) {
+    discharge_df$event_type[ev$fal.srt:ev$fal.end] <- "falling"
+  }
+  
+  # Baseflow between events
+  if (i < nrow(events)) {
+    this_fal_end <- ev$fal.end
+    next_ris_srt <- events$ris.srt[i + 1]
+    if (this_fal_end + 1 <= next_ris_srt - 1) {
+      baseflow_idx <- (this_fal_end + 1):(next_ris_srt - 1)
+      discharge_df$event_type[baseflow_idx] <- "baseflow"
+      discharge_df$event_id[baseflow_idx] <- NA  # baseflow is not part of any event
+    }
+  }
+}
+
+# Optional: label all remaining NA values as "baseflow" (e.g., before first or after last event)
+discharge_df$event_type[is.na(discharge_df$event_type)] <- "baseflow"
+
+#save output for 2023
+discharge_df_23 <- discharge_df
+```
+```{r sequence}
+
+# as opposed to identifying events, this is taking those events and using them to create a sequence
+ttt <- 
+input_w3 %>%
+  filter(datetime < stop_23,
+                     datetime >= start_23) %>% 
+  inner_join(discharge_df_23,  by = c("datetime")) %>% 
+    filter(binary == 1) %>% 
+    group_by(ID, event_id) %>% 
+    summarise(start_of_flow = min(datetime)) %>% 
+    arrange(start_of_flow) %>% 
+  drop_na()
+
+# write a for loop to go through event ids, calculate the sequence for each event, and then find an "average" sequence
+for(i in 1:length(unique(ttt$event_id))){
+  event <- unique(ttt$event_id)[i]
+  
+  sequenced_event <- filter(ttt, event_id == event) %>% 
+    arrange(start_of_flow) %>% 
+      rowid_to_column("Sequence")
+  
+  if(i == 1) all_events <- sequenced_event
+  if(i > 1) all_events <- rbind(all_events, sequenced_event)
+}
+
+# Define sequences to then test using my suite of functions
+all_events23 <- all_events
+
+# df with all event sequences for 2023 in W3
+all_events23_sequences <- all_events %>% 
+  select(-start_of_flow)
+
+# save output, so I can skip analysis later
+write_csv(all_events23_sequences, "W3event_sequences23.csv")
+
+# add the end of each event, used for plotting later maybe?
+end_of_events <- discharge_df_23 %>% 
+    group_by(event_id) %>% 
+    summarise(start_of_event = min(datetime),
+              end_of_event = max(datetime))
+```
+
+```{r W3-2023-plots}
+#For each event, plot the grid of presence/absence data in any order
+
+start_23 <- ymd_hms("2023-7-20 00:00:00")
+stop_23 <- ymd_hms("2023-10-22 00:00:00")
+
+binary_colors <- c("#DB995A", "#586BA4")
+
+end_of_events <- discharge_df_23 %>% 
+    group_by(event_id) %>% 
+    summarise(start_of_event = min(datetime) + days(1),
+              end_of_event = max(datetime) - days(1))
+
+# tile plot of presence and absence data
+input_w3  %>% filter(datetime < stop_23,
+                     datetime >= start_23) %>% 
+  left_join(discharge_df_23) %>% 
+  left_join(end_of_events, by = "event_id") %>% 
+  filter(event_type != "baseflow") %>% 
+  left_join(all_events23_sequences) %>% 
+  ggplot(aes(x = datetime))+
+  geom_tile(aes(y = Sequence, fill = as.character(binary)))+
+  scale_y_continuous("Observed Activation Order")+
+  #facet_grid(~name, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary_colors,
+                    breaks = c(0, 1),
+                    labels = c("Dry", "Wet"),
+                    name = ""
+                    )+
+  geom_vline(aes(xintercept = start_of_event))+
+    geom_vline(aes(xintercept = end_of_event))+
+
+  facet_wrap(~event_id, scales = "free")+
+  labs(#title = "Very dry to very wet",
+       #subtitle = "W3, 10/20 - 10/22, 2023",
+       x = "")+
+  theme_classic()+
+    theme(legend.position="right",
+          axis.title.y = element_text(angle = 90))
+
+#create a second plot with each of the identified events highlighed on hydrograph
+end_of_events <- discharge_df_23 %>% 
+    group_by(event_id) %>% 
+    summarise(start_of_event = min(datetime),# + days(1),
+              end_of_event = max(datetime))# - days(1))
+
+input_w3  %>% filter(datetime < stop_23,
+                     datetime >= start_23) %>% 
+  left_join(discharge_df_23) %>% 
+  left_join(end_of_events, by = "event_id") %>% 
+  #filter(event_type != "baseflow") %>% 
+  left_join(all_events23_sequences) %>% 
+  ggplot(aes(x = datetime))+
+  geom_rect(aes(xmin = start_of_event, xmax = end_of_event, ymin = 0, ymax = 50, fill = as.character(event_id)), na.rm = TRUE)+
+  geom_line(aes(y = Q_mm_day))+
+  scale_fill_discrete(na.value = "transparent")
+
+```
+```{r W3-2024-id_events}
+#identifying events
+bf = baseflowB(q_24_bind$Q_mm_day, alpha = 0.925)
+
+
+#subtract baseflow from discharge
+#PoT_res = eventPOT(q_23_plotting$Q_mm_day - bf$bf, threshold = 1, min.diff = 1)
+
+PoT_res = eventPOT(q_24_bind$Q_mm_day - bf$bf, threshold = 0.25, min.diff = 30)
+#plot the events
+plotEvents(data = q_24_bind$Q_mm_day, events = PoT_res, xlab = "Index", ylab = "Flow (ML/day)", colpnt = "#E41A1C", colline = "#377EB8", main = "eventPOT")
+
+
+
+limbs(data = q_24_bind$Q_mm_day, 
+               dates =NULL, 
+               events = PoT_res, 
+               to.plot = TRUE)#now, extract just the start column, then get each window and run through scoring algorithm
+
+
+ranges <- data.frame("starts" = PoT_res$srt) %>% 
+  mutate("stops" = lead(starts)) %>% 
+  mutate(event_ID = row_number(starts))
+
+
+# Example: discharge dataframe with datetime and discharge
+discharge_df <- q_24_bind
+
+# Copy of your event table
+events <- limbs(data = q_24_bind$Q_mm_day, 
+               dates =NULL, 
+               events = PoT_res, 
+               to.plot = FALSE)#now, extract just the start column, then get each window and run through scoring algorithm
+events <- events %>% 
+  mutate(ris.srt = ris.srt - 48,
+         fal.end = fal.end + 48)
+events[1,6] <- 1
+events[8,9] <- 3030
+
+# Initialize the event_type column
+discharge_df$event_type <- NA_character_
+discharge_df$event_id <- NA_integer_
+
+# Assign "rising" and "falling" from event definitions
+for (i in seq_len(nrow(events))) {
+  ev <- events[i, ]
+  discharge_df$event_id[ev$ris.srt:ev$fal.end] <- i  # Event ID for rising+falling
+  
+  # Rising limb
+  if (!is.na(ev$ris.srt) && !is.na(ev$ris.end) && ev$ris.srt <= ev$ris.end) {
+    discharge_df$event_type[ev$ris.srt:ev$ris.end] <- "rising"
+  }
+  
+  # Falling limb
+  if (!is.na(ev$fal.srt) && !is.na(ev$fal.end) && ev$fal.srt <= ev$fal.end) {
+    discharge_df$event_type[ev$fal.srt:ev$fal.end] <- "falling"
+  }
+  
+  # Baseflow between events
+  if (i < nrow(events)) {
+    this_fal_end <- ev$fal.end
+    next_ris_srt <- events$ris.srt[i + 1]
+    if (this_fal_end + 1 <= next_ris_srt - 1) {
+      baseflow_idx <- (this_fal_end + 1):(next_ris_srt - 1)
+      discharge_df$event_type[baseflow_idx] <- "baseflow"
+      discharge_df$event_id[baseflow_idx] <- NA  # baseflow is not part of any event
+    }
+  }
+}
+
+# Optional: label all remaining NA values as "baseflow" (e.g., before first or after last event)
+discharge_df$event_type[is.na(discharge_df$event_type)] <- "baseflow"
+
+discharge_df_24 <- discharge_df
+
+discharge_df %>% 
+  ggplot(aes(x = datetime, y = Q_mm_day, color = event_type))+
+  geom_point()
+
+
+
+#now, take this new dataframe and for each event find the start of flow
+ttt <- 
+input_w3 %>%
+  filter(datetime < stop24,
+                     datetime >= start24) %>% 
+  inner_join(discharge_df_24,  by = c("datetime")) %>% 
+    filter(binary == 1) %>% 
+    group_by(ID, event_id) %>% 
+    summarise(start_of_flow = min(datetime)) %>% 
+    arrange(start_of_flow) %>% 
+  drop_na()
+
+#write a for loop to go through event ids, calculate the sequence for each event, and then find an "average" sequence
+for(i in 1:length(unique(ttt$event_id))){
+  event <- unique(ttt$event_id)[i]
+  
+  sequenced_event <- filter(ttt, event_id == event) %>% 
+    arrange(start_of_flow) %>% 
+      rowid_to_column("Sequence")
+  
+  if(i == 1) all_events <- sequenced_event
+  if(i > 1) all_events <- rbind(all_events, sequenced_event)
+}
+
+# all_events is the output of this loop
+all_events24 <- all_events
+
+# all sequences from events for W3, 2024
+all_events24_sequences <- all_events %>% 
+  select(-start_of_flow)
+
+# save output so I can skip it later
+write_csv(all_events24_sequences, "W3event_sequences24.csv")
+
+# add the end of each event
+end_of_events <- discharge_df_24 %>% 
+    group_by(event_id) %>% 
+    summarise(start_of_event = min(datetime),
+              end_of_event = max(datetime))
+
+```
+```{r W3-2024-plots}
+#For each event, plot the grid of presence/absence data in any order
+
+binary_colors <- c("#DB995A", "#586BA4")
+
+end_of_events <- discharge_df_24 %>% 
+    group_by(event_id) %>% 
+    summarise(start_of_event = min(datetime) + days(1),
+              end_of_event = max(datetime) - days(1))
+
+
+all_events_ready <- all_events %>% 
+  select(-start_of_flow)
+
+# tile plot of presence and absence data
+input_w3  %>% filter(datetime < stop24,
+                     datetime >= start24) %>% 
+  left_join(discharge_df_24) %>% 
+  left_join(end_of_events, by = "event_id") %>% 
+  filter(event_type != "baseflow") %>% 
+  left_join(all_events_ready) %>% 
+  ggplot(aes(x = datetime))+
+  geom_tile(aes(y = Sequence, fill = as.character(binary)))+
+  scale_y_continuous("Observed Activation Order")+
+  #facet_grid(~name, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary_colors,
+                    breaks = c(0, 1),
+                    labels = c("Dry", "Wet"),
+                    name = ""
+                    )+
+  geom_vline(aes(xintercept = start_of_event))+
+    geom_vline(aes(xintercept = end_of_event))+
+
+  facet_wrap(~event_id, scales = "free")+
+  labs(#title = "Very dry to very wet",
+       #subtitle = "W3, 10/20 - 10/22, 2023",
+       x = "")+
+  theme_classic()+
+    theme(legend.position="right",
+          axis.title.y = element_text(angle = 90))
+
+#create a second plot with each of the identified events highlighed on hydrograph
+end_of_events <- discharge_df_24 %>% 
+    group_by(event_id) %>% 
+    summarise(start_of_event = min(datetime) + days(1),
+              end_of_event = max(datetime) - days(1))
+
+input_w3  %>% filter(datetime < stop24,
+                     datetime >= start24) %>% 
+  left_join(discharge_df_24) %>% 
+  left_join(end_of_events, by = "event_id") %>% 
+  #filter(event_type != "baseflow") %>% 
+  left_join(all_events_ready) %>% 
+  ggplot(aes(x = datetime))+
+  geom_rect(aes(xmin = start_of_event, xmax = end_of_event, ymin = 0, ymax = 50, fill = as.character(event_id)), na.rm = TRUE)+
+  geom_line(aes(y = Q_mm_day))+
+  scale_fill_discrete(na.value = "transparent")
+
+```
+### FB
+```{r sequence}
+FBall_events <- read_csv("FB_events.csv") %>% 
+  dplyr::rename(datetime = DATETIME)
+
+# as opposed to identifying events, this is taking those events and using them to create a sequence
+ttt <- 
+input_fb %>%
+  # filter(datetime < stop_23,
+  #                    datetime >= start_23) %>% 
+  inner_join(FBall_events,  by = c("datetime")) %>% 
+    filter(binary == 1) %>% 
+    group_by(ID, event_id) %>% 
+    summarise(start_of_flow = min(datetime)) %>% 
+    arrange(start_of_flow) %>% 
+  drop_na()
+
+# write a for loop to go through event ids, calculate the sequence for each event, and then find an "average" sequence
+for(i in 1:length(unique(ttt$event_id))){
+  event <- unique(ttt$event_id)[i]
+  
+  sequenced_event <- filter(ttt, event_id == event) %>% 
+    arrange(start_of_flow) %>% 
+      rowid_to_column("Sequence")
+  
+  if(i == 1) all_events <- sequenced_event
+  if(i > 1) all_events <- rbind(all_events, sequenced_event)
+}
+
+# Define sequences to then test using my suite of functions
+all_eventsFB <- all_events
+
+all_eventsFB_sequences <- all_eventsFB %>% 
+  select(-start_of_flow)
+
+# save output, so I can skip analysis later
+write_csv(all_eventsFB_sequences, "FBevent_sequences.csv")
+```
+
+### ZZ
+```{r sequence}
+ZZall_events <- read_csv("ZZ_events.csv") %>% 
+  dplyr::rename(datetime = DATETIME)
+
+# determine the sequence that sensors activate during events
+ttt <- 
+input_zz %>%
+  # filter(datetime < stop_23,
+  #                    datetime >= start_23) %>% 
+  inner_join(ZZall_events,  by = c("datetime")) %>% 
+    filter(binary == 1) %>% 
+    group_by(ID, event_id) %>% 
+    summarise(start_of_flow = min(datetime)) %>% 
+    arrange(start_of_flow) %>% 
+  drop_na()
+
+# write a for loop to go through event ids, calculate the sequence for each event, and then find an "average" sequence
+for(i in 1:length(unique(ttt$event_id))){
+  event <- unique(ttt$event_id)[i]
+  
+  sequenced_event <- filter(ttt, event_id == event) %>% 
+    arrange(start_of_flow) %>% 
+      rowid_to_column("Sequence")
+  
+  if(i == 1) all_events <- sequenced_event
+  if(i > 1) all_events <- rbind(all_events, sequenced_event)
+}
+
+# Define sequences to then test using my suite of functions
+all_eventsZZ <- all_events
+
+all_eventsZZ_sequences <- all_eventsZZ %>% 
+  select(-start_of_flow)
+
+# save output, so I can skip analysis later
+write_csv(all_eventsZZ_sequences, "ZZevent_sequences.csv")
+```
+
 
 Old method to determine the best sequence of the event sequences
 Instead of looking at all of the event sequences and finding the best one, I am using pairwise comparison to determine the "average" sequence.
-```{r event-seqs-W3}
+```{r accuracy-of-individual-event-seqs-W3}
 # make loop and function to iterate through many sequences, and determine their accuracy through time
 # only for W3
 # apply_many <- function(input){
@@ -2576,16 +3076,17 @@ event_seqsW3_24_accuracy <- allout
 event_seqsW3_24_accuracy %>% 
   filter(Accuracy == max(Accuracy))
 
-
+# Which individual sequence has the highest accuracy for the whole record?
 event_seqsW3_23_accuracy %>% 
   filter(Accuracy == max(Accuracy))
 
-best_event_seqW3 <- 
-  event_seqsW3_23 %>% 
-  filter(event_id == 2) %>% 
-  select(ID, Sequence)
+## Old code of defining the best sequence
+# best_event_seqW3 <- 
+#   event_seqsW3_23 %>% 
+#   filter(event_id == 2) %>% 
+#   select(ID, Sequence)
 ```
-```{r event-seqs-FB}
+```{r accuracy-of-individual-event-seqs-FB}
 
 FBall_events <- read_csv("FB_events.csv") %>% 
   rename(datetime = DATETIME)
@@ -2641,14 +3142,30 @@ best_event_seqFB <-
   select(ID, Sequence)
 ```
 
+
+## Once sequences are defined, format and calc average
 ```{r skip-analysis-read-results}
+#### W3 ####
 # created in DetermineActualSequence.qmd,a csv containing the activation sequence for each event for W3
 event_seqsW3_23 <- read_csv("W3event_sequences23.csv")
 event_seqsW3_24 <- read_csv("W3event_sequences24.csv")
+
+# combine the two years of sequences, re-number event_id
+event_seqsW3 <- event_seqsW3_24 %>% 
+  mutate(event_id = event_id + max(event_seqsW3_23$event_id)) %>% 
+  rbind(event_seqsW3_23)
+
+#### FB ####
+# created earlier in this script
+event_seqsFB <- read_csv("FBevent_sequences.csv")
+
+#### ZZ ####
+event_seqsZZ <- read_csv("ZZevent_sequences.csv")
+
 ```
 
 ## Determine average sequence, using pairwise comparison
-```{r pairwise-comparison-find-average-seq}
+```{r pairwise-comparison-function}
 
 # perhaps terrible practice, but I am loading and unloading the packages within the function...
 average_activation_sequence <- function(data, 
@@ -2710,15 +3227,26 @@ p_load(stringdist, DECIPHER)
 
 }
 
-result <- average_activation_sequence(data)
-
-average_event_seq <- as.numeric(result$consensus_sequence)
 
 ```
 
+Apply function to the three watersheds...
 ```{r W3}
+# format data for function; expecting df (not tibble) with event_id and sensor_id columns, in the order of the sequence. All events in one large table.
+data <- event_seqsW3 %>% 
+  dplyr::select(event_id, ID) %>% 
+  filter(event_id != 1) %>% 
+  dplyr::rename("sensor_id" = "ID")%>%
+  as.data.frame()
+
+# run averaging function on data
+result <- average_activation_sequence(data)
+
+# extract just the "average" sequence
+average_event_seq <- as.numeric(result$consensus_sequence)
+
 # format the average sequence
-best_event_seq <- tibble(ID = average_event_seq,
+avg_event_w3 <- tibble(ID = average_event_seq,
        sequence = seq(1, length(average_event_seq), 1))
 
 # report accuracy of average event sequence when modeled
@@ -2727,8 +3255,65 @@ tibble(ID = average_event_seq,
 produce_metrics(., "W3", "average")
 
 ```
+```{r FB}
+# format data for function; expecting df (not tibble) with event_id and sensor_id columns, in the order of the sequence. All events in one large table.
+data <- event_seqsFB %>% 
+  dplyr::select(event_id, ID) %>% 
+  filter(event_id != 1) %>% 
+  dplyr::rename("sensor_id" = "ID")%>%
+  as.data.frame()
+
+# run averaging function on data
+result <- average_activation_sequence(data)
+
+# extract just the "average" sequence
+average_event_seq <- as.numeric(result$consensus_sequence)
+
+# format the average sequence
+avg_event_fb <- tibble(ID = average_event_seq,
+       sequence = seq(1, length(average_event_seq), 1))
+
+# report accuracy of average event sequence when modeled
+tibble(ID = average_event_seq,
+       Sequence = seq(1, length(average_event_seq), 1)) %>% 
+produce_metrics(., "FB", "average")
+
+```
+```{r ZZ}
+# format data for function; expecting df (not tibble) with event_id and sensor_id columns, in the order of the sequence. All events in one large table.
+data <- event_seqsZZ %>% 
+  dplyr::select(event_id, ID) %>% 
+  filter(event_id != 1) %>% 
+  dplyr::rename("sensor_id" = "ID")%>%
+  as.data.frame()
+
+# run averaging function on data
+result <- average_activation_sequence(data)
+
+# extract just the "average" sequence
+average_event_seq <- as.numeric(result$consensus_sequence)
+
+# format the average sequence
+avg_event_zz <- tibble(ID = average_event_seq,
+       sequence = seq(1, length(average_event_seq), 1))
+
+# report accuracy of average event sequence when modeled
+tibble(ID = average_event_seq,
+       Sequence = seq(1, length(average_event_seq), 1)) %>% 
+produce_metrics(., "ZZ", "average")
+
+```
 
 
+```{r format-for-density-plot}
+all_event <- rbind(
+convert_to_updown(avg_event_w3) %>% 
+  calc_props(., "W3"),
+convert_to_updown(avg_event_fb) %>% 
+  calc_props(., "FB"),
+convert_to_updown(avg_event_zz) %>% 
+  calc_props(., "ZZ"))
+```
 
 
 ```{r FB-plots}
@@ -4500,29 +5085,7 @@ geom_sf(data = w3_stic_locs_r %>% inner_join(states, by = "ID"),
 
 ## Figure 6: Distributions of proportion of transitions that follow a sequence
 Distributions of prop values, with dashed lines for median, faceted by timescale and watershed, colored by method for determining sequence
-```{r combine-and-plot}
-four_colors <- c("#231f20", "#bb4430", "#7ebdc2", "#f3dfa2")
-
-rbind(all_graph_solutions,
-      all_pk,
-      all_twi) %>% 
-  ggplot(aes(x = prop, y = after_stat(density))) +
-geom_density(aes(color = method, fill = method), alpha = 0.5)+
-    #geom_density(alpha = 0.5, lty = 3)+
-      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
-    theme_bw()+
-  #ylim(c(0, 6.25))+
-  xlim(c(0,1))+
-  labs(title = "Distributions of Proportion of time Sequence Followed",
-       x = "Proportion of time followed",
-       y = "Density")+
-  scale_fill_manual(values = four_colors,
-                     name = "Method")+
-  scale_color_manual(values = four_colors,
-                     name = "Method")+
-  facet_grid(shed~timescale)
-```
-```{r combine-and-plot-two}
+```{r combine-and-plot-final}
 
 
 
@@ -4530,32 +5093,20 @@ geom_density(aes(color = method, fill = method), alpha = 0.5)+
 fixed_combined <- 
 rbind(all_pk,
       all_twi, 
-      all_bfs,
-      all_event
-      ) 
+      mutate(all_bfs, method = "BFS"),
+      mutate(all_event, method = "Event")
+      ) %>% 
+  filter(timescale == "30mins")
 
 four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
-five_colors <- c("#d68c45",  "#247BA0", "#A30B37", "#F0C808", "#2c6e49")
-#fixing names for legend, and factor levels
 
 fixed_combined %>% 
   ungroup() %>% 
-  # mutate(method = case_when(method == "random" ~ "Random",
-  #                           method == "Flow Permanence" ~ "Proportion of Time Flowing",
-  #                           method == "cheapest_insertion" ~ "TSP Solution",
-  #                           method == "Topographic Wetness Index" ~ "Topographic Wetness Index")) %>%
-  mutate(timescale = case_when(timescale == "30mins" ~ "30 Minute Frequency",
-                               timescale == "daily" ~ "Daily Average Flow State")) %>%
   mutate(shed = fct_relevel(shed,
                               c("W3", "FB", "ZZ"))) %>%
-  # mutate(method = fct_relevel(method,
-  #                             c("TSP Solution",  "Proportion of Time Flowing", "Random",
-  #                                "Topographic Wetness Index"))) %>%
   ggplot(aes(x = prop, y = after_stat(density))) +
 geom_density(aes(color = method, fill = method), alpha = 0.5)+
     stat_central_tendency(aes(color = method), type = "median", linetype = "dashed")+
-    #geom_density(alpha = 0.5, lty = 3)+
-     # geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
     theme_classic2()+
   #ylim(c(0, 6.25))+
   xlim(c(0,1))+
@@ -4570,1144 +5121,7 @@ geom_density(aes(color = method, fill = method), alpha = 0.5)+
   scale_x_continuous(labels = c("0", "0.25", "0.5", "0.75", "1"), expand = c(0, 0)) +
   scale_y_continuous(expand = c(0, 0))+
   theme(panel.spacing = unit(1, "lines"))+
-  facet_grid(shed~timescale)
-```
-
-```{r combine-and-plot-two}
-#fixing randomly generated sequence
-fixed_combined2 <- 
-rbind(general_graph(W3_IDs, "W3", methods = c("random"), two_opt = FALSE),
-      general_graph(W3_IDs, "W3", methods = c("cheapest_insertion"), two_opt = TRUE),
-      all_pk,
-      all_twi,
-      mutate(calc_props(opt_routes, "W3"), method = "concorde")
-      ) %>% 
-  filter(shed == "W3")
-
-four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2", "green")
-
-#fixing names for legend, and factor levels
-
-fixed_combined2 %>% 
-  ungroup() %>% 
-  # mutate(method = case_when(method == "random" ~ "Random",
-  #                           method == "Flow Permanence" ~ "Proportion of Time Flowing",
-  #                           method == "cheapest_insertion" ~ "TSP Solution",
-  #                           method == "Topographic Wetness Index" ~ "Topographic Wetness Index")) %>% 
-  # mutate(timescale = case_when(timescale == "30mins" ~ "30 Minute Frequency",
-  #                              timescale == "daily" ~ "Daily Average Flow State")) %>% 
-  # mutate(method = fct_relevel(method, 
-  #                             c("TSP Solution",  "Proportion of Time Flowing", "Random",
-  #                                "Topographic Wetness Index", "concorde"))) %>% 
-  ggplot(aes(x = prop, y = after_stat(density))) +
-geom_density(aes(color = method, fill = method), alpha = 0.5)+
-    stat_central_tendency(aes(color = method), type = "median", linetype = "dashed")+
-    #geom_density(alpha = 0.5, lty = 3)+
-     # geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
-    theme_classic2()+
-  #ylim(c(0, 6.25))+
-  xlim(c(0,1))+
-  labs(title = "Proportion of Transitions where Sequence is Followed",
-       x = "Proportion of transitions that are sequential",
-       y = "Density")+
-  scale_fill_manual(values = four_colors,
-                     name = "Method")+
-  scale_color_manual(values = four_colors,
-                     name = "Method")+
-  scale_linetype_manual(values = 2, name = "Median")+
-  scale_x_continuous(labels = c("0", "0.25", "0.5", "0.75", "1"), expand = c(0, 0)) +
-  scale_y_continuous(expand = c(0, 0))+
-  theme(panel.spacing = unit(1, "lines"))+
-  facet_grid(shed~timescale)
-
-fixefixefixed_combined %>% 
-  filter(timescale == "30mins", 
-         shed == "W3",
-         method %in% c("cheapest_insertion", "Flow Permanence")) %>% print(n = 50)
-```
-
-Can also calculate proportion of sequential behavior through time! Comes out looking better than modeling using Botter & Durighetto
-
-```{r calculate-how-many-follow-sequence}
-#sequential <- 
-  input_w3 %>% 
-  left_join(pks_w3, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed.x, wshed.y, mins, datetime)) %>% 
-  arrange(desc(pk)) %>% 
-  mutate("downstream" = lag(binary),
-         "following" = downstream - binary) %>%
-  filter(datetime == ymd_hms("2023-07-03 17:00:00")) %>% print(n = 25)
-  filter(following != -1) %>% 
-    summarise(count_non = length(following))
-
-total <- input_w3 %>% 
-  left_join(pks_w3, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed.x, wshed.y, mins, datetime)) %>% 
-  arrange(desc(pk)) %>% 
-  mutate("downstream" = lag(binary),
-         "following" = downstream - binary) %>% 
-    summarise(count_all = length(following))
-
-final <- left_join(sequential, total, by = "datetime") %>% 
-  mutate(prop = count_non/count_all)
-
-final %>% 
-  mutate(diff = count_all - count_non) %>% 
-  summarise(sum(diff),
-            sum(count_all))
-
-```
-
-Old method to calculate how well sequences worked:
-Once sequence is defined, I can compare to the actual flow data
-```{r}
-#sequential <- 
-input_w3 %>% 
-  left_join(W3_cheap, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed, mins)) %>% 
-  arrange((sequence)) %>% 
-  mutate("downstream" = lag(binary),
-         "following" = downstream - binary) %>% 
-  #filter(following != -1) %>% 
-  filter(datetime == "2023-07-15 19:00:00") %>% View()
-   # summarise(count_non = length(following)) %>% View()
-    
-input_w3 %>% 
-  left_join(W3_pk_seq, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed, mins)) %>% 
-  arrange((sequence)) %>% 
-  mutate("downstream" = lag(binary),
-         "following" = downstream - binary) %>% 
-  #filter(following != -1) %>% 
-  filter(datetime == "2023-07-15 19:00:00") %>% View()
-    summarise(count_non = length(following))
-
-#make a df with ID and the number in the sequence
-W3_pk_seq <- pks_w3 %>% 
-  arrange(desc(pk)) %>% 
-  mutate(sequence = seq(1, length(pks_w3$ID), 1)) %>% 
-  select(ID, sequence)
-  
-
-total <- input_w3 %>% 
-  left_join(W3_cheap, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed, mins, datetime)) %>% 
-  arrange(sequence) %>% 
-  mutate("downstream" = lag(binary),
-         "following" = downstream - binary) %>% 
-    summarise(count_all = length(following))
-
-final <- left_join(sequential, total, by = "datetime") %>% 
-  mutate(prop = count_non/count_all)
-
-#write a function to calculate this in 1 quick step
-calc_time <- function(sequence_df, shed, seq_label){
-  
-  if(shed == "W3"){
-    input_f <- input_w3
-  } else if(shed == "FB"){
-        input_f <- input_fb
-  } else if(shed == "ZZ"){
-        input_f <- input_zz
-  }
-  
-sequential <- input_f %>% 
-  left_join(sequence_df, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed, mins, datetime)) %>% 
-  arrange(sequence) %>% 
-  mutate("downstream" = lag(binary),
-         "following" = downstream - binary) %>% 
-  filter(following != -1) %>% 
-    summarise(count_non = length(following))
-
-total <- input_f %>% 
-  left_join(sequence_df, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed, mins, datetime)) %>% 
-  arrange(sequence) %>% 
-  mutate("downstream" = lag(binary),
-         "following" = downstream - binary) %>% 
-    summarise(count_all = length(following))
-
-final <- left_join(sequential, total, by = "datetime") %>% 
-  mutate(prop = count_non/count_all) %>% 
-  mutate(shed = shed)
-
-output <- q_24_bind %>% 
-  inner_join(final, by = "datetime") %>% 
-  mutate(seq_label = seq_label)
-
-return(output)
-}
-
-calc_time(W3_cheap, "W3", "cheapest")
-```
-```{r plot-along-discharge}
-
-rbind(
-calc_time(W3_cheap, "W3", "cheapest"),
-calc_time(W3_random, "W3", "random"),
-calc_time(w3_twi_sequence, "W3", "twi"),
-calc_time(W3_pk_seq, "W3", "pk")
-) %>% 
-  ggplot(aes(x  = datetime, y = Q_mm_day))+
-  geom_line(aes(color = prop))+
-  labs(title = "Discharge from W3, 2024",
-       x = "",
-       y = "Instantaneous Q (mm/day)")+
-  theme_classic()+
-  scale_color_continuous(type = "viridis",
-                             limits = c(0,1))+
-                       theme(rect = element_rect(fill = "transparent", color = NA))+
-  facet_grid(seq_label~shed)
-
-```
-```{r difference-plot}
-pk_props_join <- calc_time(W3_pk_seq, "W3", "pk") %>% 
-  select(datetime, prop) %>% 
-  rename("pk_prop" = prop)
-
-rbind(
-calc_time(W3_cheap, "W3", "cheapest"),
-calc_time(W3_random, "W3", "random"),
-calc_time(w3_twi_sequence, "W3", "twi"),
-calc_time(W3_pk_seq, "W3", "pk")
-) %>% 
-  left_join(pk_props_join, by = "datetime") %>% 
-  filter(seq_label != "pk") %>% 
-  mutate(diff = prop - pk_prop) %>% 
-  ggplot(aes(x  = datetime, y = Q_mm_day))+
-  geom_line(aes(color = diff))+
-  labs(title = "Difference between Flow permanence sequence and others, 2023",
-       x = "",
-       y = "Instantaneous Q (mm/day)")+
-  theme_classic()+
-  scale_color_gradient2(low = "red", 
-    mid = "white", 
-    high = "blue", 
-    midpoint = 0,
-    limits = c(-0.3, 0.3))+
-                       theme(rect = element_rect(fill = "transparent", color = NA))+
-  facet_grid(seq_label~shed)
-```
-
-New idea: bar graphs, where the height of the bar represents the proportion of sequential transitions
-```{r}
-#calculate the total number of timesteps, and how many contain a transition in state?
-
-
-test <- input_w3 %>% 
-  select(datetime, ID, binary) %>% 
-    group_by(ID) %>% 
-  mutate(lagged = lag(binary),
-         transition = (binary - lagged)) #%>% 
-  #filter(transition %in% c(-1, 1))
-
-test$state_change <- "none"
-test$state_change[test$transition == -1] <- "wetting"
-test$state_change[test$transition == 1] <- "drying"
-
-test %>% ungroup() %>% 
-  group_by(state_change) %>% 
-  summarise(count = length(state_change))
-
-length(test$datetime)
-
-test %>% ungroup() %>% 
-  group_by(state_change) %>% 
-  summarise(count = length(state_change)) %>% 
-  mutate(shed = "W3" ) %>% 
-  ggplot(aes(x = shed, y = count, fill = state_change))+
-  geom_histogram(stat = "identity")
-
-#changing_dates <- 
-  test %>% 
-  ungroup() %>% 
-  select(datetime, state_change) %>% 
-  group_by(datetime) %>% 
-  filter(state_change != "none") #%>% select(datetime) %>% unique() %>% 
-  mutate(status = "changing")
-
-`%not_in%` <- purrr::negate(`%in%`)
-
-#bar of total timesteps
-test %>% 
-  ungroup() %>% 
-  select(datetime) %>% unique() %>% 
-filter(datetime %not_in% changing_dates$datetime) %>% 
-  mutate(status = "no change") %>% 
-  bind_rows(changing_dates) %>% 
-  group_by(status) %>% 
-  summarise(count = length(status)) %>% 
-  mutate(shed = "W3") %>% 
-  ggplot(aes(x = shed, y = count, fill = status))+
-  geom_histogram(stat = "identity")
-  
-test %>% 
-  ungroup() %>% 
-  select(datetime, state_change) %>% 
-  group_by(datetime) %>% 
-  filter(state_change != "none") %>% unique() %>% 
-  group_by(state_change) %>% 
-  summarise(timesteps = length(datetime))
-
-test %>% 
-  ungroup() %>% 
-  select(datetime) %>% unique() %>% 
-  summarise(length(datetime))
-
-test %>% 
-  ungroup() %>% 
-  select(datetime, state_change) %>% 
-  group_by(datetime) %>% 
-  filter(state_change != "wetting",
-         state_change != "drying") %>% unique() %>% 
-  group_by(state_change) %>% 
-  summarise(timesteps = length(datetime))
-
-summarise(how_many = length(unique(state_change))) %>% 
-  ungroup() %>% 
-  filter(how_many > 1)
-```
-
-```{r define-functions}
-filtered_input <- input_w3 %>%
-      filter(mins %in% c(0, 30)) %>%
-      select(datetime, binary, ID) %>%
-      mutate(ID = paste0("r_", ID)) %>%
-      pivot_wider(names_from = ID, values_from = binary)
-#calc_support_combos <- function(up, down, input){
-#inputs to function- comment out in final version
-i <- 1
-child <- paste0("r_",routes_w3$up[i])
-parent <- paste0("r_",routes_w3$down[i])
-input <- filtered_input
-
-#create output with the total and the sub, also the two input locations
-output <- data.frame(child, parent)
-
-  
-no_dupes <- input %>% 
-      select(up,down, datetime) %>% #remove date
-      # make it so that there cannot be a sequence without change
-      # keep date column for indexing purposes later
-      #filter(row_number() == 1 | !apply(select(., up, down) == lag(select(., up, down)), 1, all)) %>% 
-      #remove rows where one of the sensors is missing data
-      drop_na()
-
-      #View(no_dupes)
-#all flowing all the time?
-check <- nrow(no_dupes)
-
-# if(check <= 2){
-#   sequence_df <- data.frame("Sequence" = NA, 
-#                             "Frequency" = NA,
-#                             "up" = up,
-#                             "down" = down)
-#   return(sequence_df)
-# } 
-# else {
-# Define window size
-window_size <- 2
-
-# Create sliding windows
-windows <- rollapply(
-  select(no_dupes, -datetime),
-  width = window_size,
-  by.column = FALSE,
-  FUN = function(x) paste(as.vector(t(x)), collapse = "")
-)
-
-# Count and sort sequences
-sequence_counts <- table(windows)
-sorted_counts <- sort(sequence_counts, decreasing = TRUE)
-
-# Display all sequences and their frequencies
-sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
-if(check > 1) colnames(sequence_df) <- c("Sequence", "Frequency")
-
-
-sequence_df$up <- up
-sequence_df$down <- down
-#output$total <- sum(sequence_df$Frequency)
-#write some way to score the sequence_df
-#award one point for one of these configs:
-#supports <- c("0001","0111","1101", "0100")
-
-
-#sub <- filter(sequence_df, Sequence %in% supports)
-#output$points <- sum(sub$Frequency)
-
-
-#create output with transitions
-#error handling- in situation where both points flowed 100% of the time
-
-return(sequence_df)
-}
-
-
-#test function
-
-calc_support_combos("r_18", "r_11", input)
-
-#function to break up groups of continuous measurements, ensure that gaps are not considered
-#contains calc_support function
-#iterate_groups_combos <- function(up, down, input, timestep){
-  #create group column that identifies gaps in continuous data in time
-
-i <- 4
-up <- paste0("r_",routes_w3$up[i])
-down <- paste0("r_",routes_w3$down[i])
-timestep <- minutes(30)
-  input$group <- cumsum(c(TRUE, diff(input$datetime) != timestep))
-  #View(input)
-
-  for(u in 1:length(unique(input$group))){
-  # u <- 1
-    print(u)
-    filtered_input <- input %>% filter(group == u)
-    #this line throws error if 
-    output <- calc_support_combos(up, down, filtered_input)
-    
-
-     if(u == 1) iterate_groups_alldat <- output
-     if(u > 1) iterate_groups_alldat <- rbind(iterate_groups_alldat, output)
-  }
-  # final_iterate_groups_alldat <- iterate_groups_alldat %>% 
-  #   drop_na() %>% 
-  #   group_by(up, down) %>% 
-  #   summarise(total = sum(total),
-  #             points = sum(points))
-  return(iterate_groups_alldat)
-}
-
-iterate_groups_combos("r_13", "r_19", input, minutes(30))
-#function to take a list of routes and input dataset
-#contains group iteration function
-#for loop to iterate through full list of combinations of up and downstream locations
-#IMPORTANT- calculate hierarchy and iterate groups only work if the input timestep is approriate
-calculate_hierarchy_combos <- function(routes, input, timestep){
-  for(x in 1:length(routes$up)){
-  up <- paste0("r_",routes$up[x])
-  down <- paste0("r_",routes$down[x])
-  #print(x)
-  
-  #out <- iterate_groups_combos(up, down, input, timestep)
-    out <- calc_support_combos(up, down, input)
-
-
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
-
-  }
-  final_output <- alldat %>% 
-    drop_na() %>%
-    group_by(up, down, Sequence) %>%
-    summarise(Frequency = sum(Frequency))
-  return(final_output)
-}
-test <- calculate_hierarchy_combos(routes_w3, filtered_input, minutes(30))
-
-test %>% 
-  group_by(Sequence) %>% 
-  summarise(sum(Frequency))
-
-supports <- c("0001","0111","1101", "0100")
-
-test %>% ungroup() %>% 
-  filter(Sequence %in% supports) %>% 
-  summarise(sum(Frequency))
-
-test %>% ungroup() %>% 
-  #filter(Sequence %in% supports) %>% 
-  summarise(sum(Frequency))
-
-#create a key for wetting and drying
-wetting <- c("0001", "0010", "0011", "0111", "1011")
-drying <- c("0100", "1000", "1100", "1101", "1110")
-no_net_change <- c("0000", "0101", "0110", "1001", "1010", "1111")
-#create key for sequential and non
-sequential <- c("0001", "0100", "0111", "1101")
-nonsequential <- c("0010", "1000", "1011", "1110")
-undeterminable <- c("0011","0110", "1001","1100")
-no_change2 <- c("0000", "1111", "0101", "1010")
-
-test2 <- test %>% 
-  #mutate(Sequence = as.numeric(Sequence)) %>% 
-  mutate(status = case_when(Sequence %in% wetting ~ "wetting",
-                            Sequence %in% drying ~ "drying",
-                            Sequence %in% no_net_change ~ "no_net_change"),
-         category = case_when(Sequence %in% sequential ~ "sequential",
-                              Sequence %in% nonsequential ~ "nonsequential",
-                              Sequence %in% undeterminable ~ "undeterminable",
-                              Sequence %in% no_change2 ~ "no_change")) %>% 
-  group_by(status, category) %>% 
-  summarise(count = sum(Frequency))
-
-test2 %>% ungroup() %>% 
-  group_by(category) %>% 
-  mutate(shed = "W3" ) %>% 
-  ggplot(aes(x = shed, y = count, fill = category))+
-  geom_histogram(stat = "identity")
-
-#second plot- what proportion of transitions are sequential or not
-#ultimately one of these for each sequence?
-test2 %>% ungroup() %>% 
-  filter(category != "no_change") %>% 
-  group_by(category) %>% 
-  mutate(shed = "W3" ) %>% 
-  ggplot(aes(x = shed, y = count, fill = category))+
-  geom_histogram(stat = "identity")
-
-
-#fantastic four function has been modified, to do average daily state. Removed hourly and 4 hr time blocks
-fantastic_four_combos <- function(routes, shed){
-  theFour <- c("30mins", "daily")
-  
-  for(q in 1:length(theFour)){
-    #if statements to detect timescale, calculate appropriate inputs
-    timescale <- theFour[q]
-  if(timescale == "30mins"){
-    input <- rbind(input_w3, input_fb, input_zz) %>%
-      filter(wshed == shed, mins %in% c(0, 30)) %>%
-      select(datetime, binary, ID) %>%
-      mutate(ID = paste0("r_", ID)) %>%
-      pivot_wider(names_from = ID, values_from = binary)
-    timestep <- minutes(30)
-  } 
-  else if(timescale == "daily"){
-    input <- rbind(input_w3, input_fb, input_zz) %>%
-      filter(wshed == shed) %>% 
-      mutate(
-             "day" = day(datetime),
-             "month" = month(datetime),
-             "year" = year(datetime)) %>% 
-      group_by(day, month, year, ID) %>%
-      summarise(avg_state = mean(binary)) %>% 
-      ungroup() %>% 
-      mutate(avg_state = round(avg_state)) %>% 
-      rename("binary" = avg_state) %>% 
-      mutate("datetime" = ymd_hms(paste0(year,"-",month,"-",day," ","00:00:00"))) %>% 
-      select(datetime, binary, ID) %>%
-      mutate(ID = paste0("r_", ID)) %>%
-          arrange(datetime) %>% 
-      pivot_wider(names_from = ID, values_from = binary)
-    timestep <- days(1)
-  } 
-  else {
-    stop("Not a timescale anticipated!")
-  }
-    out <- calculate_hierarchy_combos(routes, input, timestep)
-    out$timescale <- theFour[q]
-    
-    if(q == 1) fanfar <- out
-    if(q > 1) fanfar <- rbind(fanfar, out)
-  }
-  fanfar$shed <- shed
-  return(fanfar)
-}
-
-
-fantastic_four_combos(routes_w3, "W3")
-# function to determine proportion of transitions that state changes follow all parent child relationships
-calc_props_silly <- function(routes, shed){
-  full_combos <- routes
-total_state_changes <- full_combos %>% 
-    filter(Sequence %not_in% c(undeterminable, no_change2)) %>% 
-    group_by(up, down) %>% 
-    summarise(totals = sum(Frequency))
-supports <- c("0001","0111","1101", "0100")
-
-hierarchical_changes <- full_combos %>% 
-    filter(Sequence %not_in% c(undeterminable, no_change2)) %>% 
-    filter(Sequence %in% supports) %>% 
-    group_by(up, down) %>%  
-    summarise(hierarchical = sum(Frequency)) 
-
-un_split <- total_state_changes %>% 
-  left_join(hierarchical_changes, by = c("up", "down")) %>% 
-  mutate(prop = hierarchical/totals) %>% 
-  mutate_all(~replace(., is.na(.), 0))
-return(un_split)
-}
-
-calc_props_silly(test, "W3")
-```
-
-Final first graph
-```{r W3}
-#final first graph
-test <- input_w3 %>% 
-  select(datetime, ID, binary) %>% 
-    group_by(ID) %>% 
-  mutate(lagged = lag(binary),
-         transition = (binary - lagged)) #%>% 
-  #filter(transition %in% c(-1, 1))
-
-test$state_change <- "none"
-test$state_change[test$transition == -1] <- "wetting"
-test$state_change[test$transition == 1] <- "drying"
-
-test %>% ungroup() %>% 
-  group_by(state_change) %>% 
-  summarise(count = length(state_change))
-
-length(test$datetime)
-
-test %>% ungroup() %>% 
-  group_by(state_change) %>% 
-  summarise(count = length(state_change)) %>% 
-  mutate(shed = "W3" ) %>% 
-  ggplot(aes(x = shed, y = count, fill = state_change))+
-  geom_histogram(stat = "identity")
-
-changing_dates <- 
-  test %>% 
-  ungroup() %>% 
-  select(datetime, state_change) %>% 
-  group_by(datetime) %>% 
-  filter(state_change != "none") %>% select(datetime) %>% unique() %>% 
-  mutate(status = "changing")
-  
-  length(changing_dates$datetime)/48
-  length(unique(input_w3$datetime))/48
-
-`%not_in%` <- purrr::negate(`%in%`)
-
-w3_wetness_changing <- test %>% 
-  ungroup() %>% 
-  select(datetime) %>% unique() %>% 
-filter(datetime %not_in% changing_dates$datetime) %>% 
-  mutate(status = "no change") %>% 
-  bind_rows(changing_dates)
-
-#bar of total timesteps
-w3_bar_ready <- test %>% 
-  ungroup() %>% 
-  select(datetime) %>% unique() %>% 
-filter(datetime %not_in% changing_dates$datetime) %>% 
-  mutate(status = "no change") %>% 
-  bind_rows(changing_dates) %>% 
-  group_by(status) %>% 
-  summarise(count = length(status)) %>% 
-  mutate(shed = "W3")
-  #ungroup() %>% 
-
-w3_bar_ready
-
-w3_bar_ready %>% 
-  ggplot(aes(x = shed, y = count/sum(count), fill = status))+
-  geom_histogram(stat = "identity")
-
-#one more thing, looking at the accuracy during times of transition
-make_change <- test %>% 
-  ungroup() %>% 
-  select(datetime) %>% unique() %>% 
-filter(datetime %not_in% changing_dates$datetime) %>% 
-  mutate(status = "no change") %>% 
-  bind_rows(changing_dates)
-
-df_summary_time_w3 %>% 
-  pivot_longer(-datetime) %>% 
-left_join(make_change, by = "datetime") %>% 
-  group_by(name, status) %>% 
-  summarise(average_acc = mean(value),
-            sd(value))
-```
-```{r FB}
-#final first graph
-test <- input_fb %>% 
-  select(datetime, ID, binary) %>% 
-    group_by(ID) %>% 
-  mutate(lagged = lag(binary),
-         transition = (binary - lagged)) #%>% 
-  #filter(transition %in% c(-1, 1))
-
-test$state_change <- "none"
-test$state_change[test$transition == -1] <- "wetting"
-test$state_change[test$transition == 1] <- "drying"
-
-test %>% ungroup() %>% 
-  group_by(state_change) %>% 
-  summarise(count = length(state_change))
-
-length(test$datetime)
-
-test %>% ungroup() %>% 
-  group_by(state_change) %>% 
-  summarise(count = length(state_change)) %>% 
-  mutate(shed = "FB" ) %>% 
-  ggplot(aes(x = shed, y = count, fill = state_change))+
-  geom_histogram(stat = "identity")
-
-changing_dates <- 
-  test %>% 
-  ungroup() %>% 
-  select(datetime, state_change) %>% 
-  group_by(datetime) %>% 
-  filter(state_change != "none") %>% select(datetime) %>% unique() %>% 
-  mutate(status = "changing")
-  
-#  length(changing_dates$datetime)/48
-#  length(unique(input_w3$datetime))/48
-
-#bar of total timesteps
-fb_bar_ready <- test %>% 
-  ungroup() %>% 
-  select(datetime) %>% unique() %>% 
-filter(datetime %not_in% changing_dates$datetime) %>% 
-  mutate(status = "no change") %>% 
-  bind_rows(changing_dates) %>% 
-  group_by(status) %>% 
-  summarise(count = length(status)) %>% 
-  mutate(shed = "FB")
-
-fb_bar_ready %>% 
-  #ungroup() %>% 
-  ggplot(aes(x = shed, y = count/sum(count), fill = status))+
-  geom_histogram(stat = "identity")
-```
-```{r ZZ}
-#final first graph
-test <- input_zz %>% 
-  select(datetime, ID, binary) %>% 
-    group_by(ID) %>% 
-  mutate(lagged = lag(binary),
-         transition = (binary - lagged)) #%>% 
-  #filter(transition %in% c(-1, 1))
-
-test$state_change <- "none"
-test$state_change[test$transition == -1] <- "wetting"
-test$state_change[test$transition == 1] <- "drying"
-
-test %>% ungroup() %>% 
-  group_by(state_change) %>% 
-  summarise(count = length(state_change))
-
-length(test$datetime)
-
-test %>% ungroup() %>% 
-  group_by(state_change) %>% 
-  summarise(count = length(state_change)) %>% 
-  mutate(shed = "ZZ" ) %>% 
-  ggplot(aes(x = shed, y = count, fill = state_change))+
-  geom_histogram(stat = "identity")
-
-changing_dates <- 
-  test %>% 
-  ungroup() %>% 
-  select(datetime, state_change) %>% 
-  group_by(datetime) %>% 
-  filter(state_change != "none") %>% select(datetime) %>% unique() %>% 
-  mutate(status = "changing")
-  
-#  length(changing_dates$datetime)/48
-#  length(unique(input_w3$datetime))/48
-
-#bar of total timesteps
-zz_bar_ready <- test %>% 
-  ungroup() %>% 
-  select(datetime) %>% unique() %>% 
-filter(datetime %not_in% changing_dates$datetime) %>% 
-  mutate(status = "no change") %>% 
-  bind_rows(changing_dates) %>% 
-  group_by(status) %>% 
-  summarise(count = length(status)) %>% 
-  mutate(shed = "ZZ")
-
-zz_bar_ready %>% 
-  #ungroup() %>% 
-  ggplot(aes(x = shed, y = count/sum(count), fill = status))+
-  geom_histogram(stat = "identity")
-```
-
-Final second graph
-```{r}
-filtered_input <- input_w3 %>%
-      filter(mins %in% c(0, 30)) %>%
-      select(datetime, binary, ID) %>%
-      mutate(ID = paste0("r_", ID)) %>%
-      pivot_wider(names_from = ID, values_from = binary)
-calc_support_combos <- function(up, down, input){
-#inputs to function- comment out in final version
-# i <- 1
-# child <- paste0("r_",routes_w3$up[i])
-# parent <- paste0("r_",routes_w3$down[i])
-# input <- filtered_input
-
-#create output with the total and the sub, also the two input locations
-output <- data.frame(child, parent)
-
-  
-no_dupes <- input %>% 
-      select(up,down, datetime) %>% #remove date
-      # make it so that there cannot be a sequence without change
-      # keep date column for indexing purposes later
-      #filter(row_number() == 1 | !apply(select(., up, down) == lag(select(., up, down)), 1, all)) %>% 
-      #remove rows where one of the sensors is missing data
-      drop_na()
-
-      #View(no_dupes)
-#all flowing all the time?
-check <- nrow(no_dupes)
-
-# if(check <= 2){
-#   sequence_df <- data.frame("Sequence" = NA, 
-#                             "Frequency" = NA,
-#                             "up" = up,
-#                             "down" = down)
-#   return(sequence_df)
-# } 
-# else {
-# Define window size
-window_size <- 2
-
-# Create sliding windows
-windows <- rollapply(
-  select(no_dupes, -datetime),
-  width = window_size,
-  by.column = FALSE,
-  FUN = function(x) paste(as.vector(t(x)), collapse = "")
-)
-
-# Count and sort sequences
-sequence_counts <- table(windows)
-sorted_counts <- sort(sequence_counts, decreasing = TRUE)
-
-# Display all sequences and their frequencies
-sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
-if(check > 1) colnames(sequence_df) <- c("Sequence", "Frequency")
-
-
-sequence_df$up <- up
-sequence_df$down <- down
-#output$total <- sum(sequence_df$Frequency)
-#write some way to score the sequence_df
-#award one point for one of these configs:
-#supports <- c("0001","0111","1101", "0100")
-
-
-#sub <- filter(sequence_df, Sequence %in% supports)
-#output$points <- sum(sub$Frequency)
-
-
-#create output with transitions
-#error handling- in situation where both points flowed 100% of the time
-
-return(sequence_df)
-}
-
-
-#test function
-
-#calc_support_combos("r_18", "r_11", input)
-
-#function to break up groups of continuous measurements, ensure that gaps are not considered
-#contains calc_support function
-iterate_groups_combos <- function(up, down, input, timestep){
-  #create group column that identifies gaps in continuous data in time
-
-# i <- 4
-# up <- paste0("r_",routes_w3$up[i])
-# down <- paste0("r_",routes_w3$down[i])
-# timestep <- minutes(30)
-  input$group <- cumsum(c(TRUE, diff(input$datetime) != timestep))
-  #View(input)
-
-  for(u in 1:length(unique(input$group))){
-  # u <- 1
-    print(u)
-    filtered_input <- input %>% filter(group == u)
-    #this line throws error if 
-    output <- calc_support_combos(up, down, filtered_input)
-    
-
-     if(u == 1) iterate_groups_alldat <- output
-     if(u > 1) iterate_groups_alldat <- rbind(iterate_groups_alldat, output)
-  }
-  # final_iterate_groups_alldat <- iterate_groups_alldat %>% 
-  #   drop_na() %>% 
-  #   group_by(up, down) %>% 
-  #   summarise(total = sum(total),
-  #             points = sum(points))
-  return(iterate_groups_alldat)
-}
-
-#iterate_groups_combos("r_13", "r_19", input, minutes(30))
-#function to take a list of routes and input dataset
-#contains group iteration function
-#for loop to iterate through full list of combinations of up and downstream locations
-#IMPORTANT- calculate hierarchy and iterate groups only work if the input timestep is approriate
-calculate_hierarchy_combos <- function(routes, input, timestep){
-  for(x in 1:length(routes$up)){
-  up <- paste0("r_",routes$up[x])
-  down <- paste0("r_",routes$down[x])
-  #print(x)
-  
-  #out <- iterate_groups_combos(up, down, input, timestep)
-    out <- calc_support_combos(up, down, input)
-
-
-  if(x == 1) alldat <- out
-  if(x > 1) alldat <- rbind(alldat, out)
-
-  }
-  final_output <- alldat %>% 
-    drop_na() %>%
-    group_by(up, down, Sequence) %>%
-    summarise(Frequency = sum(Frequency))
-  return(final_output)
-}
-
-test <- calculate_hierarchy_combos(routes_w3, filtered_input, minutes(30))
-calc_props_silly(test, "W3")$prop %>% hist()
-
-
-#create a key for wetting and drying
-wetting <- c("0001", "0010", "0011", "0111", "1011")
-drying <- c("0100", "1000", "1100", "1101", "1110")
-no_net_change <- c("0000", "0101", "0110", "1001", "1010", "1111")
-#create key for sequential and non
-sequential <- c("0001", "0100", "0111", "1101")
-nonsequential <- c("0010", "1000", "1011", "1110")
-undeterminable <- c("0011","0110", "1001","1100")
-no_change2 <- c("0000", "1111", "0101", "1010")
-
-test2 <- test %>% 
-  #mutate(Sequence = as.numeric(Sequence)) %>% 
-  mutate(status = case_when(Sequence %in% wetting ~ "wetting",
-                            Sequence %in% drying ~ "drying",
-                            Sequence %in% no_net_change ~ "no_net_change"),
-         category = case_when(Sequence %in% sequential ~ "sequential",
-                              Sequence %in% nonsequential ~ "nonsequential",
-                              Sequence %in% undeterminable ~ "undeterminable",
-                              Sequence %in% no_change2 ~ "no_change")) %>% 
-  group_by(status, category) %>% 
-  summarise(count = sum(Frequency))
-
-# test2 %>% ungroup() %>% 
-#   group_by(category) %>% 
-#   mutate(shed = "W3" ) %>% 
-#   ggplot(aes(x = shed, y = count, fill = category))+
-#   geom_histogram(stat = "identity")
-
-#second plot- what proportion of transitions are sequential or not
-#ultimately one of these for each sequence?
-test2 %>% ungroup() %>% 
-  filter(category != "no_change") %>% 
-  #group_by(category) %>% 
-  mutate(shed = "W3" ) %>% 
-  ggplot(aes(x = shed, y = count/sum(count), fill = category))+
-  geom_histogram(stat = "identity")
-
-
-#do it again, but for twi
-routes_w3_twi
-
-hist_prep <- function(routes) {
-  test <- calculate_hierarchy_combos(routes, filtered_input, minutes(30))
-
-
-#create a key for wetting and drying
-wetting <- c("0001", "0010", "0011", "0111", "1011")
-drying <- c("0100", "1000", "1100", "1101", "1110")
-no_net_change <- c("0000", "0101", "0110", "1001", "1010", "1111")
-#create key for sequential and non
-sequential <- c("0001", "0100", "0111", "1101")
-nonsequential <- c("0010", "1000", "1011", "1110")
-undeterminable <- c("0011","0110", "1001","1100")
-no_change2 <- c("0000", "1111", "0101", "1010")
-
-test2 <- test %>% 
-  #mutate(Sequence = as.numeric(Sequence)) %>% 
-  mutate(status = case_when(Sequence %in% wetting ~ "wetting",
-                            Sequence %in% drying ~ "drying",
-                            Sequence %in% no_net_change ~ "no_net_change"),
-         category = case_when(Sequence %in% sequential ~ "sequential",
-                              Sequence %in% nonsequential ~ "nonsequential",
-                              Sequence %in% undeterminable ~ "undeterminable",
-                              Sequence %in% no_change2 ~ "no_change")) %>% 
-  group_by(status, category) %>% 
-  summarise(count = sum(Frequency))
-
-return(test2)
-}
-
-hist_prep(routes_w3_twi)
-
-hist_prep(routes_w3_twi) %>%
-  ungroup() %>% 
-  filter(category != "no_change") %>% 
-  #group_by(category) %>% 
-  mutate(shed = "W3" ) %>% 
-  ggplot(aes(x = shed, y = count/sum(count), fill = category))+
-  geom_histogram(stat = "identity")
-
-calc_props_silly(calculate_hierarchy_combos(routes_w3_twi, filtered_input, minutes(30)), "W3")$prop %>% hist()
-
-#again for graph theory
-W3_cheap
-W3_random
-
-routes_w3_cheap <- W3_cheap %>% 
-    filter(ID %in% W3_IDs) %>% 
-  rename("up" = ID)  %>% 
-  mutate(down = lag(up)) %>% 
-   drop_na() %>% 
-  select(up, down) 
-
-hist_prep(routes_w3_cheap) %>%
-  ungroup() %>% 
-  filter(category != "no_change") %>% 
-  #group_by(category) %>% 
-  mutate(shed = "W3" ) %>% 
-  ggplot(aes(x = shed, y = count/sum(count), fill = category))+
-  geom_histogram(stat = "identity")
-
-calc_props_silly(calculate_hierarchy_combos(routes_w3_cheap, filtered_input, minutes(30)), "W3")$prop %>% hist()
-
-
-#again for random sequence
-routes_w3_random <- W3_random %>% 
-    filter(ID %in% W3_IDs) %>% 
-  rename("up" = ID)  %>% 
-  mutate(down = lag(up)) %>% 
-   drop_na() %>% 
-  select(up, down) 
-
-hist_prep(routes_w3_random) %>%
-  ungroup() %>% 
-  filter(category != "no_change") %>% 
-  #group_by(category) %>% 
-  mutate(shed = "W3" ) %>% 
-  ggplot(aes(x = shed, y = count/sum(count), fill = category))+
-  geom_histogram(stat = "identity")
-```
-
-
-### New graph
-Plot a grid, of sequential wetting and drying, "the full graph"
-```{r}
-W3_all_combos %>% 
-  ggplot(aes(x = down, y = up, fill = prop))+
-    geom_tile(color="white") +
-    scale_fill_viridis_c(limits=c(0,1)) +
-    labs(x="Parent", y="Child", fill="P(i before j)", title="Event precedence matrix") +
-    theme_minimal()
-
-FB_all_combos %>% 
-  ggplot(aes(x = down, y = up, fill = prop))+
-    geom_tile(color="white") +
-    scale_fill_viridis_c(limits=c(0,1)) +
-    labs(x="Parent", y="Child", fill="P(i before j)", title="Event precedence matrix") +
-    theme_minimal()
-
-ZZ_all_combos %>% 
-  ggplot(aes(x = down, y = up, fill = prop))+
-    geom_tile(color="white") +
-    scale_fill_viridis_c(limits=c(0,1)) +
-    labs(x="Parent", y="Child", fill="P(i before j)", title="Event precedence matrix") +
-    theme_minimal()
-
-```
-Make these plots again, but order them by proportion of time flowing sequence
-
-```{r}
-w3_pk_seq2 <- 
-  pks_w3 %>% 
-    filter(ID %in% W3_IDs) %>% 
-  arrange(desc(pk)) %>% 
-  mutate(sequence = seq(1, 26, 1))
-
-#w3_grid <- 
-  W3_all_combos %>% 
-    filter(prop > 0.5) %>% 
-  mutate(up = as.numeric(substr(up, 3,4)),
-         down = as.numeric(substr(down, 3,4))) %>% 
-  filter(timescale == "30mins") %>% 
-  select(up, down, prop) %>% 
-    ungroup() %>% 
-  rename(ID = up) %>% 
-  left_join(w3_pk_seq2, by = "ID") %>% 
-  rename(child = ID,
-         ID = down,
-         child_sequence = sequence) %>% 
-  left_join(w3_pk_seq2, by = "ID") %>% 
-  rename(parent = ID, 
-         parent_sequence = sequence) %>% 
-  select(child, parent, child_sequence, parent_sequence, prop) %>% 
-  ggplot(aes(x = parent_sequence, y = child_sequence, fill = prop))+
-    geom_tile(color="white") +
-    scale_fill_viridis_c(limits=c(0,1)) +
-    labs(x="Parent", y="Child", fill="Prop", title="W3 sequential behavior matrix") +
-    theme_minimal()+
-  theme(legend.position = "none")
-  
-####### FB
-fb_pk_seq2 <- 
-  pks_fb %>% 
-    filter(ID %in% FB_IDs) %>% 
-  arrange(desc(pk)) %>% 
-  mutate(sequence = seq(1, 24, 1))
-
-fb_grid <- FB_all_combos %>% 
-  mutate(up = as.numeric(substr(up, 3,4)),
-         down = as.numeric(substr(down, 3,4))) %>% 
-  filter(timescale == "30mins") %>% 
-  select(up, down, prop) %>% 
-    ungroup() %>% 
-  rename(ID = up) %>% 
-  left_join(fb_pk_seq2, by = "ID") %>% 
-  rename(child = ID,
-         ID = down,
-         child_sequence = sequence) %>% 
-  left_join(fb_pk_seq2, by = "ID") %>% 
-  rename(parent = ID, 
-         parent_sequence = sequence) %>% 
-  select(child, parent, child_sequence, parent_sequence, prop) %>% 
-  ggplot(aes(x = parent_sequence, y = child_sequence, fill = prop))+
-    geom_tile(color="white") +
-    scale_fill_viridis_c(limits=c(0,1)) +
-    labs(x="Parent", y="Child", fill="Prop", title="FB sequential behavior matrix") +
-    theme_minimal()+
-  theme(legend.position = "none")
-
-
-###### ZZ
-zz_pk_seq2 <- 
-  pks_zz %>% 
-    filter(ID %in% ZZ_IDs) %>% 
-  arrange(desc(pk)) %>% 
-  mutate(sequence = seq(1, 24, 1))
-
-zz_grid <- ZZ_all_combos %>% 
-  mutate(up = as.numeric(substr(up, 3,4)),
-         down = as.numeric(substr(down, 3,4))) %>% 
-  filter(timescale == "30mins") %>% 
-  select(up, down, prop) %>% 
-    ungroup() %>% 
-  rename(ID = up) %>% 
-  left_join(zz_pk_seq2, by = "ID") %>% 
-  rename(child = ID,
-         ID = down,
-         child_sequence = sequence) %>% 
-  left_join(zz_pk_seq2, by = "ID") %>% 
-  rename(parent = ID, 
-         parent_sequence = sequence) %>% 
-  select(child, parent, child_sequence, parent_sequence, prop) %>% 
-  ggplot(aes(x = parent_sequence, y = child_sequence, fill = prop))+
-    geom_tile(color="white") +
-    scale_fill_viridis_c(limits=c(0,1)) +
-    labs(x="Parent", y="Child", fill="Prop", title="ZZ sequential behavior matrix") +
-    theme_minimal()
-
-w3_grid + fb_grid + zz_grid
+  facet_grid(~shed)
 ```
 
 ## Figure 5: Chains
@@ -10374,6 +9788,1220 @@ input <- W3_cheap
 
 
 # Unused Figures
+## UNUSED: old density plots
+
+```{r combine-and-plot}
+four_colors <- c("#231f20", "#bb4430", "#7ebdc2", "#f3dfa2")
+
+rbind(all_graph_solutions,
+      all_pk,
+      all_twi) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(color = method, fill = method), alpha = 0.5)+
+    #geom_density(alpha = 0.5, lty = 3)+
+      geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_bw()+
+  #ylim(c(0, 6.25))+
+  xlim(c(0,1))+
+  labs(title = "Distributions of Proportion of time Sequence Followed",
+       x = "Proportion of time followed",
+       y = "Density")+
+  scale_fill_manual(values = four_colors,
+                     name = "Method")+
+  scale_color_manual(values = four_colors,
+                     name = "Method")+
+  facet_grid(shed~timescale)
+```
+```{r combine-and-plot-two}
+
+
+
+#fixing randomly generated sequence
+fixed_combined <- 
+rbind(all_pk,
+      all_twi, 
+      all_bfs,
+      all_event
+      ) 
+
+four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2")
+five_colors <- c("#d68c45",  "#247BA0", "#A30B37", "#F0C808", "#2c6e49")
+#fixing names for legend, and factor levels
+
+fixed_combined %>% 
+  ungroup() %>% 
+  # mutate(method = case_when(method == "random" ~ "Random",
+  #                           method == "Flow Permanence" ~ "Proportion of Time Flowing",
+  #                           method == "cheapest_insertion" ~ "TSP Solution",
+  #                           method == "Topographic Wetness Index" ~ "Topographic Wetness Index")) %>%
+  # mutate(timescale = case_when(timescale == "30mins" ~ "30 Minute Frequency",
+  #                              timescale == "daily" ~ "Daily Average Flow State")) %>%
+  mutate(shed = fct_relevel(shed,
+                              c("W3", "FB", "ZZ"))) %>%
+  # mutate(method = fct_relevel(method,
+  #                             c("TSP Solution",  "Proportion of Time Flowing", "Random",
+  #                                "Topographic Wetness Index"))) %>%
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(color = method, fill = method), alpha = 0.5)+
+    stat_central_tendency(aes(color = method), type = "median", linetype = "dashed")+
+    #geom_density(alpha = 0.5, lty = 3)+
+     # geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_classic2()+
+  #ylim(c(0, 6.25))+
+  xlim(c(0,1))+
+  labs(title = "Proportion of Transitions where Sequence is Followed",
+       x = "Proportion of transitions that are sequential",
+       y = "Density")+
+  scale_fill_manual(values = four_colors,
+                     name = "Method")+
+  scale_color_manual(values = four_colors,
+                     name = "Method")+
+  scale_linetype_manual(values = 2, name = "Median")+
+  scale_x_continuous(labels = c("0", "0.25", "0.5", "0.75", "1"), expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0))+
+  theme(panel.spacing = unit(1, "lines"))+
+  facet_grid(shed~timescale)
+```
+
+
+
+```{r combine-and-plot-two}
+#fixing randomly generated sequence
+fixed_combined2 <- 
+rbind(general_graph(W3_IDs, "W3", methods = c("random"), two_opt = FALSE),
+      general_graph(W3_IDs, "W3", methods = c("cheapest_insertion"), two_opt = TRUE),
+      all_pk,
+      all_twi,
+      mutate(calc_props(opt_routes, "W3"), method = "concorde")
+      ) %>% 
+  filter(shed == "W3")
+
+four_colors <- c("#bb4430", "#7ebdc2", "#231f20", "#f3dfa2", "green")
+
+#fixing names for legend, and factor levels
+
+fixed_combined2 %>% 
+  ungroup() %>% 
+  # mutate(method = case_when(method == "random" ~ "Random",
+  #                           method == "Flow Permanence" ~ "Proportion of Time Flowing",
+  #                           method == "cheapest_insertion" ~ "TSP Solution",
+  #                           method == "Topographic Wetness Index" ~ "Topographic Wetness Index")) %>% 
+  # mutate(timescale = case_when(timescale == "30mins" ~ "30 Minute Frequency",
+  #                              timescale == "daily" ~ "Daily Average Flow State")) %>% 
+  # mutate(method = fct_relevel(method, 
+  #                             c("TSP Solution",  "Proportion of Time Flowing", "Random",
+  #                                "Topographic Wetness Index", "concorde"))) %>% 
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(color = method, fill = method), alpha = 0.5)+
+    stat_central_tendency(aes(color = method), type = "median", linetype = "dashed")+
+    #geom_density(alpha = 0.5, lty = 3)+
+     # geom_vline(xintercept = 0.5, lty = 2, alpha = 0.5)+
+    theme_classic2()+
+  #ylim(c(0, 6.25))+
+  xlim(c(0,1))+
+  labs(title = "Proportion of Transitions where Sequence is Followed",
+       x = "Proportion of transitions that are sequential",
+       y = "Density")+
+  scale_fill_manual(values = four_colors,
+                     name = "Method")+
+  scale_color_manual(values = four_colors,
+                     name = "Method")+
+  scale_linetype_manual(values = 2, name = "Median")+
+  scale_x_continuous(labels = c("0", "0.25", "0.5", "0.75", "1"), expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0))+
+  theme(panel.spacing = unit(1, "lines"))+
+  facet_grid(shed~timescale)
+
+fixefixefixed_combined %>% 
+  filter(timescale == "30mins", 
+         shed == "W3",
+         method %in% c("cheapest_insertion", "Flow Permanence")) %>% print(n = 50)
+```
+
+Can also calculate proportion of sequential behavior through time! Comes out looking better than modeling using Botter & Durighetto
+
+```{r calculate-how-many-follow-sequence}
+#sequential <- 
+  input_w3 %>% 
+  left_join(pks_w3, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed.x, wshed.y, mins, datetime)) %>% 
+  arrange(desc(pk)) %>% 
+  mutate("downstream" = lag(binary),
+         "following" = downstream - binary) %>%
+  filter(datetime == ymd_hms("2023-07-03 17:00:00")) %>% print(n = 25)
+  filter(following != -1) %>% 
+    summarise(count_non = length(following))
+
+total <- input_w3 %>% 
+  left_join(pks_w3, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed.x, wshed.y, mins, datetime)) %>% 
+  arrange(desc(pk)) %>% 
+  mutate("downstream" = lag(binary),
+         "following" = downstream - binary) %>% 
+    summarise(count_all = length(following))
+
+final <- left_join(sequential, total, by = "datetime") %>% 
+  mutate(prop = count_non/count_all)
+
+final %>% 
+  mutate(diff = count_all - count_non) %>% 
+  summarise(sum(diff),
+            sum(count_all))
+
+```
+
+Old method to calculate how well sequences worked:
+Once sequence is defined, I can compare to the actual flow data
+```{r}
+#sequential <- 
+input_w3 %>% 
+  left_join(W3_cheap, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins)) %>% 
+  arrange((sequence)) %>% 
+  mutate("downstream" = lag(binary),
+         "following" = downstream - binary) %>% 
+  #filter(following != -1) %>% 
+  filter(datetime == "2023-07-15 19:00:00") %>% View()
+   # summarise(count_non = length(following)) %>% View()
+    
+input_w3 %>% 
+  left_join(W3_pk_seq, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins)) %>% 
+  arrange((sequence)) %>% 
+  mutate("downstream" = lag(binary),
+         "following" = downstream - binary) %>% 
+  #filter(following != -1) %>% 
+  filter(datetime == "2023-07-15 19:00:00") %>% View()
+    summarise(count_non = length(following))
+
+#make a df with ID and the number in the sequence
+W3_pk_seq <- pks_w3 %>% 
+  arrange(desc(pk)) %>% 
+  mutate(sequence = seq(1, length(pks_w3$ID), 1)) %>% 
+  select(ID, sequence)
+  
+
+total <- input_w3 %>% 
+  left_join(W3_cheap, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins, datetime)) %>% 
+  arrange(sequence) %>% 
+  mutate("downstream" = lag(binary),
+         "following" = downstream - binary) %>% 
+    summarise(count_all = length(following))
+
+final <- left_join(sequential, total, by = "datetime") %>% 
+  mutate(prop = count_non/count_all)
+
+#write a function to calculate this in 1 quick step
+calc_time <- function(sequence_df, shed, seq_label){
+  
+  if(shed == "W3"){
+    input_f <- input_w3
+  } else if(shed == "FB"){
+        input_f <- input_fb
+  } else if(shed == "ZZ"){
+        input_f <- input_zz
+  }
+  
+sequential <- input_f %>% 
+  left_join(sequence_df, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins, datetime)) %>% 
+  arrange(sequence) %>% 
+  mutate("downstream" = lag(binary),
+         "following" = downstream - binary) %>% 
+  filter(following != -1) %>% 
+    summarise(count_non = length(following))
+
+total <- input_f %>% 
+  left_join(sequence_df, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins, datetime)) %>% 
+  arrange(sequence) %>% 
+  mutate("downstream" = lag(binary),
+         "following" = downstream - binary) %>% 
+    summarise(count_all = length(following))
+
+final <- left_join(sequential, total, by = "datetime") %>% 
+  mutate(prop = count_non/count_all) %>% 
+  mutate(shed = shed)
+
+output <- q_24_bind %>% 
+  inner_join(final, by = "datetime") %>% 
+  mutate(seq_label = seq_label)
+
+return(output)
+}
+
+calc_time(W3_cheap, "W3", "cheapest")
+```
+```{r plot-along-discharge}
+
+rbind(
+calc_time(W3_cheap, "W3", "cheapest"),
+calc_time(W3_random, "W3", "random"),
+calc_time(w3_twi_sequence, "W3", "twi"),
+calc_time(W3_pk_seq, "W3", "pk")
+) %>% 
+  ggplot(aes(x  = datetime, y = Q_mm_day))+
+  geom_line(aes(color = prop))+
+  labs(title = "Discharge from W3, 2024",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()+
+  scale_color_continuous(type = "viridis",
+                             limits = c(0,1))+
+                       theme(rect = element_rect(fill = "transparent", color = NA))+
+  facet_grid(seq_label~shed)
+
+```
+```{r difference-plot}
+pk_props_join <- calc_time(W3_pk_seq, "W3", "pk") %>% 
+  select(datetime, prop) %>% 
+  rename("pk_prop" = prop)
+
+rbind(
+calc_time(W3_cheap, "W3", "cheapest"),
+calc_time(W3_random, "W3", "random"),
+calc_time(w3_twi_sequence, "W3", "twi"),
+calc_time(W3_pk_seq, "W3", "pk")
+) %>% 
+  left_join(pk_props_join, by = "datetime") %>% 
+  filter(seq_label != "pk") %>% 
+  mutate(diff = prop - pk_prop) %>% 
+  ggplot(aes(x  = datetime, y = Q_mm_day))+
+  geom_line(aes(color = diff))+
+  labs(title = "Difference between Flow permanence sequence and others, 2023",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()+
+  scale_color_gradient2(low = "red", 
+    mid = "white", 
+    high = "blue", 
+    midpoint = 0,
+    limits = c(-0.3, 0.3))+
+                       theme(rect = element_rect(fill = "transparent", color = NA))+
+  facet_grid(seq_label~shed)
+```
+
+New idea: bar graphs, where the height of the bar represents the proportion of sequential transitions
+```{r}
+#calculate the total number of timesteps, and how many contain a transition in state?
+
+
+test <- input_w3 %>% 
+  select(datetime, ID, binary) %>% 
+    group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) #%>% 
+  #filter(transition %in% c(-1, 1))
+
+test$state_change <- "none"
+test$state_change[test$transition == -1] <- "wetting"
+test$state_change[test$transition == 1] <- "drying"
+
+test %>% ungroup() %>% 
+  group_by(state_change) %>% 
+  summarise(count = length(state_change))
+
+length(test$datetime)
+
+test %>% ungroup() %>% 
+  group_by(state_change) %>% 
+  summarise(count = length(state_change)) %>% 
+  mutate(shed = "W3" ) %>% 
+  ggplot(aes(x = shed, y = count, fill = state_change))+
+  geom_histogram(stat = "identity")
+
+#changing_dates <- 
+  test %>% 
+  ungroup() %>% 
+  select(datetime, state_change) %>% 
+  group_by(datetime) %>% 
+  filter(state_change != "none") #%>% select(datetime) %>% unique() %>% 
+  mutate(status = "changing")
+
+`%not_in%` <- purrr::negate(`%in%`)
+
+#bar of total timesteps
+test %>% 
+  ungroup() %>% 
+  select(datetime) %>% unique() %>% 
+filter(datetime %not_in% changing_dates$datetime) %>% 
+  mutate(status = "no change") %>% 
+  bind_rows(changing_dates) %>% 
+  group_by(status) %>% 
+  summarise(count = length(status)) %>% 
+  mutate(shed = "W3") %>% 
+  ggplot(aes(x = shed, y = count, fill = status))+
+  geom_histogram(stat = "identity")
+  
+test %>% 
+  ungroup() %>% 
+  select(datetime, state_change) %>% 
+  group_by(datetime) %>% 
+  filter(state_change != "none") %>% unique() %>% 
+  group_by(state_change) %>% 
+  summarise(timesteps = length(datetime))
+
+test %>% 
+  ungroup() %>% 
+  select(datetime) %>% unique() %>% 
+  summarise(length(datetime))
+
+test %>% 
+  ungroup() %>% 
+  select(datetime, state_change) %>% 
+  group_by(datetime) %>% 
+  filter(state_change != "wetting",
+         state_change != "drying") %>% unique() %>% 
+  group_by(state_change) %>% 
+  summarise(timesteps = length(datetime))
+
+summarise(how_many = length(unique(state_change))) %>% 
+  ungroup() %>% 
+  filter(how_many > 1)
+```
+
+```{r define-functions}
+filtered_input <- input_w3 %>%
+      filter(mins %in% c(0, 30)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+#calc_support_combos <- function(up, down, input){
+#inputs to function- comment out in final version
+i <- 1
+child <- paste0("r_",routes_w3$up[i])
+parent <- paste0("r_",routes_w3$down[i])
+input <- filtered_input
+
+#create output with the total and the sub, also the two input locations
+output <- data.frame(child, parent)
+
+  
+no_dupes <- input %>% 
+      select(up,down, datetime) %>% #remove date
+      # make it so that there cannot be a sequence without change
+      # keep date column for indexing purposes later
+      #filter(row_number() == 1 | !apply(select(., up, down) == lag(select(., up, down)), 1, all)) %>% 
+      #remove rows where one of the sensors is missing data
+      drop_na()
+
+      #View(no_dupes)
+#all flowing all the time?
+check <- nrow(no_dupes)
+
+# if(check <= 2){
+#   sequence_df <- data.frame("Sequence" = NA, 
+#                             "Frequency" = NA,
+#                             "up" = up,
+#                             "down" = down)
+#   return(sequence_df)
+# } 
+# else {
+# Define window size
+window_size <- 2
+
+# Create sliding windows
+windows <- rollapply(
+  select(no_dupes, -datetime),
+  width = window_size,
+  by.column = FALSE,
+  FUN = function(x) paste(as.vector(t(x)), collapse = "")
+)
+
+# Count and sort sequences
+sequence_counts <- table(windows)
+sorted_counts <- sort(sequence_counts, decreasing = TRUE)
+
+# Display all sequences and their frequencies
+sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
+if(check > 1) colnames(sequence_df) <- c("Sequence", "Frequency")
+
+
+sequence_df$up <- up
+sequence_df$down <- down
+#output$total <- sum(sequence_df$Frequency)
+#write some way to score the sequence_df
+#award one point for one of these configs:
+#supports <- c("0001","0111","1101", "0100")
+
+
+#sub <- filter(sequence_df, Sequence %in% supports)
+#output$points <- sum(sub$Frequency)
+
+
+#create output with transitions
+#error handling- in situation where both points flowed 100% of the time
+
+return(sequence_df)
+}
+
+
+#test function
+
+calc_support_combos("r_18", "r_11", input)
+
+#function to break up groups of continuous measurements, ensure that gaps are not considered
+#contains calc_support function
+#iterate_groups_combos <- function(up, down, input, timestep){
+  #create group column that identifies gaps in continuous data in time
+
+i <- 4
+up <- paste0("r_",routes_w3$up[i])
+down <- paste0("r_",routes_w3$down[i])
+timestep <- minutes(30)
+  input$group <- cumsum(c(TRUE, diff(input$datetime) != timestep))
+  #View(input)
+
+  for(u in 1:length(unique(input$group))){
+  # u <- 1
+    print(u)
+    filtered_input <- input %>% filter(group == u)
+    #this line throws error if 
+    output <- calc_support_combos(up, down, filtered_input)
+    
+
+     if(u == 1) iterate_groups_alldat <- output
+     if(u > 1) iterate_groups_alldat <- rbind(iterate_groups_alldat, output)
+  }
+  # final_iterate_groups_alldat <- iterate_groups_alldat %>% 
+  #   drop_na() %>% 
+  #   group_by(up, down) %>% 
+  #   summarise(total = sum(total),
+  #             points = sum(points))
+  return(iterate_groups_alldat)
+}
+
+iterate_groups_combos("r_13", "r_19", input, minutes(30))
+#function to take a list of routes and input dataset
+#contains group iteration function
+#for loop to iterate through full list of combinations of up and downstream locations
+#IMPORTANT- calculate hierarchy and iterate groups only work if the input timestep is approriate
+calculate_hierarchy_combos <- function(routes, input, timestep){
+  for(x in 1:length(routes$up)){
+  up <- paste0("r_",routes$up[x])
+  down <- paste0("r_",routes$down[x])
+  #print(x)
+  
+  #out <- iterate_groups_combos(up, down, input, timestep)
+    out <- calc_support_combos(up, down, input)
+
+
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
+
+  }
+  final_output <- alldat %>% 
+    drop_na() %>%
+    group_by(up, down, Sequence) %>%
+    summarise(Frequency = sum(Frequency))
+  return(final_output)
+}
+test <- calculate_hierarchy_combos(routes_w3, filtered_input, minutes(30))
+
+test %>% 
+  group_by(Sequence) %>% 
+  summarise(sum(Frequency))
+
+supports <- c("0001","0111","1101", "0100")
+
+test %>% ungroup() %>% 
+  filter(Sequence %in% supports) %>% 
+  summarise(sum(Frequency))
+
+test %>% ungroup() %>% 
+  #filter(Sequence %in% supports) %>% 
+  summarise(sum(Frequency))
+
+#create a key for wetting and drying
+wetting <- c("0001", "0010", "0011", "0111", "1011")
+drying <- c("0100", "1000", "1100", "1101", "1110")
+no_net_change <- c("0000", "0101", "0110", "1001", "1010", "1111")
+#create key for sequential and non
+sequential <- c("0001", "0100", "0111", "1101")
+nonsequential <- c("0010", "1000", "1011", "1110")
+undeterminable <- c("0011","0110", "1001","1100")
+no_change2 <- c("0000", "1111", "0101", "1010")
+
+test2 <- test %>% 
+  #mutate(Sequence = as.numeric(Sequence)) %>% 
+  mutate(status = case_when(Sequence %in% wetting ~ "wetting",
+                            Sequence %in% drying ~ "drying",
+                            Sequence %in% no_net_change ~ "no_net_change"),
+         category = case_when(Sequence %in% sequential ~ "sequential",
+                              Sequence %in% nonsequential ~ "nonsequential",
+                              Sequence %in% undeterminable ~ "undeterminable",
+                              Sequence %in% no_change2 ~ "no_change")) %>% 
+  group_by(status, category) %>% 
+  summarise(count = sum(Frequency))
+
+test2 %>% ungroup() %>% 
+  group_by(category) %>% 
+  mutate(shed = "W3" ) %>% 
+  ggplot(aes(x = shed, y = count, fill = category))+
+  geom_histogram(stat = "identity")
+
+#second plot- what proportion of transitions are sequential or not
+#ultimately one of these for each sequence?
+test2 %>% ungroup() %>% 
+  filter(category != "no_change") %>% 
+  group_by(category) %>% 
+  mutate(shed = "W3" ) %>% 
+  ggplot(aes(x = shed, y = count, fill = category))+
+  geom_histogram(stat = "identity")
+
+
+#fantastic four function has been modified, to do average daily state. Removed hourly and 4 hr time blocks
+fantastic_four_combos <- function(routes, shed){
+  theFour <- c("30mins", "daily")
+  
+  for(q in 1:length(theFour)){
+    #if statements to detect timescale, calculate appropriate inputs
+    timescale <- theFour[q]
+  if(timescale == "30mins"){
+    input <- rbind(input_w3, input_fb, input_zz) %>%
+      filter(wshed == shed, mins %in% c(0, 30)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- minutes(30)
+  } 
+  else if(timescale == "daily"){
+    input <- rbind(input_w3, input_fb, input_zz) %>%
+      filter(wshed == shed) %>% 
+      mutate(
+             "day" = day(datetime),
+             "month" = month(datetime),
+             "year" = year(datetime)) %>% 
+      group_by(day, month, year, ID) %>%
+      summarise(avg_state = mean(binary)) %>% 
+      ungroup() %>% 
+      mutate(avg_state = round(avg_state)) %>% 
+      rename("binary" = avg_state) %>% 
+      mutate("datetime" = ymd_hms(paste0(year,"-",month,"-",day," ","00:00:00"))) %>% 
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+          arrange(datetime) %>% 
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- days(1)
+  } 
+  else {
+    stop("Not a timescale anticipated!")
+  }
+    out <- calculate_hierarchy_combos(routes, input, timestep)
+    out$timescale <- theFour[q]
+    
+    if(q == 1) fanfar <- out
+    if(q > 1) fanfar <- rbind(fanfar, out)
+  }
+  fanfar$shed <- shed
+  return(fanfar)
+}
+
+
+fantastic_four_combos(routes_w3, "W3")
+# function to determine proportion of transitions that state changes follow all parent child relationships
+calc_props_silly <- function(routes, shed){
+  full_combos <- routes
+total_state_changes <- full_combos %>% 
+    filter(Sequence %not_in% c(undeterminable, no_change2)) %>% 
+    group_by(up, down) %>% 
+    summarise(totals = sum(Frequency))
+supports <- c("0001","0111","1101", "0100")
+
+hierarchical_changes <- full_combos %>% 
+    filter(Sequence %not_in% c(undeterminable, no_change2)) %>% 
+    filter(Sequence %in% supports) %>% 
+    group_by(up, down) %>%  
+    summarise(hierarchical = sum(Frequency)) 
+
+un_split <- total_state_changes %>% 
+  left_join(hierarchical_changes, by = c("up", "down")) %>% 
+  mutate(prop = hierarchical/totals) %>% 
+  mutate_all(~replace(., is.na(.), 0))
+return(un_split)
+}
+
+calc_props_silly(test, "W3")
+```
+
+Final first graph
+```{r W3}
+#final first graph
+test <- input_w3 %>% 
+  select(datetime, ID, binary) %>% 
+    group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) #%>% 
+  #filter(transition %in% c(-1, 1))
+
+test$state_change <- "none"
+test$state_change[test$transition == -1] <- "wetting"
+test$state_change[test$transition == 1] <- "drying"
+
+test %>% ungroup() %>% 
+  group_by(state_change) %>% 
+  summarise(count = length(state_change))
+
+length(test$datetime)
+
+test %>% ungroup() %>% 
+  group_by(state_change) %>% 
+  summarise(count = length(state_change)) %>% 
+  mutate(shed = "W3" ) %>% 
+  ggplot(aes(x = shed, y = count, fill = state_change))+
+  geom_histogram(stat = "identity")
+
+changing_dates <- 
+  test %>% 
+  ungroup() %>% 
+  select(datetime, state_change) %>% 
+  group_by(datetime) %>% 
+  filter(state_change != "none") %>% select(datetime) %>% unique() %>% 
+  mutate(status = "changing")
+  
+  length(changing_dates$datetime)/48
+  length(unique(input_w3$datetime))/48
+
+`%not_in%` <- purrr::negate(`%in%`)
+
+w3_wetness_changing <- test %>% 
+  ungroup() %>% 
+  select(datetime) %>% unique() %>% 
+filter(datetime %not_in% changing_dates$datetime) %>% 
+  mutate(status = "no change") %>% 
+  bind_rows(changing_dates)
+
+#bar of total timesteps
+w3_bar_ready <- test %>% 
+  ungroup() %>% 
+  select(datetime) %>% unique() %>% 
+filter(datetime %not_in% changing_dates$datetime) %>% 
+  mutate(status = "no change") %>% 
+  bind_rows(changing_dates) %>% 
+  group_by(status) %>% 
+  summarise(count = length(status)) %>% 
+  mutate(shed = "W3")
+  #ungroup() %>% 
+
+w3_bar_ready
+
+w3_bar_ready %>% 
+  ggplot(aes(x = shed, y = count/sum(count), fill = status))+
+  geom_histogram(stat = "identity")
+
+#one more thing, looking at the accuracy during times of transition
+make_change <- test %>% 
+  ungroup() %>% 
+  select(datetime) %>% unique() %>% 
+filter(datetime %not_in% changing_dates$datetime) %>% 
+  mutate(status = "no change") %>% 
+  bind_rows(changing_dates)
+
+df_summary_time_w3 %>% 
+  pivot_longer(-datetime) %>% 
+left_join(make_change, by = "datetime") %>% 
+  group_by(name, status) %>% 
+  summarise(average_acc = mean(value),
+            sd(value))
+```
+```{r FB}
+#final first graph
+test <- input_fb %>% 
+  select(datetime, ID, binary) %>% 
+    group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) #%>% 
+  #filter(transition %in% c(-1, 1))
+
+test$state_change <- "none"
+test$state_change[test$transition == -1] <- "wetting"
+test$state_change[test$transition == 1] <- "drying"
+
+test %>% ungroup() %>% 
+  group_by(state_change) %>% 
+  summarise(count = length(state_change))
+
+length(test$datetime)
+
+test %>% ungroup() %>% 
+  group_by(state_change) %>% 
+  summarise(count = length(state_change)) %>% 
+  mutate(shed = "FB" ) %>% 
+  ggplot(aes(x = shed, y = count, fill = state_change))+
+  geom_histogram(stat = "identity")
+
+changing_dates <- 
+  test %>% 
+  ungroup() %>% 
+  select(datetime, state_change) %>% 
+  group_by(datetime) %>% 
+  filter(state_change != "none") %>% select(datetime) %>% unique() %>% 
+  mutate(status = "changing")
+  
+#  length(changing_dates$datetime)/48
+#  length(unique(input_w3$datetime))/48
+
+#bar of total timesteps
+fb_bar_ready <- test %>% 
+  ungroup() %>% 
+  select(datetime) %>% unique() %>% 
+filter(datetime %not_in% changing_dates$datetime) %>% 
+  mutate(status = "no change") %>% 
+  bind_rows(changing_dates) %>% 
+  group_by(status) %>% 
+  summarise(count = length(status)) %>% 
+  mutate(shed = "FB")
+
+fb_bar_ready %>% 
+  #ungroup() %>% 
+  ggplot(aes(x = shed, y = count/sum(count), fill = status))+
+  geom_histogram(stat = "identity")
+```
+```{r ZZ}
+#final first graph
+test <- input_zz %>% 
+  select(datetime, ID, binary) %>% 
+    group_by(ID) %>% 
+  mutate(lagged = lag(binary),
+         transition = (binary - lagged)) #%>% 
+  #filter(transition %in% c(-1, 1))
+
+test$state_change <- "none"
+test$state_change[test$transition == -1] <- "wetting"
+test$state_change[test$transition == 1] <- "drying"
+
+test %>% ungroup() %>% 
+  group_by(state_change) %>% 
+  summarise(count = length(state_change))
+
+length(test$datetime)
+
+test %>% ungroup() %>% 
+  group_by(state_change) %>% 
+  summarise(count = length(state_change)) %>% 
+  mutate(shed = "ZZ" ) %>% 
+  ggplot(aes(x = shed, y = count, fill = state_change))+
+  geom_histogram(stat = "identity")
+
+changing_dates <- 
+  test %>% 
+  ungroup() %>% 
+  select(datetime, state_change) %>% 
+  group_by(datetime) %>% 
+  filter(state_change != "none") %>% select(datetime) %>% unique() %>% 
+  mutate(status = "changing")
+  
+#  length(changing_dates$datetime)/48
+#  length(unique(input_w3$datetime))/48
+
+#bar of total timesteps
+zz_bar_ready <- test %>% 
+  ungroup() %>% 
+  select(datetime) %>% unique() %>% 
+filter(datetime %not_in% changing_dates$datetime) %>% 
+  mutate(status = "no change") %>% 
+  bind_rows(changing_dates) %>% 
+  group_by(status) %>% 
+  summarise(count = length(status)) %>% 
+  mutate(shed = "ZZ")
+
+zz_bar_ready %>% 
+  #ungroup() %>% 
+  ggplot(aes(x = shed, y = count/sum(count), fill = status))+
+  geom_histogram(stat = "identity")
+```
+
+Final second graph
+```{r}
+filtered_input <- input_w3 %>%
+      filter(mins %in% c(0, 30)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+calc_support_combos <- function(up, down, input){
+#inputs to function- comment out in final version
+# i <- 1
+# child <- paste0("r_",routes_w3$up[i])
+# parent <- paste0("r_",routes_w3$down[i])
+# input <- filtered_input
+
+#create output with the total and the sub, also the two input locations
+output <- data.frame(child, parent)
+
+  
+no_dupes <- input %>% 
+      select(up,down, datetime) %>% #remove date
+      # make it so that there cannot be a sequence without change
+      # keep date column for indexing purposes later
+      #filter(row_number() == 1 | !apply(select(., up, down) == lag(select(., up, down)), 1, all)) %>% 
+      #remove rows where one of the sensors is missing data
+      drop_na()
+
+      #View(no_dupes)
+#all flowing all the time?
+check <- nrow(no_dupes)
+
+# if(check <= 2){
+#   sequence_df <- data.frame("Sequence" = NA, 
+#                             "Frequency" = NA,
+#                             "up" = up,
+#                             "down" = down)
+#   return(sequence_df)
+# } 
+# else {
+# Define window size
+window_size <- 2
+
+# Create sliding windows
+windows <- rollapply(
+  select(no_dupes, -datetime),
+  width = window_size,
+  by.column = FALSE,
+  FUN = function(x) paste(as.vector(t(x)), collapse = "")
+)
+
+# Count and sort sequences
+sequence_counts <- table(windows)
+sorted_counts <- sort(sequence_counts, decreasing = TRUE)
+
+# Display all sequences and their frequencies
+sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
+if(check > 1) colnames(sequence_df) <- c("Sequence", "Frequency")
+
+
+sequence_df$up <- up
+sequence_df$down <- down
+#output$total <- sum(sequence_df$Frequency)
+#write some way to score the sequence_df
+#award one point for one of these configs:
+#supports <- c("0001","0111","1101", "0100")
+
+
+#sub <- filter(sequence_df, Sequence %in% supports)
+#output$points <- sum(sub$Frequency)
+
+
+#create output with transitions
+#error handling- in situation where both points flowed 100% of the time
+
+return(sequence_df)
+}
+
+
+#test function
+
+#calc_support_combos("r_18", "r_11", input)
+
+#function to break up groups of continuous measurements, ensure that gaps are not considered
+#contains calc_support function
+iterate_groups_combos <- function(up, down, input, timestep){
+  #create group column that identifies gaps in continuous data in time
+
+# i <- 4
+# up <- paste0("r_",routes_w3$up[i])
+# down <- paste0("r_",routes_w3$down[i])
+# timestep <- minutes(30)
+  input$group <- cumsum(c(TRUE, diff(input$datetime) != timestep))
+  #View(input)
+
+  for(u in 1:length(unique(input$group))){
+  # u <- 1
+    print(u)
+    filtered_input <- input %>% filter(group == u)
+    #this line throws error if 
+    output <- calc_support_combos(up, down, filtered_input)
+    
+
+     if(u == 1) iterate_groups_alldat <- output
+     if(u > 1) iterate_groups_alldat <- rbind(iterate_groups_alldat, output)
+  }
+  # final_iterate_groups_alldat <- iterate_groups_alldat %>% 
+  #   drop_na() %>% 
+  #   group_by(up, down) %>% 
+  #   summarise(total = sum(total),
+  #             points = sum(points))
+  return(iterate_groups_alldat)
+}
+
+#iterate_groups_combos("r_13", "r_19", input, minutes(30))
+#function to take a list of routes and input dataset
+#contains group iteration function
+#for loop to iterate through full list of combinations of up and downstream locations
+#IMPORTANT- calculate hierarchy and iterate groups only work if the input timestep is approriate
+calculate_hierarchy_combos <- function(routes, input, timestep){
+  for(x in 1:length(routes$up)){
+  up <- paste0("r_",routes$up[x])
+  down <- paste0("r_",routes$down[x])
+  #print(x)
+  
+  #out <- iterate_groups_combos(up, down, input, timestep)
+    out <- calc_support_combos(up, down, input)
+
+
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
+
+  }
+  final_output <- alldat %>% 
+    drop_na() %>%
+    group_by(up, down, Sequence) %>%
+    summarise(Frequency = sum(Frequency))
+  return(final_output)
+}
+
+test <- calculate_hierarchy_combos(routes_w3, filtered_input, minutes(30))
+calc_props_silly(test, "W3")$prop %>% hist()
+
+
+#create a key for wetting and drying
+wetting <- c("0001", "0010", "0011", "0111", "1011")
+drying <- c("0100", "1000", "1100", "1101", "1110")
+no_net_change <- c("0000", "0101", "0110", "1001", "1010", "1111")
+#create key for sequential and non
+sequential <- c("0001", "0100", "0111", "1101")
+nonsequential <- c("0010", "1000", "1011", "1110")
+undeterminable <- c("0011","0110", "1001","1100")
+no_change2 <- c("0000", "1111", "0101", "1010")
+
+test2 <- test %>% 
+  #mutate(Sequence = as.numeric(Sequence)) %>% 
+  mutate(status = case_when(Sequence %in% wetting ~ "wetting",
+                            Sequence %in% drying ~ "drying",
+                            Sequence %in% no_net_change ~ "no_net_change"),
+         category = case_when(Sequence %in% sequential ~ "sequential",
+                              Sequence %in% nonsequential ~ "nonsequential",
+                              Sequence %in% undeterminable ~ "undeterminable",
+                              Sequence %in% no_change2 ~ "no_change")) %>% 
+  group_by(status, category) %>% 
+  summarise(count = sum(Frequency))
+
+# test2 %>% ungroup() %>% 
+#   group_by(category) %>% 
+#   mutate(shed = "W3" ) %>% 
+#   ggplot(aes(x = shed, y = count, fill = category))+
+#   geom_histogram(stat = "identity")
+
+#second plot- what proportion of transitions are sequential or not
+#ultimately one of these for each sequence?
+test2 %>% ungroup() %>% 
+  filter(category != "no_change") %>% 
+  #group_by(category) %>% 
+  mutate(shed = "W3" ) %>% 
+  ggplot(aes(x = shed, y = count/sum(count), fill = category))+
+  geom_histogram(stat = "identity")
+
+
+#do it again, but for twi
+routes_w3_twi
+
+hist_prep <- function(routes) {
+  test <- calculate_hierarchy_combos(routes, filtered_input, minutes(30))
+
+
+#create a key for wetting and drying
+wetting <- c("0001", "0010", "0011", "0111", "1011")
+drying <- c("0100", "1000", "1100", "1101", "1110")
+no_net_change <- c("0000", "0101", "0110", "1001", "1010", "1111")
+#create key for sequential and non
+sequential <- c("0001", "0100", "0111", "1101")
+nonsequential <- c("0010", "1000", "1011", "1110")
+undeterminable <- c("0011","0110", "1001","1100")
+no_change2 <- c("0000", "1111", "0101", "1010")
+
+test2 <- test %>% 
+  #mutate(Sequence = as.numeric(Sequence)) %>% 
+  mutate(status = case_when(Sequence %in% wetting ~ "wetting",
+                            Sequence %in% drying ~ "drying",
+                            Sequence %in% no_net_change ~ "no_net_change"),
+         category = case_when(Sequence %in% sequential ~ "sequential",
+                              Sequence %in% nonsequential ~ "nonsequential",
+                              Sequence %in% undeterminable ~ "undeterminable",
+                              Sequence %in% no_change2 ~ "no_change")) %>% 
+  group_by(status, category) %>% 
+  summarise(count = sum(Frequency))
+
+return(test2)
+}
+
+hist_prep(routes_w3_twi)
+
+hist_prep(routes_w3_twi) %>%
+  ungroup() %>% 
+  filter(category != "no_change") %>% 
+  #group_by(category) %>% 
+  mutate(shed = "W3" ) %>% 
+  ggplot(aes(x = shed, y = count/sum(count), fill = category))+
+  geom_histogram(stat = "identity")
+
+calc_props_silly(calculate_hierarchy_combos(routes_w3_twi, filtered_input, minutes(30)), "W3")$prop %>% hist()
+
+#again for graph theory
+W3_cheap
+W3_random
+
+routes_w3_cheap <- W3_cheap %>% 
+    filter(ID %in% W3_IDs) %>% 
+  rename("up" = ID)  %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+hist_prep(routes_w3_cheap) %>%
+  ungroup() %>% 
+  filter(category != "no_change") %>% 
+  #group_by(category) %>% 
+  mutate(shed = "W3" ) %>% 
+  ggplot(aes(x = shed, y = count/sum(count), fill = category))+
+  geom_histogram(stat = "identity")
+
+calc_props_silly(calculate_hierarchy_combos(routes_w3_cheap, filtered_input, minutes(30)), "W3")$prop %>% hist()
+
+
+#again for random sequence
+routes_w3_random <- W3_random %>% 
+    filter(ID %in% W3_IDs) %>% 
+  rename("up" = ID)  %>% 
+  mutate(down = lag(up)) %>% 
+   drop_na() %>% 
+  select(up, down) 
+
+hist_prep(routes_w3_random) %>%
+  ungroup() %>% 
+  filter(category != "no_change") %>% 
+  #group_by(category) %>% 
+  mutate(shed = "W3" ) %>% 
+  ggplot(aes(x = shed, y = count/sum(count), fill = category))+
+  geom_histogram(stat = "identity")
+```
+
+
+### New graph
+Plot a grid, of sequential wetting and drying, "the full graph"
+```{r}
+W3_all_combos %>% 
+  ggplot(aes(x = down, y = up, fill = prop))+
+    geom_tile(color="white") +
+    scale_fill_viridis_c(limits=c(0,1)) +
+    labs(x="Parent", y="Child", fill="P(i before j)", title="Event precedence matrix") +
+    theme_minimal()
+
+FB_all_combos %>% 
+  ggplot(aes(x = down, y = up, fill = prop))+
+    geom_tile(color="white") +
+    scale_fill_viridis_c(limits=c(0,1)) +
+    labs(x="Parent", y="Child", fill="P(i before j)", title="Event precedence matrix") +
+    theme_minimal()
+
+ZZ_all_combos %>% 
+  ggplot(aes(x = down, y = up, fill = prop))+
+    geom_tile(color="white") +
+    scale_fill_viridis_c(limits=c(0,1)) +
+    labs(x="Parent", y="Child", fill="P(i before j)", title="Event precedence matrix") +
+    theme_minimal()
+
+```
+Make these plots again, but order them by proportion of time flowing sequence
+
+```{r}
+w3_pk_seq2 <- 
+  pks_w3 %>% 
+    filter(ID %in% W3_IDs) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(sequence = seq(1, 26, 1))
+
+#w3_grid <- 
+  W3_all_combos %>% 
+    filter(prop > 0.5) %>% 
+  mutate(up = as.numeric(substr(up, 3,4)),
+         down = as.numeric(substr(down, 3,4))) %>% 
+  filter(timescale == "30mins") %>% 
+  select(up, down, prop) %>% 
+    ungroup() %>% 
+  rename(ID = up) %>% 
+  left_join(w3_pk_seq2, by = "ID") %>% 
+  rename(child = ID,
+         ID = down,
+         child_sequence = sequence) %>% 
+  left_join(w3_pk_seq2, by = "ID") %>% 
+  rename(parent = ID, 
+         parent_sequence = sequence) %>% 
+  select(child, parent, child_sequence, parent_sequence, prop) %>% 
+  ggplot(aes(x = parent_sequence, y = child_sequence, fill = prop))+
+    geom_tile(color="white") +
+    scale_fill_viridis_c(limits=c(0,1)) +
+    labs(x="Parent", y="Child", fill="Prop", title="W3 sequential behavior matrix") +
+    theme_minimal()+
+  theme(legend.position = "none")
+  
+####### FB
+fb_pk_seq2 <- 
+  pks_fb %>% 
+    filter(ID %in% FB_IDs) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(sequence = seq(1, 24, 1))
+
+fb_grid <- FB_all_combos %>% 
+  mutate(up = as.numeric(substr(up, 3,4)),
+         down = as.numeric(substr(down, 3,4))) %>% 
+  filter(timescale == "30mins") %>% 
+  select(up, down, prop) %>% 
+    ungroup() %>% 
+  rename(ID = up) %>% 
+  left_join(fb_pk_seq2, by = "ID") %>% 
+  rename(child = ID,
+         ID = down,
+         child_sequence = sequence) %>% 
+  left_join(fb_pk_seq2, by = "ID") %>% 
+  rename(parent = ID, 
+         parent_sequence = sequence) %>% 
+  select(child, parent, child_sequence, parent_sequence, prop) %>% 
+  ggplot(aes(x = parent_sequence, y = child_sequence, fill = prop))+
+    geom_tile(color="white") +
+    scale_fill_viridis_c(limits=c(0,1)) +
+    labs(x="Parent", y="Child", fill="Prop", title="FB sequential behavior matrix") +
+    theme_minimal()+
+  theme(legend.position = "none")
+
+
+###### ZZ
+zz_pk_seq2 <- 
+  pks_zz %>% 
+    filter(ID %in% ZZ_IDs) %>% 
+  arrange(desc(pk)) %>% 
+  mutate(sequence = seq(1, 24, 1))
+
+zz_grid <- ZZ_all_combos %>% 
+  mutate(up = as.numeric(substr(up, 3,4)),
+         down = as.numeric(substr(down, 3,4))) %>% 
+  filter(timescale == "30mins") %>% 
+  select(up, down, prop) %>% 
+    ungroup() %>% 
+  rename(ID = up) %>% 
+  left_join(zz_pk_seq2, by = "ID") %>% 
+  rename(child = ID,
+         ID = down,
+         child_sequence = sequence) %>% 
+  left_join(zz_pk_seq2, by = "ID") %>% 
+  rename(parent = ID, 
+         parent_sequence = sequence) %>% 
+  select(child, parent, child_sequence, parent_sequence, prop) %>% 
+  ggplot(aes(x = parent_sequence, y = child_sequence, fill = prop))+
+    geom_tile(color="white") +
+    scale_fill_viridis_c(limits=c(0,1)) +
+    labs(x="Parent", y="Child", fill="Prop", title="ZZ sequential behavior matrix") +
+    theme_minimal()
+
+w3_grid + fb_grid + zz_grid
+```
+
 ## UNUSED: Accuracy of all models versus pk accuracy
 ```{r W3}
 #trying to plot accuracy vs accuracy
