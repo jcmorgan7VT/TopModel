@@ -909,7 +909,8 @@ fb_air_25 <-
          pressure_psi_air = 2) %>% 
   mutate(DATETIME = mdy_hms(DATETIME)))
 
-FB_air <- read_csv("./PressureTransducers_summer24/FB_air.csv", skip = 1) %>% 
+#FB_air <- 
+  read_csv("./PressureTransducers_summer24/FB_air.csv", skip = 1) #%>% 
   select(2:3) %>% 
   rename(DATETIME = 1,
          pressure_psi_air = 2) %>% 
@@ -3777,413 +3778,117 @@ comparison_long_w3 <-
                  
 
 ```
-```{r plot-W3-model-accuracy}
-#final plot
-
-#plot of correct, ommission, and commission through time
-#plot that works
-comparison_long_w3 %>% 
-  mutate(day_of_year = yday(datetime)
-  ) %>% 
-  mutate(value = fct_relevel(value, c("correct", "omission", "commission"))) %>% 
-  ggplot() +
-  geom_histogram(aes(x = day_of_year, fill = value), binwidth = 1, na.rm = TRUE)+
-  scale_fill_manual(values = c("grey", "green", "orange"))+
-  facet_grid(name~year)
-
-#histogram where I pre-calculate the total number per day of the year, and what proportion that is of the total.
-##then the bars will be the same h eight
-test <- comparison_long_w3 %>% 
-  filter(#name != "random_eval",
-         name != "cheapest_eval",
-         name != "con_eval",
-         name != "random_eval") %>% 
-  mutate(day_of_year = yday(datetime)
-  ) %>% 
-  mutate(value = fct_relevel(value, c("correct", "omission", "commission"))) %>% 
-  group_by(datetime, name) %>% 
-  mutate(total = length(value)) %>% 
-  group_by(datetime, name, value) %>% 
-  mutate(count = length(value)) %>% unique() #%>% 
-
-
-test2 <- test %>%
-  ungroup() %>% 
-  mutate(prop = count/total) %>% 
-  mutate(value = fct_relevel(value, c("omission", "correct", "commission")))
-
-  ggplot(data = test2) +
-  geom_bar(aes(x = (day_of_year), fill = value, y = prop), na.rm = TRUE, position="fill", stat="identity", width = 1)+
-  scale_fill_manual(values = c("green","grey",  "orange"))+
-  facet_grid(name~year)
-
-```
-
-```{r old-plot-presence/absence-with-discharge}
-
-#d <- 1
-#start <- ymd_hms(paste0(crossed_up$dry_date[d]," 00:00:00"))
-#stop <- ymd_hms(paste0(crossed_up$wet_date[d]," 00:00:00"))
-
-
-test_IDS <- input_w3 #%>% 
-    filter(datetime > start & datetime < stop)
-
-remainder <- unique(test_IDS$ID)
-
-pks_ordered <- pks_w3 %>% 
-filter(ID %in% remainder) %>% 
-  arrange(desc(pk)) %>% 
-  rowid_to_column("pk_order")
-
-q_23_plotting <- q_23_f %>% 
-  rbind(q_24_f) %>% 
-    #filter(DATETIME > start & DATETIME < stop) %>% 
-  rename("datetime" = DATETIME)
-
-q_23_plotting <- q_23_f %>% 
-    #filter(DATETIME > start & DATETIME < stop) %>% 
-  rename("datetime" = DATETIME)
-q_23_plotting %>% 
-ggplot(aes(x  = datetime, y = Q_mm_day))+
-  geom_line()+
-  labs(title = "Discharge from W3, July to Nov 2023",
-       x = "",
-       y = "Instantaneous Q (mm/day)")+
-  theme_classic()
-
-
-test <- input_w3 %>% 
-    #filter(datetime > start & datetime < stop) %>% 
-  #filter(ID == 17)
-  #filter(ID %in% W3_IDs) %>% 
-  left_join(q_23_plotting, by = "datetime") %>% 
-  left_join(pks_ordered, by = "ID")
-sec2 <- with(test, train_sec(pk_order, Q_mm_day))
-
-test %>% 
-  ggplot(aes(x = datetime))+
-  geom_tile(aes(y = (pk_order), fill = as.character(binary)))+
-      geom_line(aes(y = sec2$fwd(Q_mm_day)), color = "white")+
-  ylab("Supposed activation order")+
-  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Instantaneous Q (mm/day)")) +
-  #facet_grid(~name, scales = "free") + 
-  scale_fill_manual(drop = FALSE,
-                     values = binary,
-                    breaks = c(0, 1),
-                    labels = c("Dry", "Wet"),
-                    name = ""
-                    )+
-  labs(title = "Very dry to very wet",
-       subtitle = "W3, 7/20 - 7/22, 2023",
-       x = "")+
-scale_x_continuous(breaks=c(ymd_hms("2023-07-20 00:00:00"),
-                            ymd_hms("2023-07-21 00:00:00"),
-                            ymd_hms("2023-07-22 00:00:00")),
-                   labels = c("7/20/23",
-                              "7/21/23",
-                              "7/22/23"))+
-  theme_classic()+
-    theme(legend.position="right")
-
-#add hydrograph to plot
-crossed_up
-```
-
-Combining these two ideas
-```{r successfully graphed both accuracy over time and discharge}
-test <- comparison_long_w3 %>% 
-  filter(#name != "random_eval",
-         name != "cheapest_eval",
-         name != "con_eval",
-         name != "random_eval") %>% 
-  mutate(day_of_year = yday(datetime)
-  ) %>% 
-  mutate(value = fct_relevel(value, c("correct", "omission", "commission"))) %>% 
-  group_by(datetime, name) %>% 
-  mutate(total = length(value)) %>% 
-  group_by(datetime, name, value) %>% 
-  mutate(count = length(value)) %>% unique() #%>% 
-
-
-
-test2 <- test %>%
-  ungroup() %>% 
-  mutate(prop = count/total) %>% 
-  mutate(value = fct_relevel(value, c("correct", "omission", "commission"))) %>% 
-  left_join(rbind(q_23_bind, q_24_bind), by = "datetime")
-
-sec2 <- with(test2, train_sec(prop, Q_mm_day))
-
-#Plot with both accuracy and discharge, very cooL!
-test2 %>% 
-  ggplot(aes(x = day_of_year)) +
-  geom_bar(aes(fill = value, y = prop), na.rm = TRUE, position="fill", stat="identity", width = 1)+
-  scale_fill_manual(values = c("grey", "green", "orange"))+
-  geom_line(aes(y = sec2$fwd(Q_mm_day)), color = "gray40")+
-  ylab("Accuracy")+
-  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Instantaneous Q (mm/day)")) +
-  facet_grid(name~year)
-
-test2 %>% 
-  ggplot(aes(x = datetime)) +
-  geom_bar(aes(fill = value, y = prop),  position="fill", stat="identity", na.rm = TRUE)+
-  scale_fill_manual(values = c("grey", "green", "orange"))+
-  geom_line(aes(y = sec2$fwd(Q_mm_day)), color = "gray40")+
-  ylab("Accuracy")+
-  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Instantaneous Q (mm/day)")) +
-  theme_classic()+
-  facet_grid(rows = "name")+
-  scale_x_break(c(ymd_hms("2023-11-12 00:00:00"), ymd_hms("2024-05-20 00:00:00")))+
-  scale_x_continuous(
-    #breaks = as.numeric(pretty(df$date)),
-    labels = function(datetime) as_datetime(datetime, tz = "UTC")
-  )
-
-# Example: Number of seconds
-    seconds_since_epoch <- 1678886400
-
-    # Convert to POSIXct using lubridate's as_datetime
-    datetime_object_lub <- as_datetime(seconds_since_epoch, tz = "UTC")
-
-    # Print the result
-    print(datetime_object_lub)
-```
-
-Now add a bar/different color for when it is the best sequence!
-```{r}
-five_colors <- c("#d68c45",  "#247BA0", "#A30B37", "#F0C808", "#2c6e49")
-
-
-#plot the best at each timestep
-unique_maxi <- 
-  df_long_w3 %>% 
-  filter(model != "random_accuracy",
-         model != "cheap_accuracy",
-         model != "con_accuracy") %>% 
-  group_by(datetime) %>% 
-  filter(accuracy == max(accuracy)) %>% 
-  mutate(dup = as.character(n() > 1)) %>% ungroup()  %>%
-  mutate(unique_sol = case_when(dup == TRUE ~ "z_tie",
-                                dup == FALSE ~ model)) %>%
-  filter(dup == FALSE) %>% 
-  mutate(name = case_when(model == "cheap_accuracy" ~ "cheap_eval",
-                          model == "pk_accuracy" ~ "pk_eval",
-                          model == "new_accuracy" ~ "new_eval")) #%>% 
-inner_join(big_comb, by = "datetime") %>%
-  ggplot(aes(x = datetime, y = Q_mm_day, color = model)) +
-  #geom_point() +
-  geom_point(size = 1)+
-  theme_classic()+
-  scale_color_manual(values = c(five_colors[1:3], "lightgrey"))+
-  labs(title = "Most accurate model along hydrograph", y = "Discharge (mm/day)", x = "")+
-  facet_wrap(~ model)+
-    scale_x_break(c(ymd_hms("2023-11-12 00:00:00"), ymd_hms("2024-05-20 00:00:00")))
-  
-test2 %>% 
-  left_join(unique_maxi, by = c("datetime", "name")) %>% 
-  ggplot(aes(x = datetime)) +
-  geom_bar(aes(fill = value, y = prop),  position="fill", stat="identity", na.rm = TRUE)+
-    scale_fill_manual(values = c("grey", "green", "orange"))+
-#new_scale_fill()+
-  geom_point(aes(y= 0), alpha = 0.3, na.rm = TRUE)+
-  geom_line(aes(y = sec2$fwd(Q_mm_day)), color = "gray40")+
-  ylab("Accuracy")+
-  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Instantaneous Q (mm/day)")) +
-  facet_grid(rows = "name")
-
-```
-
-Combine histogram of accuracy, colored by best model, with discharge plotted as a line overtop
-Gave up on this plot, although it has potential
-```{r}
-test2 <- 
-df_acc %>%
-  left_join(rbind(q_23_bind, q_24_bind), by = "datetime")
-
-sec2 <- with(test2, train_sec(accuracy, Q_mm_day))
-
-#Plot with both accuracy and discharge, very cooL!
-test2 %>% 
-  ggplot(aes(x = datetime)) +
-  geom_col(aes(y = accuracy, fill = unique_sol), width = 1800, position = "identity") +
-    geom_line(aes(y = sec2$fwd(Q_mm_day)), color = "black", lwd = 1.5)+
-  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Instantaneous Q (mm/day)")
-                     ) +
-  theme_classic() +
-  labs(y = "Accuracy", x = NULL) +
-  scale_fill_manual(values = c(five_colors[1:3], "lightgrey")) +
-  scale_color_manual(values = c(five_colors[1:3], "lightgrey")) +
-  scale_x_break(c(ymd_hms("2023-11-1200:00:00"),
-                  ymd_hms("2024-05-20 00:00:00"))) +
-  scale_x_datetime(
-    date_labels = "%b %Y",
-    date_breaks = "1 month",
-    timezone = "UTC"
-  ) +
-  theme(
-    axis.text.x.top = element_blank(),
-    axis.ticks.x = element_blank(),
-    axis.line.x.top = element_blank()#,
-    #legend.position = "none"   # legend will come from bottom plot
-  )
-```
-
-Third plot idea- color discharge by the proportion of network that is flowing
-
-```{r}
-number_activated <- 
-  input_w3 %>% 
-  left_join(W3_cheap, by = "ID") %>%
-  group_by(datetime) %>% 
-  select(-c(wshed, mins)) %>% 
-  mutate(deployed = length(binary)) %>% 
-  #arrange(sequence) %>% 
-      #filter(binary == 1) %>% 
-    summarise(number_flowing = length(binary[binary == 1]),
-            deployed = list(unique(ID)))
-
-
-test2 %>% 
-  left_join(number_activated, by = "datetime") %>% 
-  ggplot(aes(x = day_of_year)) +
-  geom_bar(aes(fill = value, y = prop), na.rm = TRUE, position="fill", stat="identity", width = 1)+
-  scale_fill_manual(values = c("grey", "black", "black"))+
-  geom_line(aes(y = sec2$fwd(Q_mm_day), color = number_flowing))+
-  scale_color_viridis()+
-  ylab("Accuracy")+
-  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Instantaneous Q (mm/day)")) +
-  facet_grid(name~year)
-```
-
-
 ```{r FB}
-#chains used in graph theory solutions
-FB_cheap <- chain_solution(FB_IDs, "FB", methods = "cheapest_insertion")
-#FB_random <- chain_solution(FB_IDs, "FB", methods = "random")
-FB_random <- tibble(ID = sample(FB_IDs),
-                    sequence = seq(1, length(FB_IDs), 1))
-                    
+# running model on each sequence
+pk_model_fb <- calc_model_result(FB_pk_seq$ID, "FB") %>% 
+  dplyr::rename("pk" = pred_out)
+twi_model_fb <- calc_model_result(fb_twi_sequence$ID, "FB") %>% 
+  dplyr::rename("twi" = pred_out)
+bfs_model_fb <- calc_model_result(best_bfs_fb$ID, "FB") %>%
+  dplyr::rename("bfs" = pred_out)
+event_model_fb <- calc_model_result(avg_event_fb$ID, "FB") %>%
+  dplyr::rename("event" = pred_out)
 
-#applying evaluation model using different sequences
-cheap_model_fb <- calc_model_result(FB_cheap$ID, "FB") %>% rename("cheapest" = pred_out)
-pk_model_fb <- calc_model_result(FB_pk_seq$ID, "FB") %>% rename("pk" = pred_out)
-random_model_fb <- calc_model_result(FB_random$down, "FB") %>% rename("random" = pred_out)
-twi_model_fb <- calc_model_result(fb_twi_sequence$ID, "FB") %>% rename("twi" = pred_out)
-new_model_fb <- calc_model_result(new_seq_fb$down, "FB") %>% rename("new" = pred_out)
 
 comparison_fb <- input_fb %>% 
   filter(mins %in% c(0, 30)) %>% 
-  left_join(cheap_model_fb, by = c("datetime", "ID")) %>% 
   left_join(pk_model_fb, by = c("datetime", "ID")) %>% 
-    left_join(random_model_fb, by = c("datetime", "ID")) %>% 
   left_join(twi_model_fb, by = c("datetime", "ID")) %>% 
-  left_join(new_model_fb, by = c("datetime", "ID")) %>% 
+  left_join(bfs_model_fb, by = c("datetime", "ID")) %>% 
+  left_join(event_model_fb, by = c("datetime", "ID")) %>% 
   select(-wshed, -mins) %>% 
   drop_na()
 
 #apply get_eval function to each model run
-comparison_fb$cheapest_eval <- mapply(get_eval_label, comparison_fb$binary, comparison_fb$cheapest)
+
 comparison_fb$pk_eval <- mapply(get_eval_label, comparison_fb$binary, comparison_fb$pk)
-comparison_fb$random_eval <- mapply(get_eval_label, comparison_fb$binary, comparison_fb$random)
 comparison_fb$twi_eval <- mapply(get_eval_label, comparison_fb$binary, comparison_fb$twi)
-comparison_fb$new_eval <- mapply(get_eval_label, comparison_fb$binary, comparison_fb$new)
-
-
+comparison_fb$bfs_eval <- mapply(get_eval_label, comparison_fb$binary, comparison_fb$bfs)
+comparison_fb$event_eval <- mapply(get_eval_label, comparison_fb$binary, comparison_fb$event)
 
 #summarize through time
 df_summary_time_fb <- comparison_fb %>%
   group_by(datetime) %>%
   summarize(
-    cheap_correct = sum(cheapest_eval == "correct"),
     pk_correct = sum(pk_eval == "correct"),
-    random_correct = sum(random_eval == "correct"),
     twi_correct = sum(twi_eval == "correct"),
-    new_correct = sum(new_eval == "correct"),
+    bfs_correct = sum(bfs_eval == "correct"),
+    event_correct = sum(event_eval == "correct"),
+    #con_correct = sum(con_eval == "correct"),
     total = n(),
-    cheap_accuracy = cheap_correct / total,
     pk_accuracy = pk_correct / total,
-    random_accuracy = random_correct / total,
     twi_accuracy = twi_correct / total,
-    new_accuracy = new_correct / total
+    bfs_accuracy = bfs_correct / total,
+    event_accuracy = event_correct / total
   )
 
-
 df_long_fb <- df_summary_time_fb %>%
-  select(datetime, cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy, new_accuracy) %>%
-  tidyr::pivot_longer(cols = c(cheap_accuracy, pk_accuracy, random_accuracy, twi_accuracy, new_accuracy), names_to = "model", values_to = "accuracy")
+  select(datetime, contains("accuracy")) %>% 
+  tidyr::pivot_longer(cols = c(pk_accuracy, 
+                               twi_accuracy, bfs_accuracy,
+                               event_accuracy),#, con_accuracy), 
+                      names_to = "model", values_to = "accuracy")
 
-ggplot(df_long_fb, aes(x = datetime, y = accuracy, color = model)) +
-  geom_line() +
-  labs(title = "Model Accuracy Over Time", y = "Accuracy", x = "Time")
-
-#original way of comparing- the grid
+#make data long for final plot
 comparison_long_fb <- 
   comparison_fb %>% 
   select(datetime, ends_with("eval")) %>% 
     pivot_longer(-datetime) %>% 
   mutate(year = year(datetime))
 
-# filter(datetime >= ymd_hms("2023-07-24 00:00:00") & datetime <= ymd_hms("2023-08-20 00:00:00")) %>% 
-comparison_long_fb %>% 
-  mutate(day_of_year = yday(datetime)
-  ) %>% 
-  #group_by(datetime) %>% 
-  #filter(year == 2023) %>% 
-  mutate(total = as.numeric(length(value))) %>% 
-  ggplot() +
-  geom_histogram(aes(x = day_of_year, fill = value), binwidth = 1, na.rm = TRUE)+
-  facet_grid(name~year)
+                 
+
 ```
 ```{r ZZ}
-ZZ_cheap <- chain_solution(ZZ_IDs, "ZZ", methods = "cheapest_insertion", two_opt = FALSE)
-#ZZ_random <- chain_solution(ZZ_IDs, "ZZ", methods = "random", two_opt = FALSE)
-ZZ_random <- tibble(ID = sample(ZZ_IDs),
-                    sequence = seq(1, length(ZZ_IDs), 1))
-
-cheap_model_zz <- calc_model_result(ZZ_cheap$ID, "ZZ") %>% rename("cheapest" = pred_out)
-pk_model_zz <- calc_model_result(ZZ_pk_seq$ID, "ZZ") %>% rename("pk" = pred_out)
-random_model_zz <- calc_model_result(ZZ_random$ID, "ZZ") %>% rename("random" = pred_out)
-twi_model_zz <- calc_model_result(zz_twi_sequence$ID, "ZZ") %>% rename("twi" = pred_out)
-new_model_zz <- calc_model_result(new_seq_zz$down, "ZZ") %>% rename("new" = pred_out)
+# running model on each sequence
+pk_model_zz <- calc_model_result(ZZ_pk_seq$ID, "ZZ") %>% 
+  dplyr::rename("pk" = pred_out)
+twi_model_zz <- calc_model_result(zz_twi_sequence$ID, "ZZ") %>% 
+  dplyr::rename("twi" = pred_out)
+bfs_model_zz <- calc_model_result(best_bfs_zz$ID, "ZZ") %>%
+  dplyr::rename("bfs" = pred_out)
+event_model_zz <- calc_model_result(avg_event_zz$ID, "ZZ") %>%
+  dplyr::rename("event" = pred_out)
 
 
 comparison_zz <- input_zz %>% 
   filter(mins %in% c(0, 30)) %>% 
-  left_join(cheap_model_zz, by = c("datetime", "ID")) %>% 
   left_join(pk_model_zz, by = c("datetime", "ID")) %>% 
-    left_join(random_model_zz, by = c("datetime", "ID")) %>% 
   left_join(twi_model_zz, by = c("datetime", "ID")) %>% 
-  left_join(new_model_zz, by = c("datetime", "ID")) %>%
+  left_join(bfs_model_zz, by = c("datetime", "ID")) %>% 
+  left_join(event_model_zz, by = c("datetime", "ID")) %>% 
   select(-wshed, -mins) %>% 
   drop_na()
 
 #apply get_eval function to each model run
-comparison_zz$cheapest_eval <- mapply(get_eval_label, comparison_zz$binary, comparison_zz$cheapest)
+
 comparison_zz$pk_eval <- mapply(get_eval_label, comparison_zz$binary, comparison_zz$pk)
-comparison_zz$random_eval <- mapply(get_eval_label, comparison_zz$binary, comparison_zz$random)
 comparison_zz$twi_eval <- mapply(get_eval_label, comparison_zz$binary, comparison_zz$twi)
-comparison_zz$new_eval <- mapply(get_eval_label, comparison_zz$binary, comparison_zz$new)
-
-
+comparison_zz$bfs_eval <- mapply(get_eval_label, comparison_zz$binary, comparison_zz$bfs)
+comparison_zz$event_eval <- mapply(get_eval_label, comparison_zz$binary, comparison_zz$event)
 
 #summarize through time
 df_summary_time_zz <- comparison_zz %>%
   group_by(datetime) %>%
   summarize(
-    cheap_correct = sum(cheapest_eval == "correct"),
     pk_correct = sum(pk_eval == "correct"),
-    random_correct = sum(random_eval == "correct"),
     twi_correct = sum(twi_eval == "correct"),
-    new_correct = sum(new_eval == "correct"),
+    bfs_correct = sum(bfs_eval == "correct"),
+    event_correct = sum(event_eval == "correct"),
+    #con_correct = sum(con_eval == "correct"),
     total = n(),
-    cheap_accuracy = cheap_correct / total,
     pk_accuracy = pk_correct / total,
-    random_accuracy = random_correct / total,
     twi_accuracy = twi_correct / total,
-    new_accuracy = new_correct / total
+    bfs_accuracy = bfs_correct / total,
+    event_accuracy = event_correct / total
   )
 
+df_long_zz <- df_summary_time_zz %>%
+  select(datetime, contains("accuracy")) %>% 
+  tidyr::pivot_longer(cols = c(pk_accuracy, 
+                               twi_accuracy, bfs_accuracy,
+                               event_accuracy),#, con_accuracy), 
+                      names_to = "model", values_to = "accuracy")
 
 #make data long for final plot
 comparison_long_zz <- 
@@ -4191,19 +3896,11 @@ comparison_long_zz <-
   select(datetime, ends_with("eval")) %>% 
     pivot_longer(-datetime) %>% 
   mutate(year = year(datetime))
-#final plot
-comparison_long_zz %>% 
-  mutate(day_of_year = yday(datetime)
-  ) %>% 
-  #group_by(datetime) %>% 
-  #filter(year == 2023) %>% 
-  mutate(total = as.numeric(length(value))) %>% 
-  ggplot() +
-  geom_histogram(aes(x = day_of_year, fill = value), binwidth = 1, na.rm = TRUE)+
-  facet_grid(name~year)
 
+                 
 
 ```
+
 
 
 
@@ -5369,7 +5066,7 @@ zz_numb_map
 
 New version, where the difference in accuracy has to be greater than some threshold
 
-```{r}
+```{r W3}
 
 threshold <- 0.05
 
@@ -5472,61 +5169,401 @@ ggplot() +
 
 
 ```
+```{r FB}
 
+threshold <- 0.05
 
-
-FB
-```{r}
-all_fb_Q <- all_fb_Q %>% 
-  rename(datetime = DATETIME,
-         Q_mm_day = Q)
-
-  threshold <- 0.05
-#df_best <- 
-  df_long_fb %>% 
-  filter(model != "random_accuracy",
-         model != "cheap_accuracy",
-         model != "con_accuracy")  %>% #View()
-    # your 0.05 rule
-  group_by(datetime) %>%
+df_winners_fb <- 
+  df_long_fb %>%
+  # Self-join within each datetime to compare each model to all others
+  inner_join(df_long_fb, 
+             by = "datetime",
+             suffix = c("_this", "_other")) %>%
+  
+  # Only compare a model to other models
+  filter(model_this != model_other) %>%
+  
+  group_by(datetime, model_this, accuracy_this) %>%
   summarise(
-    top_acc   = max(accuracy, na.rm = TRUE),
-    n_top     = sum(accuracy >= top_acc - 1e-12),            # how many hit the top
-    top_model = model[which.max(accuracy)][1],
-    accs      = list(sort(unique(accuracy), decreasing = TRUE)),
-    .groups   = "drop"
+    # max accuracy of other models at that timestamp
+    max_other = max(accuracy_other, na.rm = TRUE),
+    .groups = "drop"
   ) %>%
-  rowwise() %>%
+  
   mutate(
-    second_acc = ifelse(length(accs) >= 2, accs[2], -Inf),   # second distinct max
-    margin     = top_acc - second_acc,
-    winner     = ifelse(n_top == 1 & margin >= threshold, top_model, "tie")
+    is_winner = accuracy_this >= max_other + threshold
   ) %>%
-  ungroup() %>%
-  select(datetime, winner, max_acc = top_acc) %>% 
-    inner_join(all_fb_Q, by = "datetime") %>%
-ggplot(aes(x = datetime, y = (Q_mm_day), color = winner)) +
-  geom_point(size = 1) +
+  
+  # Keep only winner rows
+  filter(is_winner) %>%
+  
+  # Rename columns back to intuitive names
+  dplyr::rename(
+    model = model_this,
+    accuracy = accuracy_this
+  ) %>%
+  # Join discharge
+  inner_join(FBall_events, by = "datetime") %>% 
+  mutate(model = case_when(model == "bfs_accuracy" ~ "BFS",
+                          model == "pk_accuracy" ~ "Proportion of Time Flowing",
+                          model == "event_accuracy" ~ "Event based sequence",
+                          model == "twi_accuracy" ~ "Topographic Wetness Index")) %>% 
+mutate(model = fct_relevel(model, c("Proportion of Time Flowing",
+                                "Topographic Wetness Index",
+                                "BFS",
+                                "Event based sequence"
+                                )))
+
+
+ggplot() +
+  # Full discharge line for background context
+  geom_line(
+    data = FBall_events,
+    aes(x = datetime, y = roll_mean),
+    linewidth = 0.4,
+    color = "grey70"
+  ) +
+  
+  # Winner points (faceted)
+  geom_point(
+    data = df_winners_fb,
+    aes(x = datetime, y = roll_mean, color = model),
+    size = 1
+  ) +
+  
+  facet_wrap(~ model, 
+             ncol = 1, 
+             scales = "free_y") +
   theme_classic() +
-  scale_fill_manual(values = c("#d68c45", "#247BA0", "lightgrey",  "#2c6e49")) +
-  scale_color_manual(values = c("#d68c45", "#247BA0", "lightgrey",  "#2c6e49")) +
+  
+  scale_color_manual(name = "Sequence",
+                     values = c(
+    "Proportion of Time Flowing"    = "#7ebdc2",
+    "Topographic Wetness Index"   = "#f3dfa2",
+    "BFS"   = "#bb4430",
+    "Event based sequence" = "#231f20"
+  )) +
+
   labs(
-    title = "Model at least 5% more accurate than other models, FB",
-    y = "Discharge (L/s)",
+    title = paste0("Times when each model is ≥ ", threshold*100,
+                   "% more accurate than all other models (FB)"),
+    y = "Stage (cm)",
     x = ""
   ) +
-  scale_x_break(c(ymd_hms("2023-11-12 00:00:00"),
-                  ymd_hms("2024-05-20 00:00:00"))) +
-  scale_x_datetime(
-    date_labels = "%b %Y",   # or "%b %Y" for shorter labels
-    date_breaks = "1 month",    # adjust to taste
-    timezone = "UTC"
-  )+ theme(#legend.position = "bottom",
-           axis.ticks.x.top = element_blank(),
-        axis.text.x.top  = element_blank(),
-        axis.line.x.top = element_blank())
   
-# to convert from L/s to mm/day, I need to know the watershed area of FB
+  scale_x_break(c(
+    ymd_hms("2023-10-06 00:00:00 UTC"),
+    ymd_hms("2024-06-12 17:00:00 UTC")
+  )) +
+  
+  scale_x_datetime(
+    date_labels = "%b %Y",
+    date_breaks = "1 month",
+    timezone = "UTC"
+  ) +
+  
+  lims(x = c(min(FBall_events$datetime), ymd_hms("2024-7-21 00:00:00 UTC")))+
+  
+  theme(strip.background = element_blank(),
+    #strip.background = element_rect(fill = "grey95"),
+    axis.ticks.x.top = element_blank(),
+    axis.text.x.top  = element_blank(),
+    axis.line.x.top  = element_blank()
+  )
+
+
+```
+```{r ZZ}
+
+threshold <- 0.05
+
+df_winners_zz <- 
+  df_long_zz %>%
+  # Self-join within each datetime to compare each model to all others
+  inner_join(df_long_zz, 
+             by = "datetime",
+             suffix = c("_this", "_other")) %>%
+  
+  # Only compare a model to other models
+  filter(model_this != model_other) %>%
+  
+  group_by(datetime, model_this, accuracy_this) %>%
+  summarise(
+    # max accuracy of other models at that timestamp
+    max_other = max(accuracy_other, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  
+  mutate(
+    is_winner = accuracy_this >= max_other + threshold
+  ) %>%
+  
+  # Keep only winner rows
+  filter(is_winner) %>%
+  
+  # Rename columns back to intuitive names
+  dplyr::rename(
+    model = model_this,
+    accuracy = accuracy_this
+  ) %>%
+  # Join discharge
+  inner_join(ZZall_events, by = "datetime") %>% 
+  mutate(model = case_when(model == "bfs_accuracy" ~ "BFS",
+                          model == "pk_accuracy" ~ "Proportion of Time Flowing",
+                          model == "event_accuracy" ~ "Event based sequence",
+                          model == "twi_accuracy" ~ "Topographic Wetness Index")) %>% 
+mutate(model = fct_relevel(model, c("Proportion of Time Flowing",
+                                "Topographic Wetness Index",
+                                "BFS",
+                                "Event based sequence"
+                                )))
+
+
+ggplot() +
+  # Full discharge line for background context
+  geom_line(
+    data = ZZall_events,
+    aes(x = datetime, y = roll_mean),
+    linewidth = 0.4,
+    color = "grey70"
+  ) +
+  
+  # Winner points (faceted)
+  geom_point(
+    data = df_winners_zz,
+    aes(x = datetime, y = roll_mean, color = model),
+    size = 1
+  ) +
+  
+  facet_wrap(~ model, 
+             ncol = 1, 
+             scales = "free_y") +
+  theme_classic() +
+  
+  scale_color_manual(name = "Sequence",
+                     values = c(
+    "Proportion of Time Flowing"    = "#7ebdc2",
+    "Topographic Wetness Index"   = "#f3dfa2",
+    "BFS"   = "#bb4430",
+    "Event based sequence" = "#231f20"
+  )) +
+
+  labs(
+    title = paste0("Times when each model is ≥ ", threshold*100,
+                   "% more accurate than all other models (ZZ)"),
+    y = "Stage (cm)",
+    x = ""
+  ) +
+  
+  scale_x_break(c(
+    ymd_hms("2023-10-06 00:00:00 UTC"),
+    ymd_hms("2024-06-12 17:00:00 UTC")
+  )) +
+  
+  scale_x_datetime(
+    date_labels = "%b %Y",
+    date_breaks = "1 month",
+    timezone = "UTC"
+  ) +
+  
+  lims(x = c(min(ZZall_events$datetime), ymd_hms("2024-7-21 00:00:00 UTC")))+
+  
+  theme(strip.background = element_blank(),
+    #strip.background = element_rect(fill = "grey95"),
+    axis.ticks.x.top = element_blank(),
+    axis.text.x.top  = element_blank(),
+    axis.line.x.top  = element_blank()
+  )
+
+
+```
+
+Make them again, but a more finalized format
+```{r}
+#### W3 ####
+w3_plot7 <- ggplot() +
+  # Full discharge line for background context
+  geom_line(
+    data = w3_discharge_bind,
+    aes(x = datetime, y = Q_mm_day),
+    linewidth = 0.4,
+    color = "grey70"
+  ) +
+  
+  # Winner points (faceted)
+  geom_point(
+    data = df_winners,
+    aes(x = datetime, y = Q_mm_day, color = model),
+    size = 1
+  ) +
+  
+  facet_wrap(~ model, 
+             ncol = 1, 
+             scales = "free_y") +
+  theme_classic() +
+  
+  scale_color_manual(name = "Sequence",
+                     values = c(
+    "Proportion of Time Flowing"    = "#7ebdc2",
+    "Topographic Wetness Index"   = "#f3dfa2",
+    "BFS"   = "#bb4430",
+    "Event based sequence" = "#231f20"
+  )
+  ,
+  guide = "none"
+  ) +
+
+  labs(
+    title = "",
+    y = "Discharge (mm/day)",
+    x = ""
+  ) +
+  
+  scale_x_break(c(
+    ymd_hms("2023-11-12 00:00:00"),
+    ymd_hms("2024-05-20 00:00:00")
+  )) +
+  
+  scale_x_datetime(
+    date_labels = "%b %Y",
+    date_breaks = "1 month",
+    timezone = "UTC"
+  ) +
+  
+  theme(strip.background = element_blank(),
+        strip.text = element_blank(),
+    #strip.background = element_rect(fill = "grey95"),
+    axis.ticks.x.top = element_blank(),
+    axis.text.x.top  = element_blank(),
+    axis.line.x.top  = element_blank()
+  )
+#### FB ####
+fb_plot7 <- 
+  ggplot() +
+  # Full discharge line for background context
+  geom_line(
+    data = FBall_events,
+    aes(x = datetime, y = roll_mean),
+    linewidth = 0.4,
+    color = "grey70"
+  ) +
+  
+  # Winner points (faceted)
+  geom_point(
+    data = df_winners_fb,
+    aes(x = datetime, y = roll_mean, color = model),
+    size = 1
+  ) +
+  
+  facet_wrap(~ model, 
+             ncol = 1, 
+             scales = "free_y") +
+  theme_classic() +
+  
+  scale_color_manual(name = "Sequence",
+                     values = c(
+    "Proportion of Time Flowing"    = "#7ebdc2",
+    "Topographic Wetness Index"   = "#f3dfa2",
+    "BFS"   = "#bb4430",
+    "Event based sequence" = "#231f20"
+  )
+  ,
+  guide = "none"
+  ) +
+
+  labs(
+    title = "",
+    y = "Stage (cm)",
+    x = ""
+  ) +
+  
+  scale_x_break(c(
+    ymd_hms("2023-10-06 00:00:00 UTC"),
+    ymd_hms("2024-06-12 17:00:00 UTC")
+  )) +
+  
+  scale_x_datetime(
+    date_labels = "%b %Y",
+    date_breaks = "1 month",
+    timezone = "UTC"
+  ) +
+  
+  lims(x = c(min(FBall_events$datetime), ymd_hms("2024-7-21 00:00:00 UTC")))+
+  
+  theme(strip.background = element_blank(),
+        strip.text = element_blank(),
+    #strip.background = element_rect(fill = "grey95"),
+    axis.ticks.x.top = element_blank(),
+    axis.text.x.top  = element_blank(),
+    axis.line.x.top  = element_blank()
+  )
+#### ZZ ####
+zz_plot7 <- ggplot() +
+  # Full discharge line for background context
+  geom_line(
+    data = ZZall_events,
+    aes(x = datetime, y = roll_mean),
+    linewidth = 0.4,
+    color = "grey70"
+  ) +
+  
+  # Winner points (faceted)
+  geom_point(
+    data = df_winners_zz,
+    aes(x = datetime, y = roll_mean, color = model),
+    size = 1
+  ) +
+  
+  facet_wrap(~ model, 
+             ncol = 1, 
+             scales = "free_y") +
+  theme_classic() +
+  
+  scale_color_manual(name = "Sequence",
+                     values = c(
+    "Proportion of Time Flowing"    = "#7ebdc2",
+    "Topographic Wetness Index"   = "#f3dfa2",
+    "BFS"   = "#bb4430",
+    "Event based sequence" = "#231f20"
+  )
+  ,
+  guide = "none"
+  ) +
+
+  labs(
+    title = "",
+    y = "Stage (cm)",
+    x = ""
+  ) +
+  
+  scale_x_break(c(
+    ymd_hms("2023-10-06 00:00:00 UTC"),
+    ymd_hms("2024-06-12 17:00:00 UTC")
+  )) +
+  
+  scale_x_datetime(
+    date_labels = "%b %Y",
+    date_breaks = "1 month",
+    timezone = "UTC"
+  ) +
+  
+  lims(x = c(min(ZZall_events$datetime), ymd_hms("2024-7-21 00:00:00 UTC")))+
+  
+  theme(strip.background = element_blank(),
+        strip.text = element_blank(),
+        #legend.position = "",
+    #strip.background = element_rect(fill = "grey95"),
+    axis.ticks.x.top = element_blank(),
+    axis.text.x.top  = element_blank(),
+    axis.line.x.top  = element_blank()
+  )
+#### combine ####
+
+
+w3_plot7
+fb_plot7
+zz_plot7
+
 ```
 
 
@@ -8436,6 +8473,286 @@ plot(g,
 
 
 # DEPREC
+# Testing sequences, running models deprec
+```{r plot-W3-model-accuracy}
+#final plot
+
+#plot of correct, ommission, and commission through time
+#plot that works
+comparison_long_w3 %>% 
+  mutate(day_of_year = yday(datetime)
+  ) %>% 
+  mutate(value = fct_relevel(value, c("correct", "omission", "commission"))) %>% 
+  ggplot() +
+  geom_histogram(aes(x = day_of_year, fill = value), binwidth = 1, na.rm = TRUE)+
+  scale_fill_manual(values = c("grey", "green", "orange"))+
+  facet_grid(name~year)
+
+#histogram where I pre-calculate the total number per day of the year, and what proportion that is of the total.
+##then the bars will be the same h eight
+test <- comparison_long_w3 %>% 
+  filter(#name != "random_eval",
+         name != "cheapest_eval",
+         name != "con_eval",
+         name != "random_eval") %>% 
+  mutate(day_of_year = yday(datetime)
+  ) %>% 
+  mutate(value = fct_relevel(value, c("correct", "omission", "commission"))) %>% 
+  group_by(datetime, name) %>% 
+  mutate(total = length(value)) %>% 
+  group_by(datetime, name, value) %>% 
+  mutate(count = length(value)) %>% unique() #%>% 
+
+
+test2 <- test %>%
+  ungroup() %>% 
+  mutate(prop = count/total) %>% 
+  mutate(value = fct_relevel(value, c("omission", "correct", "commission")))
+
+  ggplot(data = test2) +
+  geom_bar(aes(x = (day_of_year), fill = value, y = prop), na.rm = TRUE, position="fill", stat="identity", width = 1)+
+  scale_fill_manual(values = c("green","grey",  "orange"))+
+  facet_grid(name~year)
+
+```
+
+```{r old-plot-presence/absence-with-discharge}
+
+#d <- 1
+#start <- ymd_hms(paste0(crossed_up$dry_date[d]," 00:00:00"))
+#stop <- ymd_hms(paste0(crossed_up$wet_date[d]," 00:00:00"))
+
+
+test_IDS <- input_w3 #%>% 
+    filter(datetime > start & datetime < stop)
+
+remainder <- unique(test_IDS$ID)
+
+pks_ordered <- pks_w3 %>% 
+filter(ID %in% remainder) %>% 
+  arrange(desc(pk)) %>% 
+  rowid_to_column("pk_order")
+
+q_23_plotting <- q_23_f %>% 
+  rbind(q_24_f) %>% 
+    #filter(DATETIME > start & DATETIME < stop) %>% 
+  rename("datetime" = DATETIME)
+
+q_23_plotting <- q_23_f %>% 
+    #filter(DATETIME > start & DATETIME < stop) %>% 
+  rename("datetime" = DATETIME)
+q_23_plotting %>% 
+ggplot(aes(x  = datetime, y = Q_mm_day))+
+  geom_line()+
+  labs(title = "Discharge from W3, July to Nov 2023",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()
+
+
+test <- input_w3 %>% 
+    #filter(datetime > start & datetime < stop) %>% 
+  #filter(ID == 17)
+  #filter(ID %in% W3_IDs) %>% 
+  left_join(q_23_plotting, by = "datetime") %>% 
+  left_join(pks_ordered, by = "ID")
+sec2 <- with(test, train_sec(pk_order, Q_mm_day))
+
+test %>% 
+  ggplot(aes(x = datetime))+
+  geom_tile(aes(y = (pk_order), fill = as.character(binary)))+
+      geom_line(aes(y = sec2$fwd(Q_mm_day)), color = "white")+
+  ylab("Supposed activation order")+
+  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Instantaneous Q (mm/day)")) +
+  #facet_grid(~name, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c(0, 1),
+                    labels = c("Dry", "Wet"),
+                    name = ""
+                    )+
+  labs(title = "Very dry to very wet",
+       subtitle = "W3, 7/20 - 7/22, 2023",
+       x = "")+
+scale_x_continuous(breaks=c(ymd_hms("2023-07-20 00:00:00"),
+                            ymd_hms("2023-07-21 00:00:00"),
+                            ymd_hms("2023-07-22 00:00:00")),
+                   labels = c("7/20/23",
+                              "7/21/23",
+                              "7/22/23"))+
+  theme_classic()+
+    theme(legend.position="right")
+
+#add hydrograph to plot
+crossed_up
+```
+
+Combining these two ideas
+```{r successfully graphed both accuracy over time and discharge}
+test <- comparison_long_w3 %>% 
+  filter(#name != "random_eval",
+         name != "cheapest_eval",
+         name != "con_eval",
+         name != "random_eval") %>% 
+  mutate(day_of_year = yday(datetime)
+  ) %>% 
+  mutate(value = fct_relevel(value, c("correct", "omission", "commission"))) %>% 
+  group_by(datetime, name) %>% 
+  mutate(total = length(value)) %>% 
+  group_by(datetime, name, value) %>% 
+  mutate(count = length(value)) %>% unique() #%>% 
+
+
+
+test2 <- test %>%
+  ungroup() %>% 
+  mutate(prop = count/total) %>% 
+  mutate(value = fct_relevel(value, c("correct", "omission", "commission"))) %>% 
+  left_join(rbind(q_23_bind, q_24_bind), by = "datetime")
+
+sec2 <- with(test2, train_sec(prop, Q_mm_day))
+
+#Plot with both accuracy and discharge, very cooL!
+test2 %>% 
+  ggplot(aes(x = day_of_year)) +
+  geom_bar(aes(fill = value, y = prop), na.rm = TRUE, position="fill", stat="identity", width = 1)+
+  scale_fill_manual(values = c("grey", "green", "orange"))+
+  geom_line(aes(y = sec2$fwd(Q_mm_day)), color = "gray40")+
+  ylab("Accuracy")+
+  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Instantaneous Q (mm/day)")) +
+  facet_grid(name~year)
+
+test2 %>% 
+  ggplot(aes(x = datetime)) +
+  geom_bar(aes(fill = value, y = prop),  position="fill", stat="identity", na.rm = TRUE)+
+  scale_fill_manual(values = c("grey", "green", "orange"))+
+  geom_line(aes(y = sec2$fwd(Q_mm_day)), color = "gray40")+
+  ylab("Accuracy")+
+  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Instantaneous Q (mm/day)")) +
+  theme_classic()+
+  facet_grid(rows = "name")+
+  scale_x_break(c(ymd_hms("2023-11-12 00:00:00"), ymd_hms("2024-05-20 00:00:00")))+
+  scale_x_continuous(
+    #breaks = as.numeric(pretty(df$date)),
+    labels = function(datetime) as_datetime(datetime, tz = "UTC")
+  )
+
+# Example: Number of seconds
+    seconds_since_epoch <- 1678886400
+
+    # Convert to POSIXct using lubridate's as_datetime
+    datetime_object_lub <- as_datetime(seconds_since_epoch, tz = "UTC")
+
+    # Print the result
+    print(datetime_object_lub)
+```
+
+Now add a bar/different color for when it is the best sequence!
+```{r}
+five_colors <- c("#d68c45",  "#247BA0", "#A30B37", "#F0C808", "#2c6e49")
+
+
+#plot the best at each timestep
+unique_maxi <- 
+  df_long_w3 %>% 
+  filter(model != "random_accuracy",
+         model != "cheap_accuracy",
+         model != "con_accuracy") %>% 
+  group_by(datetime) %>% 
+  filter(accuracy == max(accuracy)) %>% 
+  mutate(dup = as.character(n() > 1)) %>% ungroup()  %>%
+  mutate(unique_sol = case_when(dup == TRUE ~ "z_tie",
+                                dup == FALSE ~ model)) %>%
+  filter(dup == FALSE) %>% 
+  mutate(name = case_when(model == "cheap_accuracy" ~ "cheap_eval",
+                          model == "pk_accuracy" ~ "pk_eval",
+                          model == "new_accuracy" ~ "new_eval")) #%>% 
+inner_join(big_comb, by = "datetime") %>%
+  ggplot(aes(x = datetime, y = Q_mm_day, color = model)) +
+  #geom_point() +
+  geom_point(size = 1)+
+  theme_classic()+
+  scale_color_manual(values = c(five_colors[1:3], "lightgrey"))+
+  labs(title = "Most accurate model along hydrograph", y = "Discharge (mm/day)", x = "")+
+  facet_wrap(~ model)+
+    scale_x_break(c(ymd_hms("2023-11-12 00:00:00"), ymd_hms("2024-05-20 00:00:00")))
+  
+test2 %>% 
+  left_join(unique_maxi, by = c("datetime", "name")) %>% 
+  ggplot(aes(x = datetime)) +
+  geom_bar(aes(fill = value, y = prop),  position="fill", stat="identity", na.rm = TRUE)+
+    scale_fill_manual(values = c("grey", "green", "orange"))+
+#new_scale_fill()+
+  geom_point(aes(y= 0), alpha = 0.3, na.rm = TRUE)+
+  geom_line(aes(y = sec2$fwd(Q_mm_day)), color = "gray40")+
+  ylab("Accuracy")+
+  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Instantaneous Q (mm/day)")) +
+  facet_grid(rows = "name")
+
+```
+
+Combine histogram of accuracy, colored by best model, with discharge plotted as a line overtop
+Gave up on this plot, although it has potential
+```{r}
+test2 <- 
+df_acc %>%
+  left_join(rbind(q_23_bind, q_24_bind), by = "datetime")
+
+sec2 <- with(test2, train_sec(accuracy, Q_mm_day))
+
+#Plot with both accuracy and discharge, very cooL!
+test2 %>% 
+  ggplot(aes(x = datetime)) +
+  geom_col(aes(y = accuracy, fill = unique_sol), width = 1800, position = "identity") +
+    geom_line(aes(y = sec2$fwd(Q_mm_day)), color = "black", lwd = 1.5)+
+  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Instantaneous Q (mm/day)")
+                     ) +
+  theme_classic() +
+  labs(y = "Accuracy", x = NULL) +
+  scale_fill_manual(values = c(five_colors[1:3], "lightgrey")) +
+  scale_color_manual(values = c(five_colors[1:3], "lightgrey")) +
+  scale_x_break(c(ymd_hms("2023-11-1200:00:00"),
+                  ymd_hms("2024-05-20 00:00:00"))) +
+  scale_x_datetime(
+    date_labels = "%b %Y",
+    date_breaks = "1 month",
+    timezone = "UTC"
+  ) +
+  theme(
+    axis.text.x.top = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.line.x.top = element_blank()#,
+    #legend.position = "none"   # legend will come from bottom plot
+  )
+```
+
+Third plot idea- color discharge by the proportion of network that is flowing
+
+```{r}
+number_activated <- 
+  input_w3 %>% 
+  left_join(W3_cheap, by = "ID") %>%
+  group_by(datetime) %>% 
+  select(-c(wshed, mins)) %>% 
+  mutate(deployed = length(binary)) %>% 
+  #arrange(sequence) %>% 
+      #filter(binary == 1) %>% 
+    summarise(number_flowing = length(binary[binary == 1]),
+            deployed = list(unique(ID)))
+
+
+test2 %>% 
+  left_join(number_activated, by = "datetime") %>% 
+  ggplot(aes(x = day_of_year)) +
+  geom_bar(aes(fill = value, y = prop), na.rm = TRUE, position="fill", stat="identity", width = 1)+
+  scale_fill_manual(values = c("grey", "black", "black"))+
+  geom_line(aes(y = sec2$fwd(Q_mm_day), color = number_flowing))+
+  scale_color_viridis()+
+  ylab("Accuracy")+
+  scale_y_continuous(sec.axis = sec_axis(~sec2$rev(.), name = "Instantaneous Q (mm/day)")) +
+  facet_grid(name~year)
+```
+
 # Graph theory sequences
 ## Determine all possible combinations, or the full graph
 Determine all possible combinations
