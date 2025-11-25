@@ -7129,66 +7129,51 @@ produce_metrics(W3_pk_seq, "W3", "pk")
 produce_metrics2(W3_pk_seq, "W3", "pk")
 
 ```
-```{r accuracy-function-testing-every-method}
-methods
-#function to determine a chain solution
-ZZ_cheap <- chain_solution(ZZ_IDs, "ZZ", methods = "cheapest_insertion")
-
-
-
-#testing every method
-for(i in 1:length(methods)){
-  chain <- chain_solution(ZZ_IDs, "ZZ", methods = methods[i])
-  
-  output <- produce_metrics(chain, "ZZ", methods[i])
-  
-  if(i == 1) many_chains <- output
-  if(i > 1) many_chains <- rbind(many_chains, output)
-}
-
-all_methods_acc <- many_chains
-```
 
 
 ```{r accuracy-W3}
 w3_acc <- rbind(
-      produce_metrics(W3_pk_seq, "W3", "pk"),
-      produce_metrics(best_bfs_seqW3, "W3", "BFS"),
-      produce_metrics(best_event_seqW3, "W3", "event"),
-      produce_metrics(w3_twi_sequence, "W3", "twi")
+      produce_metrics(W3_pk_seq, "W3", "Proportion of time flowing"),
+      produce_metrics(w3_twi_sequence, "W3", "Topographic Wetness Index"),
+      produce_metrics(best_bfs_w3, "W3", "BFS"),
+      produce_metrics(avg_event_w3, "W3", "Event-based")
       ) %>% 
-  select(Accuracy, Sensitivity, Specificity, shed, method)
-kable(w3_acc, digits = 2)
+  select(Accuracy, Sensitivity, Specificity, shed, method) %>% 
+  dplyr::rename(Watershed = shed,
+                Sequence = method)
+#kable(w3_acc, digits = 2)
 
 
-nice_table(
-  w3_acc
-  )
+#nice_table(w3_acc)
 
 ```
 ```{r accuracy-FB}
-fb_acc <- rbind(produce_metrics(FB_cheap, "FB", "cheapest_insertion"),
-      produce_metrics(FB_pk_seq, "FB", "pk"),
-      produce_metrics(convert_to_IDseq(FB_random), "FB", "random"),
-      produce_metrics(fb_twi_sequence, "FB", "twi"),
-      produce_metrics(convert_to_IDseq(new_seq_fb), "FB", "new"),
-      produce_metrics(convert_to_IDseq(opt_routes_fb), "FB", "con")
-      )
-kable(fb_acc, digits = 2)
+fb_acc <- rbind(
+      produce_metrics(FB_pk_seq, "FB", "Proportion of time flowing"),
+      produce_metrics(fb_twi_sequence, "FB", "Topographic Wetness Index"),
+      produce_metrics(best_bfs_fb, "FB", "BFS"),
+      produce_metrics(avg_event_fb, "FB", "Event-based")
+      ) %>% 
+  select(Accuracy, Sensitivity, Specificity, shed, method) %>% 
+  dplyr::rename(Watershed = shed,
+                Sequence = method)
+#kable(fb_acc, digits = 2)
 
 ```
 ```{r accuracy-ZZ}
-zz_acc <- rbind(produce_metrics(ZZ_cheap, "ZZ", "cheapest_insertion"),
-      produce_metrics(ZZ_pk_seq, "ZZ", "pk"),
-      produce_metrics(convert_to_IDseq(ZZ_random), "ZZ", "random"),
-      produce_metrics(zz_twi_sequence, "ZZ", "twi"),
-      produce_metrics(convert_to_IDseq(new_seq_zz), "ZZ", "new"),
-      produce_metrics(convert_to_IDseq(opt_routes_zz), "ZZ", "con")
-      )
+zz_acc <- rbind(
+      produce_metrics(ZZ_pk_seq, "ZZ", "Proportion of time flowing"),
+      produce_metrics(zz_twi_sequence, "ZZ", "Topographic Wetness Index"),
+      produce_metrics(best_bfs_zz, "ZZ", "BFS"),
+      produce_metrics(avg_event_zz, "ZZ", "Event-based")
+      )%>% 
+  select(Accuracy, Sensitivity, Specificity, shed, method) %>% 
+  dplyr::rename(Watershed = shed,
+                Sequence = method)
 
-kable(zz_acc, digits = 2)
+#kable(zz_acc, digits = 2)
 
-kable(rbind(w3_acc, fb_acc, zz_acc), digits = 2)
+nice_table(bind_rows(w3_acc, fb_acc, zz_acc))
 
 ```
 
