@@ -3715,19 +3715,15 @@ Changes- make some way to run on an ensemble of sequences, and then keep the one
 
 Can report the range of accuracies for the multitude of sequences from actual and optimized sequences
 ```{r W3}
-
-
-#running model
-
+# running model on each sequence
 pk_model_w3 <- calc_model_result(W3_pk_seq$ID, "W3") %>% 
-  rename("pk" = pred_out)
-
+  dplyr::rename("pk" = pred_out)
 twi_model_w3 <- calc_model_result(w3_twi_sequence$ID, "W3") %>% 
-  rename("twi" = pred_out)
-bfs_model_w3 <- calc_model_result(best_bfs_seqW3$ID, "W3") %>%
-  rename("bfs" = pred_out)
-event_model_w3 <- calc_model_result(best_event_seqW3$ID, "W3") %>%
-  rename("event" = pred_out)
+  dplyr::rename("twi" = pred_out)
+bfs_model_w3 <- calc_model_result(best_bfs_w3$ID, "W3") %>%
+  dplyr::rename("bfs" = pred_out)
+event_model_w3 <- calc_model_result(avg_event_w3$ID, "W3") %>%
+  dplyr::rename("event" = pred_out)
 
 
 comparison_w3 <- input_w3 %>% 
@@ -3787,10 +3783,6 @@ comparison_long_w3 <-
 #plot of correct, ommission, and commission through time
 #plot that works
 comparison_long_w3 %>% 
-  filter(#name != "random_eval",
-         name != "cheapest_eval",
-         name != "con_eval",
-         name != "random_eval") %>% 
   mutate(day_of_year = yday(datetime)
   ) %>% 
   mutate(value = fct_relevel(value, c("correct", "omission", "commission"))) %>% 
@@ -5374,186 +5366,110 @@ zz_numb_map
 ```
 
 ## Figure 7: Hydrograph, colored by which sequence works the best
-NEED TO FIX COLORS
+
+New version, where the difference in accuracy has to be greater than some threshold
+
 ```{r}
-five_colors <- c("#d68c45",  "#247BA0", "#A30B37", "#F0C808", "#2c6e49")
 
+threshold <- 0.05
 
-#plot the best at each timestep
-#p_load(ggbreak)
-df <- df_long_w3 %>% 
-  filter(model != "random_accuracy",
-         model != "cheap_accuracy",
-         model != "con_accuracy") %>% 
-  group_by(datetime) %>% 
-  filter(accuracy == max(accuracy)) %>% 
-  mutate(dup = as.character(n() > 1)) %>% ungroup()  %>%
-  mutate(unique_sol = case_when(dup == TRUE ~ "z_tie",
-                                dup == FALSE ~ model)) %>%
-inner_join(big_comb, by = "datetime") #%>%
-
-df_acc <- df %>%
-  dplyr::group_by(datetime) %>%
-  dplyr::summarise(
-    accuracy = unique(accuracy),
-    unique_sol = unique(unique_sol),
+df_winners <- 
+  df_long_w3 %>%
+  # Self-join within each datetime to compare each model to all others
+  inner_join(df_long_w3, 
+             by = "datetime",
+             suffix = c("_this", "_other")) %>%
+  
+  # Only compare a model to other models
+  filter(model_this != model_other) %>%
+  
+  group_by(datetime, model_this, accuracy_this) %>%
+  summarise(
+    # max accuracy of other models at that timestamp
+    max_other = max(accuracy_other, na.rm = TRUE),
     .groups = "drop"
-  )
+  ) %>%
+  
+  mutate(
+    is_winner = accuracy_this >= max_other + threshold
+  ) %>%
+  
+  # Keep only winner rows
+  filter(is_winner) %>%
+  
+  # Rename columns back to intuitive names
+  dplyr::rename(
+    model = model_this,
+    accuracy = accuracy_this
+  ) %>%
+  # Join discharge
+  inner_join(w3_discharge_bind, by = "datetime") %>% 
+  mutate(model = case_when(model == "bfs_accuracy" ~ "BFS",
+                          model == "pk_accuracy" ~ "Proportion of Time Flowing",
+                          model == "event_accuracy" ~ "Event based sequence",
+                          model == "twi_accuracy" ~ "Topographic Wetness Index")) %>% 
+mutate(model = fct_relevel(model, c("Proportion of Time Flowing",
+                                "Topographic Wetness Index",
+                                "BFS",
+                                "Event based sequence"
+                                )))
 
 
-ggplot(df, aes(x = datetime, y = Q_mm_day, color = unique_sol)) +
-  geom_point(size = 1) +
+ggplot() +
+  # Full discharge line for background context
+  geom_line(
+    data = w3_discharge_bind,
+    aes(x = datetime, y = Q_mm_day),
+    linewidth = 0.4,
+    color = "grey70"
+  ) +
+  
+  # Winner points (faceted)
+  geom_point(
+    data = df_winners,
+    aes(x = datetime, y = Q_mm_day, color = model),
+    size = 1
+  ) +
+  
+  facet_wrap(~ model, 
+             ncol = 1, 
+             scales = "free_y") +
   theme_classic() +
-  scale_fill_manual(values = c(five_colors[1:3], "lightgrey")) +
-  scale_color_manual(values = c(five_colors[1:3], "lightgrey")) +
+  
+  scale_color_manual(name = "Sequence",
+                     values = c(
+    "Proportion of Time Flowing"    = "#7ebdc2",
+    "Topographic Wetness Index"   = "#f3dfa2",
+    "BFS"   = "#bb4430",
+    "Event based sequence" = "#231f20"
+  )) +
+
   labs(
-    #title = "Most accurate model along hydrograph",
+    title = paste0("Times when each model is ≥ ", threshold*100,
+                   "% more accurate than all other models (W3)"),
     y = "Discharge (mm/day)",
     x = ""
   ) +
-  scale_x_break(c(ymd_hms("2023-11-12 00:00:00"),
-                  ymd_hms("2024-05-20 00:00:00"))) +
-  scale_x_datetime(
-    date_labels = "%b %Y",   # or "%b %Y" for shorter labels
-    date_breaks = "1 month",    # adjust to taste
-    timezone = "UTC"
-  )+ theme(#legend.position = "bottom",
-           axis.ticks.x.top = element_blank(),
-        axis.text.x.top  = element_blank(),
-        axis.line.x.top = element_blank())
-
-
-
-
-p2 <- ggplot(df_acc, aes(x = datetime, y = accuracy, fill = unique_sol)) +
-  geom_col(width = 1800, position = "identity") +
-  theme_classic() +
-  labs(y = "Accuracy", x = NULL) +
-  scale_fill_manual(values = c(five_colors[1:3], "lightgrey")) +
-  scale_color_manual(values = c(five_colors[1:3], "lightgrey")) +
-  scale_x_break(c(ymd_hms("2023-11-1200:00:00"),
-                  ymd_hms("2024-05-20 00:00:00"))) +
+  
+  scale_x_break(c(
+    ymd_hms("2023-11-12 00:00:00"),
+    ymd_hms("2024-05-20 00:00:00")
+  )) +
+  
   scale_x_datetime(
     date_labels = "%b %Y",
     date_breaks = "1 month",
     timezone = "UTC"
   ) +
-  theme(
-    axis.text.x = element_blank(),
-    axis.ticks.x = element_blank(),
-    axis.line.x.top = element_blank()#,
-    #legend.position = "none"   # legend will come from bottom plot
+  
+  theme(strip.background = element_blank(),
+    #strip.background = element_rect(fill = "grey95"),
+    axis.ticks.x.top = element_blank(),
+    axis.text.x.top  = element_blank(),
+    axis.line.x.top  = element_blank()
   )
 
-      
 
-# stack top (accuracy bars) and bottom (hydrograph)
-(free(p2, type = "label") / p1) + plot_layout(heights = c(1, 3) , guides = "collect")
-
-(p2 / p1) +
-  plot_layout(heights = c(1, 3), guides = "collect") &
-  theme(legend.position = "right")
-
-######
-####### Plot that has a venn diagram of colors to show which ties are which;
-#almost all of the time the ties are between pk and new, almost no ties are with TWI
-df_long_w3 %>% 
-  filter(model != "random_accuracy",
-         model != "cheap_accuracy",
-         model != "con_accuracy") %>% 
-  group_by(datetime) %>% 
-  filter(accuracy == max(accuracy)) %>% 
-  summarise(
-    accuracy = unique(accuracy),  # should be only one per datetime
-    models = paste(sort(unique(model)), collapse = ", "),
-    n_models = n()
-  ) %>%
-  ungroup() %>% 
-  mutate(color = case_when(models == "new_accuracy" ~ "red",
-                           models == "pk_accuracy" ~ "blue",
-                           models == "twi_accuracy" ~ "yellow",
-                           models == "new_accuracy, pk_accuracy" ~ "purple",
-                           models == "new_accuracy, twi_accuracy" ~ "orange",
-                           models == "pk_accuracy, twi_accuracy" ~ "green",
-                           models == "new_accuracy, pk_accuracy, twi_accuracy" ~ "black"))%>%
-inner_join(big_comb, by = "datetime") %>%
-  ggplot(aes(x = datetime, y = Q_mm_day, color = color)) +
-  #geom_point() +
-  geom_point(size = 1)+
-  theme_classic()+
-scale_color_identity()+
-  labs(title = "Most accurate model along hydrograph", y = "Discharge (mm/day)", x = "")+
- # facet_wrap(~ unique_sol)+
-    scale_x_break(c(ymd_hms("2023-11-12 00:00:00"), ymd_hms("2024-05-20 00:00:00")))
-
-```
-
-New version, where the difference in accuracy has to be greater than some threshold
-```{r discharge-colored-by-model-accuracy}
-
-
-#plot the best at each timestep
-#df <- 
-  df_long_w3 %>% 
-  # filter(model != "random_accuracy",
-  #        model != "cheap_accuracy",
-  #        model != "con_accuracy",
-  #        model != "twi_accuracy") %>% 
-  group_by(datetime) %>% 
-  mutate(max_accuracy = max(accuracy),
-         diff_in_acc = max_accuracy - accuracy) %>% 
-  filter(diff_in_acc >= 0.05) #%>%
-  mutate(dup = as.character(n() > 1)) %>% ungroup()  %>%
-  mutate(unique_sol = case_when(dup == TRUE ~ "z_tie",
-                                dup == FALSE ~ model)) %>%
-inner_join(big_comb, by = "datetime") #%>%
-  
-threshold <- 0.05
-#df_best <- 
-  df_long_w3 %>% 
-  # filter(model != "random_accuracy",
-  #        model != "cheap_accuracy",
-  #        model != "con_accuracy")  %>% #View()
-    # your 0.05 rule
-  group_by(datetime) %>%
-  summarise(
-    top_acc   = max(accuracy, na.rm = TRUE),
-    n_top     = sum(accuracy >= top_acc - 1e-12),            # how many hit the top
-    top_model = model[which.max(accuracy)][1],
-    accs      = list(sort(unique(accuracy), decreasing = TRUE)),
-    .groups   = "drop"
-  ) %>%
-  rowwise() %>%
-  mutate(
-    second_acc = ifelse(length(accs) >= 2, accs[2], -Inf),   # second distinct max
-    margin     = top_acc - second_acc,
-    winner     = ifelse(n_top == 1 & margin >= threshold, top_model, "tie")
-  ) %>%
-  ungroup() %>%
-  select(datetime, winner, max_acc = top_acc) %>% 
-    inner_join(w3_discharge_bind, by = "datetime") %>%
-ggplot(aes(x = datetime, y = (Q_mm_day), color = winner)) +
-  geom_point(size = 1) +
-  theme_classic() +
-  scale_fill_manual(values = c("#d68c45", "#247BA0", "#2c6e49",
-                                "lightgrey", "maroon")) +
-  scale_color_manual(values = c("#d68c45", "#247BA0",   "#2c6e49",
-                                "lightgrey","maroon")) +
-  labs(
-    title = "Model at least 5% more accurate than other models, W3",
-    y = "Discharge (mm/day)",
-    x = ""
-  ) +
-  scale_x_break(c(ymd_hms("2023-11-12 00:00:00"),
-                  ymd_hms("2024-05-20 00:00:00"))) +
-  scale_x_datetime(
-    date_labels = "%b %Y",   # or "%b %Y" for shorter labels
-    date_breaks = "1 month",    # adjust to taste
-    timezone = "UTC"
-  )+ theme(#legend.position = "bottom",
-           axis.ticks.x.top = element_blank(),
-        axis.text.x.top  = element_blank(),
-        axis.line.x.top = element_blank())
 
 ```
 
