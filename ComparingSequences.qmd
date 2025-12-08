@@ -4364,6 +4364,51 @@ ggsave("valley.png", plot = valley_plot, limitsize = FALSE, units = "in", bg = N
 
 ## Figure 2: Vignettes of network wetting and drying
 Chunk below copied from mapsForStoryboard.qmd, from section where I was determining times when the network went from fully dry to fully wet.
+
+Code from determining event-based sequence
+```{r}
+
+start_23 <- ymd_hms("2023-7-20 00:00:00")
+stop_23 <- ymd_hms("2023-10-22 00:00:00")
+
+binary_colors <- c("#DB995A", "#586BA4")
+
+end_of_events <- discharge_df_23 %>% 
+    group_by(event_id) %>% 
+    summarise(start_of_event = min(datetime),
+              end_of_event = max(datetime))
+
+# tile plot of presence and absence data
+input_w3  %>% filter(datetime < stop_23,
+                     datetime >= start_23) %>% 
+  left_join(discharge_df_23) %>% 
+  left_join(end_of_events, by = "event_id") %>% 
+  filter(event_type != "baseflow") %>% 
+  left_join(all_events23_sequences) %>% 
+  filter(event_id == 10) %>%
+  ggplot(aes(x = datetime))+
+  geom_tile(aes(y = Sequence, fill = as.character(binary)))+
+  scale_y_continuous("Observed Activation Order")+
+  scale_fill_manual(drop = FALSE,
+                     values = binary_colors,
+                    breaks = c(0, 1),
+                    labels = c("Dry", "Wet"),
+                    name = ""
+                    )+
+  # lims(x = c(ymd_hms("2023-07-20 16:30:00 UTC"), 
+  #            ymd_hms("2023-07-24 10:30:00 UTC") - days(2)))
+  #geom_vline(aes(xintercept = start_of_event))+
+   # geom_vline(aes(xintercept = end_of_event))+
+
+  #facet_wrap(~event_id, scales = "free")+
+  labs(#title = "Very dry to very wet",
+       #subtitle = "W3, 10/20 - 10/22, 2023",
+       x = "")+
+  theme_classic()+
+    theme(legend.position="right",
+          axis.title.y = element_text(angle = 90))
+```
+
 ```{r W3-flowing-states}
  # Function factory for secondary axis transforms
 train_sec <- function(primary, secondary, na.rm = TRUE) {
@@ -4437,8 +4482,8 @@ water <- precip1 %>%
       theme_classic()+
   theme(axis.text.x=element_blank(),
         axis.ticks.x=element_blank(),
-        axis.title.y = element_text(angle = 0),
-        axis.title.y.right = element_text(angle = 0)
+        axis.title.y = element_text(angle = 90),
+        axis.title.y.right = element_text(angle = 90)
         )
 
 
@@ -4606,7 +4651,7 @@ scale_x_continuous(breaks=c(ymd_hms("2023-10-20 00:00:00"),
                               "10/24/23"))+
   theme_classic()+
     theme(legend.position="right",
-          axis.title.y = element_text(angle = 0))
+          axis.title.y = element_text(angle = 90))
 
 (water)/tiles + plot_layout(heights = c(1, 5))
 ```
@@ -4618,24 +4663,26 @@ produce_metrics(pks_ordered, "W3", "one_event")
 
 Plot it one more time, but maybe with sequence dictated by graph theory solution?
 ```{r}
-pks_ordered <- 
-W3_cheap %>% 
-      filter(ID %in% remainder) %>% 
-  rename("pk_order" = sequence)
+
+reorder <- event_seqsW3_23 %>% 
+  filter(event_id == 2) %>% 
+  select(-event_id)
+
 
 test <- 
   input_w3 %>% 
+  filter(ID %in% W3_IDs) %>% 
     filter(datetime > start & datetime < stop) %>% 
     mutate(day = day(datetime),
            hour = hour(datetime)) %>% 
   #filter(ID == 17)
   #filter(ID %in% W3_IDs) %>% 
   left_join(precip1, by = c("day", "hour")) %>% 
-  left_join(pks_ordered, by = "ID") #%>% 
+  left_join(reorder, by = "ID") #%>% 
   #filter(mins.x == 0)
 test2 <- test %>% 
-  select(datetime.x, binary, hourly_precip, pk_order)
-sec2 <- with(test2, train_sec(pk_order, hourly_precip))
+  select(datetime.x, binary, hourly_precip, Sequence)
+sec2 <- with(test2, train_sec(Sequence, hourly_precip))
 
 binary <- c("#DB995A",
             "#586BA4"
@@ -4645,7 +4692,7 @@ binary <- c("#DB995A",
 tiles <- 
 test2 %>% 
   ggplot(aes(x = datetime.x))+
-  geom_tile(aes(y = pk_order, fill = as.character(binary)))+
+  geom_tile(aes(y = Sequence, fill = as.character(binary)))+
   scale_y_continuous("Supposed Activation Order")+
   #facet_grid(~name, scales = "free") + 
   scale_fill_manual(drop = FALSE,
@@ -4669,8 +4716,8 @@ scale_x_continuous(breaks=c(ymd_hms("2023-10-20 00:00:00"),
                               "10/24/23"))+
   theme_classic()+
     theme(legend.position="right",
-          axis.title.y = element_text(angle = 0))
-
+          axis.title.y = element_text(angle = 90))
+tiles
 (water)/tiles + plot_layout(heights = c(1, 5))
 ```
 
@@ -4771,6 +4818,288 @@ geom_sf(data = w3_stic_locs_r %>% inner_join(states, by = "ID"),
 
 ```
 
+```{r}
+compare_two_sequences <- function(seqA, seqB,
+                                  sensor_names = NULL,
+                                  methods = c("precedence","kendall","spearman","lcs","edit"),
+                                  lcs_normalize = c("min","max","avg")) {
+  # seqA, seqB: integer/numeric/character vectors (ordered)
+  # sensor_names: optional vector of all known sensors (used to index matrices), otherwise union(seqA, seqB)
+  # methods: which measures to compute
+  # lcs_normalize: how to normalize LCS length ("min" = /min(lenA,lenB), "max" = /max(...), "avg"= /((lenA+lenB)/2))
+  
+  methods <- match.arg(methods, several.ok = TRUE)
+  lcs_normalize <- match.arg(lcs_normalize)
+  
+  # Basic checks
+  if (!is.vector(seqA) || !is.vector(seqB)) stop("seqA and seqB must be vectors.")
+  seqA <- as.character(seqA)
+  seqB <- as.character(seqB)
+  lenA <- length(seqA); lenB <- length(seqB)
+  
+  if (is.null(sensor_names)) {
+    all_sensors <- sort(unique(c(seqA, seqB)))
+  } else {
+    all_sensors <- sensor_names
+  }
+  
+  # Helper: precedence indicator matrix for a single sequence
+  # returns a named matrix M with entries: 1 if i before j, 0 if i after j, NA if either missing or same
+  make_precedence_matrix <- function(seq, all_sensors) {
+    n <- length(all_sensors)
+    M <- matrix(NA, nrow = n, ncol = n, dimnames = list(all_sensors, all_sensors))
+    pos <- match(all_sensors, seq)   # positions (NA if not present)
+    for (i in seq_along(all_sensors)) {
+      for (j in seq_along(all_sensors)) {
+        if (i == j) next
+        pi <- pos[i]; pj <- pos[j]
+        if (is.na(pi) || is.na(pj)) {
+          M[i,j] <- NA
+        } else {
+          M[i,j] <- ifelse(pi < pj, 1L, 0L)
+        }
+      }
+    }
+    return(M)
+  }
+  
+  # 1) Precedence agreement (fraction of pairwise orders that agree)
+  results <- list()
+  if ("precedence" %in% methods) {
+    MA <- make_precedence_matrix(seqA, all_sensors)
+    MB <- make_precedence_matrix(seqB, all_sensors)
+    
+    # Consider only pairs where both are non-NA in both matrices
+    valid_pairs <- which(!is.na(MA) & !is.na(MB), arr.ind = TRUE)
+    # exclude diagonal pairs (same sensor)
+    valid_pairs <- valid_pairs[valid_pairs[,1] != valid_pairs[,2], , drop = FALSE]
+    n_pairs <- nrow(valid_pairs)
+    if (n_pairs == 0) {
+      prec_agreement <- NA_real_
+    } else {
+      agree <- sum(MA[valid_pairs] == MB[valid_pairs])
+      prec_agreement <- agree / n_pairs
+    }
+    results$precedence <- list(agreement = prec_agreement,
+                               n_pairs_compared = n_pairs,
+                               matrixA = MA,
+                               matrixB = MB)
+  }
+  
+  # 2) Kendall's tau on common sensors
+  if ("kendall" %in% methods) {
+    common <- intersect(seqA, seqB)
+    if (length(common) < 2) {
+      kendall_tau <- NA_real_
+    } else {
+      # Build ranks based on order in each sequence (1..k)
+      rankA <- match(common, seqA)   # positions in A for common sensors
+      rankB <- match(common, seqB)
+      # Use cor(method="kendall") which computes Kendall's tau
+      kendall_tau <- suppressWarnings(cor(rankA, rankB, method = "kendall", use = "complete.obs"))
+    }
+    results$kendall <- list(tau = kendall_tau, n_common = length(common), common_sensors = common)
+  }
+  
+  # 3) Spearman rank correlation on common sensors
+  if ("spearman" %in% methods) {
+    common <- intersect(seqA, seqB)
+    if (length(common) < 2) {
+      spearman_rho <- NA_real_
+    } else {
+      rankA <- match(common, seqA)
+      rankB <- match(common, seqB)
+      spearman_rho <- suppressWarnings(cor(rankA, rankB, method = "spearman", use = "complete.obs"))
+    }
+    results$spearman <- list(rho = spearman_rho, n_common = length(common))
+  }
+  
+  # 4) LCS (Longest Common Subsequence) normalized
+  if ("lcs" %in% methods) {
+    # Implement LCS length dynamic programming for two sequences
+    lcs_length <- function(x, y) {
+      m <- length(x); n <- length(y)
+      # short-circuit
+      if (m == 0 || n == 0) return(0L)
+      dp <- matrix(0L, nrow = m+1, ncol = n+1)
+      for (i in seq_len(m)) {
+        xi <- x[i]
+        for (j in seq_len(n)) {
+          if (xi == y[j]) dp[i+1, j+1] <- dp[i, j] + 1L
+          else dp[i+1, j+1] <- max(dp[i+1, j], dp[i, j+1])
+        }
+      }
+      dp[m+1, n+1]
+    }
+    lcs_len <- lcs_length(seqA, seqB)
+    denom <- switch(lcs_normalize,
+                    min = min(lenA, lenB),
+                    max = max(lenA, lenB),
+                    avg = (lenA + lenB) / 2)
+    if (denom == 0) lcs_norm <- NA_real_ else lcs_norm <- as.numeric(lcs_len) / denom
+    results$lcs <- list(length = lcs_len, normalized = lcs_norm,
+                        denom_method = lcs_normalize)
+  }
+  
+  # 5) Edit distance (OSA / Levenshtein) on stringified sequences using stringdist if available,
+  #    otherwise fall back to simple Levenshtein implementation for short sequences
+  if ("edit" %in% methods) {
+    # prefer stringdist package if installed
+    if (requireNamespace("stringdist", quietly = TRUE)) {
+      sA <- paste(seqA, collapse = "\u00FF")  # use a separator unlikely to appear
+      sB <- paste(seqB, collapse = "\u00FF")
+      ed <- stringdist::stringdist(sA, sB, method = "osa")
+      # normalize by max length of token count (or by max(lenA, lenB))
+      ed_norm <- ed / max(lenA, lenB)
+      results$edit <- list(distance = as.numeric(ed), normalized = as.numeric(ed_norm), method = "osa (stringdist)")
+    } else {
+      # fallback: compute edit distance on tokens (dynamic programming)
+      ed_tokens <- function(x, y) {
+        m <- length(x); n <- length(y)
+        D <- matrix(0, nrow = m+1, ncol = n+1)
+        D[ ,1] <- 0:nrow(D[ ,1]) # WRONG default, fix below
+      }
+      # simpler fallback: use LCS to approximate (ed ~ lenA + lenB - 2*lcs)
+      if (!exists("lcs_len")) {
+        # compute lcs if not already
+        lcs_length_local <- function(x,y){
+          m <- length(x); n <- length(y)
+          if (m==0||n==0) return(0L)
+          dp <- matrix(0L, m+1, n+1)
+          for (i in seq_len(m)) for (j in seq_len(n)) {
+            if (x[i]==y[j]) dp[i+1,j+1] <- dp[i,j]+1L else dp[i+1,j+1] <- max(dp[i+1,j], dp[i,j+1])
+          }
+          dp[m+1,n+1]
+        }
+        lcs_len <- lcs_length_local(seqA, seqB)
+      }
+      ed_approx <- lenA + lenB - 2 * lcs_len
+      ed_norm <- ed_approx / max(lenA, lenB)
+      results$edit <- list(distance_approx = ed_approx, normalized_approx = ed_norm,
+                           method = "approx_from_lcs (no stringdist available)")
+    }
+  }
+  
+  return(results)
+}
+
+
+test1 <- compare_two_sequences(W3_pk_seq$ID, w3_twi_sequence$ID)
+test1$edit
+test2 <- compare_two_sequences(W3_pk_seq$ID, best_bfs_w3$ID)
+test2$edit
+
+compare_all_sequences <- function(seq_list,
+                                  methods = c("precedence","kendall","spearman","lcs","edit"),
+                                  lcs_normalize = "avg",
+                                  make_plots = TRUE) {
+  
+  if (!is.list(seq_list)) stop("seq_list must be a list of sequences.")
+  n <- length(seq_list)
+  if (n < 2) stop("Need at least 2 sequences.")
+  
+  seq_names <- names(seq_list)
+  if (is.null(seq_names)) seq_names <- paste0("Seq", seq_along(seq_list))
+  
+  # Storage for long-format results
+  results <- list()
+  
+  # Compare all pairs i < j
+  for (i in 1:(n-1)) {
+    for (j in (i+1):n) {
+      sA <- seq_list[[i]]
+      sB <- seq_list[[j]]
+      nameA <- seq_names[i]
+      nameB <- seq_names[j]
+      
+      res <- compare_two_sequences(sA, sB,
+                                   methods = methods,
+                                   lcs_normalize = lcs_normalize)
+      
+      row <- list(
+        seqA = nameA,
+        seqB = nameB,
+        precedence_agreement = if ("precedence" %in% methods) res$precedence$agreement else NA,
+        kendall_tau           = if ("kendall"    %in% methods) res$kendall$tau else NA,
+        spearman_rho          = if ("spearman"   %in% methods) res$spearman$rho else NA,
+        lcs_normalized        = if ("lcs"        %in% methods) res$lcs$normalized else NA,
+        edit_normalized       = if ("edit"       %in% methods)
+                                  if (!is.null(res$edit$normalized)) res$edit$normalized else
+                                    res$edit$normalized_approx else NA
+      )
+      
+      results <- append(results, list(row))
+    }
+  }
+  
+  # Convert to data frame
+  results_df <- do.call(rbind.data.frame, results)
+  
+  # Convert all numeric fields properly
+  results_df <- type.convert(results_df, as.is = TRUE)
+  
+  # -------------------------
+  # Optional heatmaps
+  # -------------------------
+  if (make_plots) {
+    if (!requireNamespace("ggplot2", quietly = TRUE)) {
+      warning("ggplot2 not installed; skipping plots.")
+    } else {
+      library(ggplot2)
+      
+      # Turn pairwise list into symmetric matrices for each metric
+      make_matrix <- function(metric) {
+        M <- matrix(NA, nrow = n, ncol = n, dimnames = list(seq_names, seq_names))
+        diag(M) <- 1
+        for (k in seq_len(nrow(results_df))) {
+          a <- results_df$seqA[k]
+          b <- results_df$seqB[k]
+          val <- results_df[[metric]][k]
+          M[a,b] <- val
+          M[b,a] <- val
+        }
+        M
+      }
+      
+      metric_names <- c("precedence_agreement","kendall_tau","spearman_rho",
+                        "lcs_normalized","edit_normalized")
+      
+      plot_list <- list()
+      
+      for (metric in metric_names) {
+        if (!metric %in% names(results_df)) next
+        
+        M <- make_matrix(metric)
+        df_plot <- as.data.frame(as.table(M))
+        names(df_plot) <- c("Seq1","Seq2","Value")
+        
+        p <- ggplot(df_plot, aes(x = Seq1, y = Seq2, fill = Value)) +
+          geom_tile(color = "white") +
+          scale_fill_gradient(low = "white", high = "steelblue", na.value = "grey80") +
+          labs(title = paste("Similarity matrix:", metric),
+               fill = metric) +
+          theme_minimal() +
+          theme(axis.text.x = element_text(angle = 45, hjust = 1),
+                panel.grid = element_blank())
+        
+        plot_list[[metric]] <- p
+        print(p)
+      }
+    }
+  }
+  
+  return(results_df)
+}
+
+compare_all_sequences(
+  list(
+    W3_pk_seq$ID,
+    w3_twi_sequence$ID,
+    best_bfs_w3$ID,
+    avg_event_w3$ID
+  )
+)
+```
 
 ## Figure 6: Distributions of proportion of transitions that follow a sequence
 Distributions of prop values, with dashed lines for median, faceted by timescale and watershed, colored by method for determining sequence
@@ -5169,6 +5498,133 @@ ggplot() +
 
 
 ```
+
+```{r W3-updated-AGU}
+# Adjustable threshold for how much better a model must be
+threshold <- 0.05   # i.e., 5% better than all others
+
+
+df_winners <- 
+  df_long_w3 %>%
+  # Self-join within each datetime to compare each model to all others
+  inner_join(df_long_w3, 
+             by = "datetime",
+             suffix = c("_this", "_other")) %>%
+  
+  # Only compare a model to other models
+  filter(model_this != model_other) %>%
+  
+  group_by(datetime, model_this, accuracy_this) %>%
+  summarise(
+    # max accuracy of other models at that timestamp
+    max_other = max(accuracy_other, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  
+  mutate(
+    is_winner = accuracy_this >= max_other + threshold
+  ) %>%
+  
+  # Keep only rows where a model wins by the threshold
+  filter(is_winner) %>%
+  
+  # Rename columns back to intuitive names
+  dplyr::rename(
+    model = model_this,
+    accuracy = accuracy_this
+  ) %>%
+  
+  # Join discharge
+  inner_join(w3_discharge_bind, by = "datetime") %>%
+
+  # Clean model names
+  mutate(model = case_when(
+    model == "bfs_accuracy"    ~ "BFS",
+    model == "pk_accuracy"     ~ "Proportion of Time Flowing",
+    model == "event_accuracy"  ~ "Event based sequence",
+    model == "twi_accuracy"    ~ "Topographic Wetness Index",
+    TRUE ~ model
+  )) %>%
+  
+  # Model level order for faceting
+  mutate(model = fct_relevel(model,
+                             "Proportion of Time Flowing",
+                             "Topographic Wetness Index",
+                             "BFS",
+                             "Event based sequence"
+                             )) 
+
+
+min_accuracy  <- 0.80  # must exceed 0.60 to "work well"
+
+df_discharge_classified <- df_long_w3 %>%
+  group_by(datetime) %>%
+  summarise(all_below = all(accuracy < min_accuracy), .groups = "drop") %>%
+  inner_join(w3_discharge_bind, by = "datetime") %>% 
+  mutate(all_below = case_when(all_below == "FALSE" ~ "Accuracy of all models >= 80%",
+                          all_below == "TRUE" ~ "Accuracy of all models < 80%"))
+
+
+ggplot() +
+
+  # 🔴 Background: discharge with color based on performance
+  geom_line(data = df_discharge_classified,
+            aes(x = datetime, y = Q_mm_day,
+                color = all_below, group = 1),
+            size = 0.3) +
+  
+  # 🟢 Good model winners (points)
+  geom_point(data = df_winners,
+             aes(x = datetime, y = Q_mm_day, color = model),
+             size = 1) +
+  
+  facet_wrap(~ model, 
+             ncol = 1, 
+             scales = "free_y") +
+  theme_classic() +
+  
+  
+  scale_x_break(c(
+    ymd_hms("2023-11-12 00:00:00"),
+    ymd_hms("2024-05-20 00:00:00")
+  )) +
+  
+  scale_x_datetime(
+    date_labels = "%b %Y",
+    date_breaks = "1 month",
+    timezone = "UTC"
+  ) +
+  
+  # Manual color scale: FALSE = grey, TRUE = black
+  scale_color_manual(
+    name = "",
+    values = c(
+    # discharge line colors
+    "Accuracy of all models >= 80%" = "grey70",
+    "Accuracy of all models < 80%"  = "black",
+    # model colors
+    "Proportion of Time Flowing" = "#d68c45",
+    "Topographic Wetness Index"  = "#247BA0",
+    "BFS"                        = "#2c6e49",
+    "Event based sequence"       = "maroon"
+  )) +
+  
+  labs(
+    title = paste0("Times when models are ≥ ", threshold*100, "% more accurate (W3)"),
+    y = "Discharge (mm/day)",
+    x = ""
+  )+
+  
+  theme(strip.background = element_blank(),
+        strip.text.x = element_blank(),
+    #strip.background = element_rect(fill = "grey95"),
+    axis.ticks.x.top = element_blank(),
+    axis.text.x.top  = element_blank(),
+    axis.line.x.top  = element_blank()
+  )
+
+```
+
 ```{r FB}
 
 threshold <- 0.05
@@ -5379,7 +5835,7 @@ ggplot() +
 ```
 
 Make them again, but a more finalized format
-```{r}
+```{r clean-combine}
 #### W3 ####
 w3_plot7 <- ggplot() +
   # Full discharge line for background context
@@ -5575,6 +6031,257 @@ For these plots I need:
 - map template
 - predicted state based on a sequence
 
+```{r W3}
+## Plot that is just a single row
+ID_acc_w3 <- comparison_w3 %>%
+    #inner_join(fb_limbs, by = "datetime") %>% 
+  group_by(ID) %>%
+  summarize(
+    pk_correct = sum(pk_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    bfs_correct = sum(bfs_eval == "correct"),
+    event_correct = sum(event_eval == "correct"),
+    total = n(),
+    #cheap_accuracy = cheap_correct / total,
+    pk_accuracy = pk_correct / total,
+    twi_accuracy = twi_correct / total,
+    bfs_accuracy = bfs_correct / total,
+    event_accuracy = event_correct/total
+  ) %>%
+  select(ID, pk_accuracy, 
+         twi_accuracy, 
+         bfs_accuracy, 
+         event_accuracy) %>%
+  tidyr::pivot_longer(cols = c(pk_accuracy, 
+                               twi_accuracy, 
+                               bfs_accuracy, 
+                               event_accuracy), 
+                      names_to = "model", values_to = "accuracy") %>%
+  mutate(
+    model = case_when(model == "bfs_accuracy" ~ "BFS",
+                      model == "pk_accuracy" ~ "Proportion of Time Flowing",
+                      model == "event_accuracy" ~ "Event based sequence",
+                      model == "twi_accuracy" ~ "Topographic Wetness Index")) %>% 
+mutate(model = fct_relevel(model, c("Proportion of Time Flowing",
+                                "Topographic Wetness Index",
+                                "BFS",
+                                "Event based sequence"
+                                )))
+
+
+W3_rot <- ggplot()+
+  theme_void()+
+  geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 1)+
+  geom_sf(data = w3_net, colour = "grey", lwd = 1) +
+geom_sf(data = w3_stic_locs_r %>% inner_join(ID_acc_w3, by = "ID"), 
+        aes(fill = accuracy), size = 3, pch = 21) +
+  scale_fill_gradientn(colors = c("white","lightgrey","darkgrey", "black"))+
+  #scale_shape_manual(values = c(21, 24, 22))+
+  theme(rect = element_rect(fill = "transparent", color = NA),
+        legend.position = "none",
+        #strip.text.x = element_blank()
+        )+
+  facet_grid( ~ model)
+W3_rot
+
+```
+```{r FB}
+## Plot that is just a single row
+ID_acc_fb <- comparison_fb %>%
+    #inner_join(fb_limbs, by = "datetime") %>% 
+  group_by(ID) %>%
+  summarize(
+    pk_correct = sum(pk_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    bfs_correct = sum(bfs_eval == "correct"),
+    event_correct = sum(event_eval == "correct"),
+    total = n(),
+    #cheap_accuracy = cheap_correct / total,
+    pk_accuracy = pk_correct / total,
+    twi_accuracy = twi_correct / total,
+    bfs_accuracy = bfs_correct / total,
+    event_accuracy = event_correct/total
+  ) %>%
+  select(ID, pk_accuracy, 
+         twi_accuracy, 
+         bfs_accuracy, 
+         event_accuracy) %>%
+  tidyr::pivot_longer(cols = c(pk_accuracy, 
+                               twi_accuracy, 
+                               bfs_accuracy, 
+                               event_accuracy), 
+                      names_to = "model", values_to = "accuracy") %>%
+  mutate(
+    model = case_when(model == "bfs_accuracy" ~ "BFS",
+                      model == "pk_accuracy" ~ "Proportion of Time Flowing",
+                      model == "event_accuracy" ~ "Event based sequence",
+                      model == "twi_accuracy" ~ "Topographic Wetness Index")) %>% 
+mutate(model = fct_relevel(model, c("Proportion of Time Flowing",
+                                "Topographic Wetness Index",
+                                "BFS",
+                                "Event based sequence"
+                                )))
+
+
+FB_rot <- ggplot()+
+  theme_void()+
+  geom_sf(data = terra::spin(fb_outline, 90, 279933.5, 4869173), fill = NA, color = "#397367", alpha = 0.3, lwd = 1)+
+  geom_sf(data = terra::spin(fb_net, 90, 279933.5, 4869173), colour = "grey", lwd = 1) +
+geom_sf(data =  terra::spin(lcc_fb, 90, 279933.5, 4869173) %>% inner_join(ID_acc_fb, by = "ID"),
+        aes(fill = accuracy), size = 3, pch = 21) +
+  scale_fill_gradientn(colors = c("white","lightgrey","darkgrey", "black"))+
+
+  #scale_shape_manual(values = c(21, 24, 22))+
+  theme(rect = element_rect(fill = "transparent", color = NA),
+        legend.position="none",
+        strip.text.x = element_blank()) +
+  facet_grid( ~ model)
+FB_rot
+
+```
+```{r ZZ}
+## Plot that is just a single row
+ID_acc_zz <- comparison_zz %>%
+    #inner_join(fb_limbs, by = "datetime") %>% 
+  group_by(ID) %>%
+  summarize(
+    pk_correct = sum(pk_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    bfs_correct = sum(bfs_eval == "correct"),
+    event_correct = sum(event_eval == "correct"),
+    total = n(),
+    #cheap_accuracy = cheap_correct / total,
+    pk_accuracy = pk_correct / total,
+    twi_accuracy = twi_correct / total,
+    bfs_accuracy = bfs_correct / total,
+    event_accuracy = event_correct/total
+  ) %>%
+  select(ID, pk_accuracy, 
+         twi_accuracy, 
+         bfs_accuracy, 
+         event_accuracy) %>%
+  tidyr::pivot_longer(cols = c(pk_accuracy, 
+                               twi_accuracy, 
+                               bfs_accuracy, 
+                               event_accuracy), 
+                      names_to = "model", values_to = "accuracy") %>%
+  mutate(
+    model = case_when(model == "bfs_accuracy" ~ "BFS",
+                      model == "pk_accuracy" ~ "Proportion of Time Flowing",
+                      model == "event_accuracy" ~ "Event based sequence",
+                      model == "twi_accuracy" ~ "Topographic Wetness Index")) %>% 
+mutate(model = fct_relevel(model, c("Proportion of Time Flowing",
+                                "Topographic Wetness Index",
+                                "BFS",
+                                "Event based sequence"
+                                )))
+
+
+ZZ_rot <- ggplot()+
+  theme_void()+
+  geom_sf(data = terra::spin(zz_outline, 180, 277401.8, 4867071), fill = NA, color = "#7E6B8F", alpha = 0.3, lwd = 1)+
+  geom_sf(data = terra::spin(zz_net, 180, 277401.8, 4867071), colour = "grey", lwd = 1) +
+geom_sf(data =  terra::spin(lcc, 180, 277401.8, 4867071) %>% inner_join(ID_acc_fb, by = "ID"),
+        aes(fill = accuracy), size = 3, pch = 21) +
+       scale_fill_gradientn(colors = c("white","lightgrey","darkgrey", "black"),
+                         limits = c(0,1),
+                         labels = c("0", "0.25", "0.5", "0.75", "1"),
+                         name = "Accuracy")+
+
+  #scale_shape_manual(values = c(21, 24, 22))+
+  theme(rect = element_rect(fill = "transparent", color = NA),
+        legend.position="bottom",
+        panel.spacing = unit(5, "lines"),
+        strip.text.x = element_blank()) +
+  facet_grid( ~ model) 
+ZZ_rot
+#combine all plots
+W3_rot / FB_rot / (ZZ_rot)
+
+#In canva will have to add north arrows and the scale bar
+
+```
+
+```{r W3-AGU}
+## Plot that is just a single row
+ID_acc_w3 <- comparison_w3 %>%
+    #inner_join(fb_limbs, by = "datetime") %>% 
+  group_by(ID) %>%
+  summarize(
+    pk_correct = sum(pk_eval == "correct"),
+    twi_correct = sum(twi_eval == "correct"),
+    bfs_correct = sum(bfs_eval == "correct"),
+    event_correct = sum(event_eval == "correct"),
+    total = n(),
+    #cheap_accuracy = cheap_correct / total,
+    pk_accuracy = pk_correct / total,
+    twi_accuracy = twi_correct / total,
+    bfs_accuracy = bfs_correct / total,
+    event_accuracy = event_correct/total
+  ) %>%
+  select(ID, pk_accuracy, 
+         twi_accuracy, 
+         bfs_accuracy, 
+         event_accuracy) %>%
+  tidyr::pivot_longer(cols = c(pk_accuracy, 
+                               twi_accuracy, 
+                               bfs_accuracy, 
+                               event_accuracy), 
+                      names_to = "model", values_to = "accuracy") %>%
+  mutate(
+    model = case_when(model == "bfs_accuracy" ~ "Breadth First Search",
+                      model == "pk_accuracy" ~ "Proportion of Time Flowing",
+                      model == "event_accuracy" ~ "Event based sequence",
+                      model == "twi_accuracy" ~ "Topographic Wetness Index")) %>% 
+mutate(model = fct_relevel(model, c("Proportion of Time Flowing",
+                                "Topographic Wetness Index",
+                                "Breadth First Search",
+                                "Event based sequence"
+                                )))
+
+
+ggplot()+
+  theme_void()+
+  geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 1)+
+  geom_sf(data = w3_net, colour = "grey", lwd = 1) +
+  # geom_sf(data = w3_stic_locs_r %>% 
+  #         inner_join(ID_acc_w3, by = "ID") %>% 
+  #         filter(ID %not_in% include), size = 1, pch = 20) +
+geom_sf(data = w3_stic_locs_r %>% 
+          inner_join(ID_acc_w3, by = "ID") %>% 
+          filter(ID %in% include), 
+        aes(fill = accuracy), size = 5, pch = 21) +
+  
+  scale_fill_gradientn(colors = c("white","lightgrey","darkgrey", "black"),
+                       name = "Accuracy",
+                       limits = c(0.5, 1))+
+  #scale_shape_manual(values = c(21, 24, 22))+
+  theme(rect = element_rect(fill = "transparent", color = NA),
+        strip.text.x = element_text(margin = margin(t = 0, r = 0, b = 10, l = 0, unit = "pt")),
+        strip.text = element_text(size = 10)
+        #legend.position = "none",
+        #strip.text.x = element_blank()
+        )+
+  facet_grid( ~ model,
+              labeller = labeller(group = label_wrap_gen(width = 1)))
+
+
+ggplot()+
+  theme_void()+
+  geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 1)+
+  geom_sf(data = w3_net, colour = "grey", lwd = 1) +
+geom_sf_text(data = w3_stic_locs_r, aes(label = ID), size = 2, color = "black")+
+  scale_fill_gradientn(colors = c("white","lightgrey","darkgrey", "black"))+
+  #scale_shape_manual(values = c(21, 24, 22))+
+  theme(rect = element_rect(fill = "transparent", color = NA),
+        legend.position = "none",
+        #strip.text.x = element_blank()
+        )
+
+include <- c(1, 2, 3, 4, 18, 20 ,21)
+```
+
+### OLD CODE< PROBABLY REMOVE
 Run lines 2815 and beyond
 ```{r model_predictions}
 cheap_model <- calc_model_result(W3_cheap$ID) %>% rename("cheapest" = pred_binary)
