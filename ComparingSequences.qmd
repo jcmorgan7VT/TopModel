@@ -4269,7 +4269,7 @@ hill <- rast(hillshade_out)
 
 ```
 
-```{r whole-Valley}
+```{r old-whole-valley}
 #use HB dem from previous maps, but just don't crop it, include outline of the whole valley, and the outlines of each study shed
 dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
 m1 <- rast(dem)
@@ -4325,7 +4325,7 @@ valley_plot
 #combine 3 watershed shapes into one layer, and either label or make distinct colors
 
 ```
-```{r}
+```{r new-valley-black-and-white}
 HB_bounds <- "./HB/hbef_wsheds/hbef_wsheds.shp"
 sheds <- vect(HB_bounds)
 sheds <- terra::project(sheds, crs(hill))
@@ -4358,6 +4358,23 @@ valley_plot <- ggplot()+
 valley_plot
 
 ggsave("valley.png", plot = valley_plot, limitsize = FALSE, units = "in", bg = NULL,)
+
+# Version for AGU 25 and seismic paper, remove W3
+without_w3 <- ggplot()+
+  geom_spatraster(data = valley_hill2, maxcell = 5e+05)+#make max cells bigger on final version
+  theme_void()+
+  theme(legend.position = "")+
+  scale_fill_gradientn(colors = c("gray9", "gray48","lightgray", "white"))+
+    new_scale_fill() +
+  #geom_spatraster(data = m1, alpha = 0.5)+
+  geom_sf(data = hb_outline, fill = NA, color = "black", alpha = 0.6, lwd = 1, lty = 2) +
+  geom_sf(data = w3_outline, fill = shed_colors[2], color = shed_colors[2], alpha = 0.6, lwd = 1) +
+  theme(rect = element_rect(fill = "transparent", color = NA))+
+  ggspatial::annotation_scale(location = 'tr', pad_x = unit(1, "cm"), 
+                              pad_y = unit(0.5, "cm"))
+
+ggsave("valley.png", plot = without_w3, limitsize = FALSE, units = "in", bg = NULL,)
+
 
 ```
 
