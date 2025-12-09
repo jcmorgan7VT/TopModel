@@ -5913,7 +5913,7 @@ df_winners <-
   # Clean model names
   mutate(model = case_when(
     model == "bfs_accuracy"    ~ "BFS",
-    model == "pk_accuracy"     ~ "Proportion of Time Flowing",
+    model == "pk_accuracy"     ~ "Flow persistence",
     model == "event_accuracy"  ~ "Event based sequence",
     model == "twi_accuracy"    ~ "Topographic Wetness Index",
     TRUE ~ model
@@ -5921,7 +5921,7 @@ df_winners <-
   
   # Model level order for faceting
   mutate(model = fct_relevel(model,
-                             "Proportion of Time Flowing",
+                             "Flow persistence",
                              "Topographic Wetness Index",
                              "BFS",
                              "Event based sequence"
@@ -5979,7 +5979,7 @@ ggplot() +
     "Accuracy of all models >= 80%" = "grey70",
     "Accuracy of all models < 80%"  = "black",
     # model colors
-    "Proportion of Time Flowing" = "#d68c45",
+    "Flow persistence" = "#d68c45",
     "Topographic Wetness Index"  = "#247BA0",
     "BFS"                        = "#2c6e49",
     "Event based sequence"       = "maroon"
@@ -6606,10 +6606,10 @@ ID_acc_w3 <- comparison_w3 %>%
                       names_to = "model", values_to = "accuracy") %>%
   mutate(
     model = case_when(model == "bfs_accuracy" ~ "Breadth First Search",
-                      model == "pk_accuracy" ~ "Flow Persistence",
+                      model == "pk_accuracy" ~ "Flow persistence",
                       model == "event_accuracy" ~ "Event based sequence",
                       model == "twi_accuracy" ~ "Topographic Wetness Index")) %>% 
-mutate(model = fct_relevel(model, c("Flow Persistence",
+mutate(model = fct_relevel(model, c("Flow persistence",
                                 "Topographic Wetness Index",
                                 "Breadth First Search",
                                 "Event based sequence"
