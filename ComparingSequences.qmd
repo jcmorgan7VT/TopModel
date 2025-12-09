@@ -4361,7 +4361,380 @@ ggsave("valley.png", plot = valley_plot, limitsize = FALSE, units = "in", bg = N
 
 ```
 
+### simplified maps for AGU25 geoburst
+```{r W3-map}
+#map of watershed 3 with depth to bedrock
+hillshade_out <- "./w3_dems/1mdem_hillshade.tif"
+hill <- rast(hillshade_out)
 
+#dem
+dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
+m1 <- rast(dem)
+
+ybounds <- c(4870350,4871350)
+xbounds <- c(281350, 282150)
+#crop to rectangular area
+crop1 <- crop(m1, ext(c(xbounds, ybounds)))
+#writeRaster(crop1, "1mdemw3_cropped.tif")
+
+#watershed boundary
+w3_shed <- "./w3_dems/w3_shed.tif"
+w3_outline <- as.polygons(rast(w3_shed), extent=FALSE)
+plot(w3_outline)
+expanse(w3_outline)
+
+#w3 network- thing I need to change
+#read in shapefile of stream converted in ARC
+vect_stream_path <- "./AGU24posterAnalysis/vector_stream/vector_stream.shp"
+#stream as a vector
+vect_stream <- vect(vect_stream_path)
+plot(vect_stream)
+#crop to watershed boundary
+w3_stream_crop <- crop(vect_stream, w3_outline)
+plot(w3_stream_crop)
+#or i could use old classification
+
+#point locations- snapped points from above chunk
+w3_stic_locs_snap <- "w3_stic_locs_snap.shp"
+
+w3_stic_locs_r <- vect(w3_stic_locs_snap) %>% 
+  left_join(pks_w3, by = "ID")
+
+
+
+#w3_stic_locs_r <- vect(w3_stic_locs_snap)
+#writeVector(w3_stic_locs_r, "./seismic_map_exports/w3_stic_locs_snap.shp")
+
+
+w3_net <- vect("./carrieZigZag/w3_network.shp")
+#writeVector(w3_net, "./seismic_map_exports/network.shp")
+
+w3_map_f1 <- 
+  ggplot()+
+  #geom_spatraster(data = hill)+
+  theme_void()+
+  #theme(legend.position = "")+
+  # scale_fill_gradientn(colors = c("gray9", "gray48","lightgray", "white"),
+  #                      guide = "none")+
+  #   new_scale_fill() +
+  #geom_spatraster(data = crop1, alpha = 0.5)+
+  geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 2)+
+  geom_sf(data = w3_net, colour = "#9AC0CD", lwd = 1) +
+  geom_sf(data = w3_stic_locs_r, aes(fill = pk), size = 3, pch = 21) +
+  #geom_sf(data = dd, aes(color = (depth)), pch = 19, size = 3) +
+  binned_scale(name = "Flow persistence",
+               aesthetics = "fill",
+               scale_name = "stepsn", 
+               palette = function(x) c("#F0F2FA", "#B3C0E5","#4969C1", "#2A3F7A"),
+               breaks = c(0.25, 0.5, 0.75),
+               limits = c(0, 1),
+               show.limits = TRUE, 
+               guide = "colorsteps"
+  )+
+  #geom_sf(data = w3_pour, colour = "black") +
+   #scale_fill_hypso_c(palette = "dem_screen" , limits = c(200, 1000))+
+  #theme(rect = element_rect(fill = "transparent", color = NA))+
+  ggspatial::annotation_scale(location = 'tr'
+                              )+
+    guides(colour = guide_coloursteps(show.limits = TRUE))
+                              
+w3_map_f1
+ggsave("w3_map_f1f.png", w3_map_f1 )
+
+```
+```{r FB-map}
+#read in DEM of whole valley, 1m resolution
+dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
+m1 <- rast(dem)
+
+#define the rectangular area that will be shown on final map
+ybounds <- c(4868850,4869650)
+xbounds <- c(279350, 280450)
+
+#create a SpatExtent from a vector (length=4; order=xmin, xmax, ymin, ymax)
+crop1 <- crop(m1, ext(c(xbounds, ybounds)))
+#save cropped 1m dem to reduce processing time below, and gurantee that everything has the same extent
+#writeRaster(crop1, "./fb_dems/1mdem_crop.tif", overwrite = TRUE)
+#read in cropped dem
+fb_crop <- "./fb_dems/1mdem_crop.tif"
+
+#read in shapefile of stream network shape from ARC file on windows computer
+fb_net <- vect("./carrieZigZag/FB_network.shp")
+
+###pour point to define where the watershed boundary is
+#manually type coords from windows computer
+fb_pour_coords <- data.frame("easting" = 280400,
+                             "northing" = 4869120)
+#convert to SpatVector object
+fb_pour <- vect(fb_pour_coords,
+                geom = c("easting", "northing"),
+                   crs = crs(m1))
+#snap pour point to make sure it lies on flowlines
+#fb_pour <- snap(fb_pour, fb_net, tol = 1)
+
+#save to file for use in whitebox functions
+fb_pour_filename <- "./fb_dems/fb_pour.shp"
+#writeVector(fb_pour, fb_pour_filename, overwrite=TRUE)
+
+####delineate watershed and keep watershed boundary
+#breach and fill I guess
+b_crop <- "./fb_dems/1mdem_crop.tif"
+
+fb_breached <- "./fb_dems/1mdem_breach.tif"
+# wbt_breach_depressions_least_cost(
+#   dem = fb_crop,
+#   output = fb_breached,
+#   dist = 1,
+#   fill = TRUE)
+
+fb_filled <- "./fb_dems/1mdem_fill.tif"
+# wbt_fill_depressions_wang_and_liu(
+#   dem = fb_breached,
+#   output = fb_filled
+# )
+#calculate flow accumulation and direction
+fb_flowacc <- "./fb_dems/1mdem_fb_flowacc.tif"
+# wbt_d8_flow_accumulation(input = fb_filled,
+#                          output = fb_flowacc)
+# plot(rast(fb_flowacc))
+fb_d8pt <- "./fb_dems/1mdem_fb_d8pt.tif"
+# wbt_d8_pointer(dem = fb_filled,
+#                output = fb_d8pt)
+# plot(rast(fb_d8pt))
+
+
+#delineate streams
+fb_streams <- "./fb_dems/fb_streams.tif"
+# wbt_extract_streams(flow_accum = fb_flowacc,
+#                     output = fb_streams,
+#                     threshold = 8000)
+# plot(rast(fb_streams))
+# points(lcc)
+#snap pour point to streams
+fb_pour_snap <- "./fb_dems/fb_pour_snap.shp"
+# wbt_jenson_snap_pour_points(pour_pts = fb_pour_filename,
+#                             streams = fb_streams,
+#                             output = fb_pour_snap,
+#                             snap_dist = 10)
+fb_pour_snap_read <- vect("./fb_dems/fb_pour_snap.shp")
+
+fb_shed <- "./fb_dems/fb_shed.tif"
+# wbt_watershed(d8_pntr = fb_d8pt,
+#               pour_pts = fb_pour_snap,
+#               output = fb_shed)
+
+#convert raster of watershed area to vector for final mapping
+fb_outline <- as.polygons(rast(fb_shed), extent=FALSE)
+
+#get sensor locations from STIC data, format
+locs_fb <- data_23 %>% 
+  filter(wshed == "FB") %>% 
+  select(ID, lat, long) %>% 
+  unique()
+#convert STIC data to a SpatVector data format
+locs_shape_fb <- vect(locs_fb, 
+                   geom=c("long", "lat"), 
+                   crs = "+proj=longlat +datum=WGS84")
+#reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
+lcc_fb <- terra::project(locs_shape_fb, crs(m1)) %>% 
+  left_join(pks_fb, by = "ID")
+
+
+#assign destination for hillshade calculation
+hillshade_out_fb <- "./fb_dems/1mdem_hillshade.tif"
+# wbt_hillshade(
+#   dem = fb_crop,
+#   output = hillshade_out,
+# )
+hill_fb <- rast(hillshade_out_fb)
+
+#final plot with cropped hillshade and dem, STIC locations, watershed boundary, and stream network.
+#fb_map <- 
+  ggplot()+
+  geom_spatraster(data = hill_fb)+
+  theme_void()+
+  #theme(legend.position = "")+
+  scale_fill_gradientn(colors = c( "gray9", "gray48","lightgray", "white"),
+                                   guide = "none")+
+    new_scale_fill() +
+  #geom_spatraster(data = crop1, alpha = 0.5)+
+    geom_sf(data = fb_outline, fill = NA, color = "#397367", alpha = 0.3, lwd = 2) +
+  geom_sf(data = fb_net, colour = "darkslategray3", lwd = 1) +
+    #geom_sf(data = lcc_fb, colour = "midnightblue", pch = 19, size = 2) +
+    geom_sf(data = lcc_fb, aes(fill = pk), size = 3, pch = 21) +
+  #geom_sf(data = dd, aes(color = (depth)), pch = 19, size = 3) +
+  binned_scale(name = "Flow persistence",
+               aesthetics = "fill",
+               scale_name = "stepsn", 
+               palette = function(x) c("#F0F2FA", "#B3C0E5","#4969C1", "#2A3F7A"),
+               breaks = c(0.25, 0.5, 0.75),
+               limits = c(0, 1),
+               show.limits = TRUE, 
+               guide = "colorsteps"
+  )+
+  #geom_sf(data = fb_pour, colour = "black", pch = 8, size = 3) +
+   #scale_fill_hypso_c(palette = "dem_screen", limits = c(200, 1000))+
+  theme(rect = element_rect(fill = "transparent", color = NA))+
+    guides(colour = guide_coloursteps(show.limits = TRUE))
+  
+
+```
+```{r ZZ-map}
+#map for ZZ
+#read in DEM of whole valley, 1m resolution
+dem <- "./HB/1m hydro enforced DEM/dem1m.tif"
+m1 <- rast(dem)
+#plot(m1)
+
+#get sensor locations from STIC data, format
+locs <- data_23 %>% 
+  filter(wshed == "ZZ") %>% 
+  select(ID, lat, long) %>% 
+  unique()
+#convert STIC data to a SpatVector data format
+locs_shape <- vect(locs, 
+                   geom=c("long", "lat"), 
+                   crs = "+proj=longlat +datum=WGS84")
+#plot(locs_shape)
+#reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
+lcc <- terra::project(locs_shape, crs(m1)) %>% 
+  left_join(pks_zz, by = "ID")
+
+#plot(lcc)
+#define the rectangular area that will be shown on final map
+ybounds <- c(4866400,4867500)
+xbounds <- c(277200, 277650)
+#plot(m1, xlim = xbounds, ylim = ybounds)
+#points(lcc)
+
+#create a SpatExtent from a vector (length=4; order=xmin, xmax, ymin, ymax)
+crop1 <- crop(m1, ext(c(xbounds, ybounds)))
+#plot(crop1)
+#save cropped 1m dem to reduce processing time below, and gurantee that everything has the same extent
+#writeRaster(crop1, "./zz_dems/1mdem_crop.tif", overwrite = TRUE)
+#read in cropped dem
+zz_crop <- "./zz_dems/1mdem_crop.tif"
+
+#read in shapefile of stream network shape from ARC file on windows computer
+zz_net <- vect("./carrieZigZag/zigzag_streams.shp")
+#plot(zz_net)
+
+###pour point to define where the watershed boundary is
+#manually type coords from windows computer
+
+
+zz_pour_coords <- data.frame("easting" = 277280.45,
+                             "northing" = 4867436.45)
+#convert to SpatVector object
+zz_pour <- vect(zz_pour_coords,
+                geom = c("easting", "northing"),
+                   crs = crs(m1))
+#snap pour point to make sure it lies on flowlines
+#fb_pour <- snap(fb_pour, fb_net, tol = 1)
+
+#save to file for use in whitebox functions
+zz_pour_filename <- "./zz_dems/zz_pour.shp"
+#writeVector(zz_pour, zz_pour_filename, overwrite=TRUE)
+
+####delineate watershed and keep watershed boundary
+#breach and fill I guess
+zz_crop <- "./zz_dems/1mdem_crop.tif"
+
+zz_breached <- "./zz_dems/1mdem_breach.tif"
+
+
+zz_filled <- "./zz_dems/1mdem_fill.tif"
+# wbt_fill_depressions_wang_and_liu(
+#   dem = zz_breached,
+#   output = zz_filled
+# )
+#calculate flow accumulation and direction
+zz_flowacc <- "./zz_dems/1mdem_zz_flowacc.tif"
+# wbt_d8_flow_accumulation(input = zz_filled,
+#                          output = zz_flowacc)
+#plot(rast(zz_flowacc))
+zz_d8pt <- "./zz_dems/1mdem_zz_d8pt.tif"
+# wbt_d8_pointer(dem = zz_filled,
+#                output = zz_d8pt)
+#plot(rast(zz_d8pt))
+
+
+#delineate streams
+zz_streams <- "./zz_dems/zz_streams.tif"
+# wbt_extract_streams(flow_accum = zz_flowacc,
+#                     output = zz_streams,
+#                     threshold = 8000)
+# plot(rast(zz_streams))
+# points(lcc)
+#snap pour point to streams
+zz_pour_snap <- "./zz_dems/zz_pour_snap.shp"
+# wbt_jenson_snap_pour_points(pour_pts = zz_pour_filename,
+#                             streams = zz_streams,
+#                             output = zz_pour_snap,
+#                             snap_dist = 10)
+zz_pour_snap_read <- vect("./zz_dems/zz_pour_snap.shp")
+# plot(rast(zz_streams), 
+#      xlim = c(280200, 280410),
+#      ylim = c(4869300, 4869000))
+# points(zz_pour_snap_read, pch = 1)
+
+zz_shed <- "./zz_dems/zz_shed.tif"
+# wbt_watershed(d8_pntr = zz_d8pt,
+#               pour_pts = zz_pour_snap,
+#               output = zz_shed)
+
+#plot(rast(zz_shed))
+#convert raster of watershed area to vector for final mapping
+zz_outline <- as.polygons(rast(zz_shed), extent=FALSE)
+#plot(zz_outline)
+
+
+
+#assign destination for hillshade calculation
+hillshade_out <- "./zz_dems/1mdem_hillshade.tif"
+# wbt_hillshade(
+#   dem = zz_crop,
+#   output = hillshade_out,
+# )
+hill <- rast(hillshade_out)
+#plot(hill)
+#final plot with cropped hillshade and dem, STIC locations, watershed boundary, and stream network.
+#zz_map <- 
+  ggplot()+
+  geom_spatraster(data = hill)+
+  theme_void()+
+  #theme(legend.position = "")+
+  scale_fill_gradientn(colors = c("black", "gray9", "gray48","lightgray", "white"),
+                       guide = "none")+
+    new_scale_fill() +
+  #geom_spatraster(data = crop1, alpha = 0.5)+
+    geom_sf(data = zz_outline, fill = NA, color = "#7E6B8F", alpha = 0.3, lwd = 2) +
+  geom_sf(data = zz_net, colour = "darkslategray3", lwd = 1) +
+    #geom_sf(data = lcc, colour = "midnightblue", pch = 19, size = 2) +
+    geom_sf(data = lcc, aes(fill = pk), size = 3, pch = 21) +
+  #geom_sf(data = dd, aes(color = (depth)), pch = 19, size = 3) +
+  scale_fill_continuous(high = "#27408B", low = "white",
+                        labels = c("0", "0.5", "1"),
+                        breaks = c(0, 0.5, 1),
+                        limits = c(0, 1))+
+  #geom_sf(data = zz_pour, colour = "black", pch = 8, size = 3) +
+   #scale_fill_hypso_c(palette = "dem_screen", limits = c(200, 1000))+
+  binned_scale(name = "Flow persistence",
+               aesthetics = "fill",
+               scale_name = "stepsn", 
+               palette = function(x) c("#F0F2FA", "#B3C0E5","#4969C1", "#2A3F7A"),
+               breaks = c(0.25, 0.5, 0.75),
+               limits = c(0, 1),
+               show.limits = TRUE, 
+               guide = "colorsteps"
+  )+
+  #geom_sf(data = fb_pour, colour = "black", pch = 8, size = 3) +
+   #scale_fill_hypso_c(palette = "dem_screen", limits = c(200, 1000))+
+  theme(rect = element_rect(fill = "transparent", color = NA))+
+    guides(colour = guide_coloursteps(show.limits = TRUE))
+
+
+```
 ## Figure 2: Vignettes of network wetting and drying
 Chunk below copied from mapsForStoryboard.qmd, from section where I was determining times when the network went from fully dry to fully wet.
 
@@ -5552,7 +5925,8 @@ df_winners <-
                              "Topographic Wetness Index",
                              "BFS",
                              "Event based sequence"
-                             )) 
+                             )) %>% 
+  filter(datetime >= ymd_hms("2024-05-20 16:30:00 UTC"))
 
 
 min_accuracy  <- 0.80  # must exceed 0.60 to "work well"
@@ -5562,7 +5936,8 @@ df_discharge_classified <- df_long_w3 %>%
   summarise(all_below = all(accuracy < min_accuracy), .groups = "drop") %>%
   inner_join(w3_discharge_bind, by = "datetime") %>% 
   mutate(all_below = case_when(all_below == "FALSE" ~ "Accuracy of all models >= 80%",
-                          all_below == "TRUE" ~ "Accuracy of all models < 80%"))
+                          all_below == "TRUE" ~ "Accuracy of all models < 80%")) %>% 
+  filter(datetime >= ymd_hms("2024-05-20 16:30:00 UTC"))
 
 
 ggplot() +
@@ -5585,15 +5960,16 @@ ggplot() +
   
   
   scale_x_break(c(
-    ymd_hms("2023-11-12 00:00:00"),
-    ymd_hms("2024-05-20 00:00:00")
+    ymd_hms("2024-06-03 00:00:00"),
+    ymd_hms("2024-07-05 00:00:00")
   )) +
   
   scale_x_datetime(
-    date_labels = "%b %Y",
-    date_breaks = "1 month",
-    timezone = "UTC"
-  ) +
+  date_labels = "%b %d",        # show month and day: "Jul 03"
+  date_breaks = "5 days",       # major tick every 5 days
+  date_minor_breaks = "1 day",  # (optional) minor ticks every day
+  timezone = "UTC"
+) +
   
   # Manual color scale: FALSE = grey, TRUE = black
   scale_color_manual(
@@ -6230,10 +6606,10 @@ ID_acc_w3 <- comparison_w3 %>%
                       names_to = "model", values_to = "accuracy") %>%
   mutate(
     model = case_when(model == "bfs_accuracy" ~ "Breadth First Search",
-                      model == "pk_accuracy" ~ "Proportion of Time Flowing",
+                      model == "pk_accuracy" ~ "Flow Persistence",
                       model == "event_accuracy" ~ "Event based sequence",
                       model == "twi_accuracy" ~ "Topographic Wetness Index")) %>% 
-mutate(model = fct_relevel(model, c("Proportion of Time Flowing",
+mutate(model = fct_relevel(model, c("Flow Persistence",
                                 "Topographic Wetness Index",
                                 "Breadth First Search",
                                 "Event based sequence"
