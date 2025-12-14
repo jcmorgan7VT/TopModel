@@ -43,7 +43,6 @@ calcQ_noK_oneL("./salt_dilutions/ZZ/ZZ_8_5", mean(c(9.453437e-05, 4.017994e-06,
 
 # Falls Brook
 
-Potential big problem with my pressure transducer measurements. At some point during summer of 2024, the pressure changes really dramatically, like increases by one order of magnitude. It remains this way in 2025 as well. I think it affects the salt dilutions that Logan conducted.
 ```{r read-csv}
 #### 2023 ####
 FB_air23 <- read_csv("./PressureTransducers_11_14_23/FB_air.csv", 
@@ -606,13 +605,13 @@ Zig zag has the same problem, but only for the 2025 observations.
 #### 2023 ####
 ZZ_air23 <- read_csv("./PressureTransducers_11_14_23/ZZ_air.csv", skip = 1) %>% 
   select(2:3) %>% 
-  rename(DATETIME = 1,
+  dplyr::rename(DATETIME = 1,
          pressure_psi_air = 2) %>% 
   mutate(DATETIME = mdy_hms(DATETIME))
 
 ZZ_water23 <- read_csv("./PressureTransducers_11_14_23/ZZ_water.csv", skip = 1) %>% 
   select(2:3) %>% 
-  rename(DATETIME = 1,
+  dplyr::rename(DATETIME = 1,
          pressure_psi_water = 2) %>% 
   mutate(DATETIME = mdy_hms(DATETIME))
 
@@ -634,13 +633,13 @@ processed_zz_stage23 <- ZZ_water23 %>%
 #### 2024 ####
 ZZ_air24 <- read_csv("./PressureTransducers_summer24/ZZ_air.csv", skip = 1) %>% 
   select(2:3) %>% 
-  rename(DATETIME = 1,
+  dplyr::rename(DATETIME = 1,
          pressure_psi_air = 2) %>% 
   mutate(DATETIME = mdy_hms(DATETIME))
 
 ZZ_water24 <- read_csv("./PressureTransducers_summer24/ZZ_water.csv", skip = 1) %>% 
   select(2:3) %>% 
-  rename(DATETIME = 1,
+  dplyr::rename(DATETIME = 1,
          pressure_psi_water = 2) %>% 
   mutate(DATETIME = mdy_hms(DATETIME))
 
@@ -665,14 +664,14 @@ processed_zz_stage24 %>%
 ZZ_air25 <-
   rbind(read_csv("./pducers_summer25/zz_air.csv", skip = 1) %>% 
   select(2:3) %>% 
-  rename(DATETIME = 1,
+  dplyr::rename(DATETIME = 1,
          pressure_psi_air = 2) %>% 
   mutate(DATETIME = mdy_hms(DATETIME)))
 
 ZZ_water25 <- 
   read_csv("./pducers_summer25/zz_water.csv", skip = 1) %>% 
   select(2:3) %>% 
-  rename(DATETIME = 1,
+  dplyr::rename(DATETIME = 1,
          pressure_psi_water = 2) %>% 
   mutate(DATETIME = mdy_hms(DATETIME))
 
@@ -709,7 +708,7 @@ all_zz <- rbind(processed_zz_stage23,
 
 ```{r ZZ-identify-events23}
 
-input <- all_zz
+input <- processed_zz_stage23
 #identifying events
 bf = baseflowB(input$roll_mean, alpha = 0.99)
 
@@ -777,7 +776,7 @@ for (i in seq_len(nrow(events))) {
 # Optional: label all remaining NA values as "baseflow" (e.g., before first or after last event)
 discharge_df$event_type[is.na(discharge_df$event_type)] <- "baseflow"
 
-stage <- discharge_df
+ZZstage23 <- discharge_df
 
 stage %>% 
   ggplot(aes(x = DATETIME, y = roll_mean, color = event_type))+
@@ -855,7 +854,7 @@ for (i in seq_len(nrow(events))) {
 # Optional: label all remaining NA values as "baseflow" (e.g., before first or after last event)
 discharge_df$event_type[is.na(discharge_df$event_type)] <- "baseflow"
 
-stage <- discharge_df
+ZZstage24 <- discharge_df
 
 stage %>% 
   ggplot(aes(x = DATETIME, y = roll_mean, color = event_type))+
@@ -934,13 +933,20 @@ for (i in seq_len(nrow(events))) {
 # Optional: label all remaining NA values as "baseflow" (e.g., before first or after last event)
 discharge_df$event_type[is.na(discharge_df$event_type)] <- "baseflow"
 
-stage <- discharge_df
+ZZstage25 <- discharge_df
 
 stage %>% 
   ggplot(aes(x = DATETIME, y = roll_mean, color = event_type))+
   geom_point()
 
 
+```
+
+```{r combine-ZZ-events}
+ZZall_events <- rbind(ZZstage23, 
+                      mutate(ZZstage24, event_id = event_id + 8), 
+                      mutate(ZZstage25, event_id = event_id + 14))
+write_csv(ZZall_events, "ZZ_events.csv")
 ```
 
 
