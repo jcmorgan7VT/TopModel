@@ -179,6 +179,190 @@ return(convert)
 }
 ```
 
+Define functions that calculate proportion of time that nodes wet and dry sequentially.  
+
+SOMEHOW REMOVED THIS AT SOME POINT????
+```{r define-functions}
+calc_support_combos <- function(up, down, input){
+#inputs to function- comment out in final version
+# i <- 4
+# up <- paste0("r_",routes$up[i])
+# down <- paste0("r_",routes$down[i])
+#input <- filtered_input
+
+#create output with the total and the sub, also the two input locations
+output <- data.frame(up, down)
+
+  
+no_dupes <- input %>% 
+      select(up,down, datetime) %>% #remove date
+      # make it so that there cannot be a sequence without change
+      # keep date column for indexing purposes later
+      filter(row_number() == 1 | !apply(select(., up, down) == lag(select(., up, down)), 1, all)) %>% 
+      #remove rows where one of the sensors is missing data
+      drop_na()
+#View(no_dupes)
+#all flowing all the time?
+check <- nrow(no_dupes)
+
+if(check <= 2){
+  sequence_df <- data.frame("Sequence" = NA, 
+                            "Frequency" = NA,
+                            "up" = up,
+                            "down" = down)
+  return(sequence_df)
+} 
+else {
+# Define window size
+window_size <- 2
+
+# Create sliding windows
+windows <- rollapply(
+  select(no_dupes, -datetime),
+  width = window_size,
+  by.column = FALSE,
+  FUN = function(x) paste(as.vector(t(x)), collapse = "")
+)
+
+# Count and sort sequences
+sequence_counts <- table(windows)
+sorted_counts <- sort(sequence_counts, decreasing = TRUE)
+
+# Display all sequences and their frequencies
+sequence_df <- as.data.frame(sorted_counts, stringsAsFactors = FALSE)
+if(check > 1) colnames(sequence_df) <- c("Sequence", "Frequency")
+
+
+sequence_df$up <- up
+sequence_df$down <- down
+output$total <- sum(sequence_df$Frequency)
+#write some way to score the sequence_df
+#award one point for one of these configs:
+supports <- c("0001","0111","1101", "0100")
+
+
+sub <- filter(sequence_df, Sequence %in% supports)
+output$points <- sum(sub$Frequency)
+
+
+#create output with transitions
+#error handling- in situation where both points flowed 100% of the time
+
+return(sequence_df)}
+}
+
+#test function
+
+#calc_support_combos("r_18", "r_11", input_test)
+
+#function to break up groups of continuous measurements, ensure that gaps are not considered
+#contains calc_support function
+iterate_groups_combos <- function(up, down, input, timestep){
+  #create group column that identifies gaps in continuous data in time
+
+# i <- 4
+# up <- paste0("r_",routes$up[i])
+# down <- paste0("r_",routes$down[i])
+# timestep <- hours(1)
+  input$group <- cumsum(c(TRUE, diff(input$datetime) != timestep))
+  #View(input)
+
+  for(u in 1:length(unique(input$group))){
+  # u <- 1
+  #   print(u)
+    filtered_input <- input %>% filter(group == u)
+    #this line throws error if 
+    output <- calc_support_combos(up, down, filtered_input)
+    
+
+     if(u == 1) iterate_groups_alldat <- output
+     if(u > 1) iterate_groups_alldat <- rbind(iterate_groups_alldat, output)
+  }
+  # final_iterate_groups_alldat <- iterate_groups_alldat %>% 
+  #   drop_na() %>% 
+  #   group_by(up, down) %>% 
+  #   summarise(total = sum(total),
+  #             points = sum(points))
+  return(iterate_groups_alldat)
+}
+
+#iterate_groups("r_13", "r_19", input, min(30))
+#function to take a list of routes and input dataset
+#contains group iteration function
+#for loop to iterate through full list of combinations of up and downstream locations
+#IMPORTANT- calculate hierarchy and iterate groups only work if the input timestep is approriate
+calculate_hierarchy_combos <- function(routes, input, timestep){
+  for(x in 1:length(routes$up)){
+  up <- paste0("r_",routes$up[x])
+  down <- paste0("r_",routes$down[x])
+  #print(x)
+  
+  out <- iterate_groups_combos(up, down, input, timestep)
+    #out <- calc_support(up, down, input)
+
+
+  if(x == 1) alldat <- out
+  if(x > 1) alldat <- rbind(alldat, out)
+
+  }
+  final_output <- alldat %>% 
+    drop_na() %>%
+    group_by(up, down, Sequence) %>%
+    summarise(Frequency = sum(Frequency))
+  return(final_output)
+}
+
+#fantastic four function has been modified, to do average daily state. Removed hourly and 4 hr time blocks
+fantastic_four_combos <- function(routes, shed){
+  theFour <- c("30mins")
+  
+  for(q in 1:length(theFour)){
+    #if statements to detect timescale, calculate appropriate inputs
+    timescale <- theFour[q]
+  if(timescale == "30mins"){
+    input <- rbind(input_w3, input_fb, input_zz) %>%
+      filter(wshed == shed, mins %in% c(0, 30)) %>%
+      select(datetime, binary, ID) %>%
+      mutate(ID = paste0("r_", ID)) %>%
+      pivot_wider(names_from = ID, values_from = binary)
+    timestep <- minutes(30)
+  } 
+  
+    out <- calculate_hierarchy_combos(routes, input, timestep)
+    out$timescale <- theFour[q]
+    
+    if(q == 1) fanfar <- out
+    if(q > 1) fanfar <- rbind(fanfar, out)
+  }
+  fanfar$shed <- shed
+  return(fanfar)
+}
+
+# function to determine proportion of transitions that state changes follow all parent child relationships
+calc_props <- function(routes, shed){
+  full_combos <- fantastic_four_combos(routes, shed)
+total_state_changes <- full_combos %>% 
+    filter(Sequence != 0011, Sequence != 1100) %>% 
+    group_by(up, down, timescale, shed) %>% 
+    summarise(totals = sum(Frequency))
+supports <- c("0001","0111","1101", "0100")
+
+hierarchical_changes <- full_combos %>% 
+    filter(Sequence != 0011, Sequence != 1100) %>% 
+    filter(Sequence %in% supports) %>% 
+    group_by(up, down, timescale, shed) %>%  
+    summarise(hierarchical = sum(Frequency)) 
+
+un_split <- total_state_changes %>% 
+  left_join(hierarchical_changes, by = c("up", "down", "shed", "timescale")) %>% 
+  mutate(prop = hierarchical/totals) %>% 
+  mutate_all(~replace(., is.na(.), 0))
+return(un_split)
+}
+```
+
+
+
 ## Discharge and Stage
 ### W3 Discharge
 ```{r prepare-discharge-W3}
@@ -259,6 +443,8 @@ w3_discharge_bind <- rbind(q_23_bind, q_24_bind)
 ```
   
 Chunk straight from mapsForStoryboard, of my current best attempt to extract rising and falling limbs from discharge record for W3. Plan to use to compare how the different methods work during rising, falling, and baseflow.
+
+Might not need this chunk? It has an error I do not understand
 ```{r identifying-events}
 start <- ymd_hms("2023-7-20 00:00:00")
 stop <- ymd_hms("2023-10-22 00:00:00")
@@ -300,7 +486,7 @@ q_23_plotting %>%
   select(datetime, Q_mm_day) %>% 
   arrange(datetime) %>% 
   unique() %>% 
-  mutate(lab = as.numeric(row_number())) %>% 
+  dplyr::mutate(lab = as.numeric(row_number())) %>% 
   mutate(group = data.table::rleid(lab, cols = PoT_res$srt))
 
 ranges <- data.frame("starts" = PoT_res$srt) %>% 
@@ -4663,6 +4849,61 @@ ggsave("w3_map_f1f.png", w3_map_f1 )
 
 ```
 
+```{r W3-map}
+
+
+
+w3_stic_locs_r <- vect(w3_stic_locs_snap) %>% 
+  left_join(pks_w3, by = "ID")
+
+subset <- w3_stic_locs_r %>% 
+  filter(ID %in% c(11, 12, 13, 14))
+
+#w3_map_f1 <- 
+  ggplot()+
+  theme_void()+
+  geom_sf(data = w3_outline, fill = NA, color = "grey", alpha = 0.3, lwd = 2)+
+  geom_sf(data = w3_stream, colour = "#9AC0CD", lwd = 1) +
+  geom_sf(data = subset, aes(fill = pk), size = 3, pch = 21) +
+  binned_scale(name = "Flow persistence",
+               aesthetics = "fill",
+               scale_name = "stepsn", 
+               palette = function(x) c("#F0F2FA", "#B3C0E5","#4969C1", "#2A3F7A"),
+               breaks = c(0.25, 0.5, 0.75),
+               limits = c(0, 1),
+               show.limits = TRUE, 
+               guide = "colorsteps"
+  )+
+  ggspatial::annotation_scale(location = 'br',
+                              pad_x = unit(1.75, "cm"),
+                              pad_y = unit(1, "cm"))+
+  #geom_sf(data = w3_pour, colour = "black") +
+   #scale_fill_hypso_c(palette = "dem_screen" , limits = c(200, 1000))+
+  #theme(rect = element_rect(fill = "transparent", color = NA))+
+    guides(colour = guide_coloursteps(show.limits = TRUE))
+
+#Again, but with viridis color scale
+  #w3_map_f1 <- 
+  ggplot()+
+  theme_void()+
+  geom_sf(data = w3_outline, fill = NA, color = "grey", alpha = 0.3, lwd = 2)+
+  geom_sf(data = w3_stream, color = "#9AC0CD", lwd = 1) +
+  geom_sf(data = subset, aes(fill = pk), size = 3, pch = 21) +
+  scale_fill_continuous(type = "viridis",
+                         name = "Flow Persistence",
+                         breaks = c(0.5, 0.7, 0.9),
+                         #limits = c(0, 1),
+                        labels = c("50%", "70%", "90%")
+                        )+
+  ggspatial::annotation_scale(location = 'br',
+                              pad_x = unit(1.75, "cm"),
+                              pad_y = unit(1, "cm"))
+  #geom_sf(data = w3_pour, colour = "black") +
+   #scale_fill_hypso_c(palette = "dem_screen" , limits = c(200, 1000))+
+  #theme(rect = element_rect(fill = "transparent", color = NA))+
+
+```
+
 ### Poster
 ```{r W3-map}
 #map of watershed 3 with depth to bedrock
@@ -5785,46 +6026,6 @@ compare_all_sequences(
 )
 ```
 
-## Figure 6: Distributions of proportion of transitions that follow a sequence
-Distributions of prop values, with dashed lines for median, faceted by timescale and watershed, colored by method for determining sequence
-```{r combine-and-plot-final}
-
-
-
-#fixing randomly generated sequence
-fixed_combined <- 
-rbind(all_pk,
-      all_twi, 
-      mutate(all_bfs, method = "BFS"),
-      mutate(all_event, method = "Event")
-      ) %>% 
-  filter(timescale == "30mins")
-
-four_colors <- c("#bb4430", "#231f20","#7ebdc2",  "#f3dfa2")
-
-fixed_combined %>% 
-  ungroup() %>% 
-  mutate(shed = fct_relevel(shed,
-                              c("W3", "FB", "ZZ"))) %>%
-  ggplot(aes(x = prop, y = after_stat(density))) +
-geom_density(aes(color = method, fill = method), alpha = 0.5)+
-    stat_central_tendency(aes(color = method), type = "median", linetype = "dashed")+
-    theme_classic2()+
-  #ylim(c(0, 6.25))+
-  xlim(c(0,1))+
-  labs(title = "Proportion of Transitions where Sequence is Followed",
-       x = "Proportion of transitions that are sequential",
-       y = "Density")+
-  scale_fill_manual(values = four_colors,
-                     name = "Method")+
-  scale_color_manual(values = four_colors,
-                     name = "Method")+
-  scale_linetype_manual(values = 2, name = "Median")+
-  scale_x_continuous(labels = c("0", "0.25", "0.5", "0.75", "1"), expand = c(0, 0)) +
-  scale_y_continuous(expand = c(0, 0))+
-  theme(panel.spacing = unit(1, "lines"))+
-  facet_grid(~shed)
-```
 
 ## Figure 5: Chains
 Plot that will show multiple chains beside each other, and highlight where they are different
@@ -11583,6 +11784,47 @@ input <- W3_cheap
 
 
 # Unused Figures
+## UNUSED: Finished Density plots
+Distributions of prop values, with dashed lines for median, faceted by timescale and watershed, colored by method for determining sequence
+```{r combine-and-plot-final}
+
+
+
+#fixing randomly generated sequence
+fixed_combined <- 
+rbind(all_pk,
+      all_twi, 
+      mutate(all_bfs, method = "BFS"),
+      mutate(all_event, method = "Event")
+      ) %>% 
+  filter(timescale == "30mins")
+
+four_colors <- c("#bb4430", "#231f20","#7ebdc2",  "#f3dfa2")
+
+fixed_combined %>% 
+  ungroup() %>% 
+  mutate(shed = fct_relevel(shed,
+                              c("W3", "FB", "ZZ"))) %>%
+  ggplot(aes(x = prop, y = after_stat(density))) +
+geom_density(aes(color = method, fill = method), alpha = 0.5)+
+    stat_central_tendency(aes(color = method), type = "median", linetype = "dashed")+
+    theme_classic2()+
+  #ylim(c(0, 6.25))+
+  xlim(c(0,1))+
+  labs(title = "Proportion of Transitions where Sequence is Followed",
+       x = "Proportion of transitions that are sequential",
+       y = "Density")+
+  scale_fill_manual(values = four_colors,
+                     name = "Method")+
+  scale_color_manual(values = four_colors,
+                     name = "Method")+
+  scale_linetype_manual(values = 2, name = "Median")+
+  scale_x_continuous(labels = c("0", "0.25", "0.5", "0.75", "1"), expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0))+
+  theme(panel.spacing = unit(1, "lines"))+
+  facet_grid(~shed)
+```
+
 ## UNUSED: old density plots
 
 ```{r combine-and-plot}
