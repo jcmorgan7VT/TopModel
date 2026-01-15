@@ -2145,39 +2145,11 @@ zz_twi_sequence <- zz_twi %>%
 
 ```
 
-# Defining random sequences
-
-```{r}
-W3_random <- 
-tibble(down = sample(W3_IDs)) %>% 
-  mutate(up = lag(down)) %>% 
-  select(up, down) %>% 
-  drop_na()
-
-FB_random <- 
-tibble(down = sample(FB_IDs)) %>% 
-  mutate(up = lag(down)) %>% 
-  select(up, down) %>% 
-  drop_na()
-
-ZZ_random <- 
-tibble(down = sample(ZZ_IDs)) %>% 
-  mutate(up = lag(down)) %>% 
-  select(up, down) %>% 
-  drop_na()
-
-
-#create randomly generated sequences
-all_random <- rbind(calc_props(W3_random, "W3"),
-                    calc_props(FB_random, "FB"),
-                    calc_props(ZZ_random, "ZZ")) %>% 
-  mutate(method = "Random")
-```
 
 
 # Event based sequences   
-All code for analysis below, but skippable; results preserved in saved .csv files.  
-
+All code for analysis below, but skippable; results preserved in saved .csv files.
+  
 ## Identify events and define sequences
 Originally in DetermineActualSequence, brought here in the great reconciliation of scripts.
 
@@ -6033,19 +6005,20 @@ Plot that will show multiple chains beside each other, and highlight where they 
 # Use pk as the basis for color scheme
 # renumber so that 1 is the most persistent
 renum_w3_pk <- W3_pk_seq %>% 
-  mutate(method = "Proportion of Time Flowing", x = 1) %>% 
+  mutate(method = "Flow Persistence", x = 1) %>% 
   filter(ID %in% W3_IDs) %>% 
-  mutate(sequence = seq(26, 1, -1))
+  mutate(sequence = seq(1, 26, 1)) %>% 
+  mutate(color_ID = sequence)
 # define column for color
 color_key <- renum_w3_pk %>% 
   select(ID, sequence) %>% 
   dplyr::rename(color_ID = sequence)
   
-renum_w3_pk <- renum_w3_pk %>% left_join(color_key, by = "ID") %>% 
-  mutate(color_ID = abs(color_ID-26)+1)
+# renum_w3_pk <- renum_w3_pk %>% left_join(color_key, by = "ID") %>% 
+#   mutate(color_ID = abs(color_ID-26)+1)
 
 renum_w3_twi <- w3_twi_sequence %>% 
-  mutate(method = "Topographic Wetness Index", x = 3) %>% 
+  mutate(method = "TWI", x = 3) %>% 
   filter(ID %in% W3_IDs) %>% 
   mutate(sequence = seq(1, 26, 1)) %>% 
   left_join(color_key, by = "ID")
@@ -6055,22 +6028,23 @@ renum_w3_bfs <- best_bfs_w3 %>%
   left_join(color_key, by = "ID")
 
 renum_w3_event <- avg_event_w3 %>% 
-  mutate(method = "Event based sequence", x = 4) %>% 
+  mutate(method = "Event", x = 4) %>% 
   left_join(color_key, by = "ID")
 
 #Make dataframe to contain the locations of points
-w3_chains <- rbind(
+w3_chains <- 
+  rbind(
       renum_w3_pk,
       renum_w3_bfs,
       renum_w3_event,
       renum_w3_twi
       ) %>% 
   mutate(#method = str_wrap(method, 10),
-         method = fct_relevel(method, c("Proportion of Time Flowing",
-                                
-                                "Topographic Wetness Index",
+         method = fct_relevel(method, 
+                              c("Flow Persistence",
+                                "TWI",
                                 "BFS",
-                                "Event based sequence"
+                                "Event"
                                 ))
          ) %>% 
   mutate(text_ID = abs(color_ID-26)+1) %>% 
@@ -6080,8 +6054,9 @@ w3_chains <- rbind(
                 label = text_ID), color = "white", size = 2)+
   scale_x_discrete(labels = function(method) str_wrap(method, width = 10))+
   scale_y_continuous(
-    breaks = c(5, 24),  # Positions for the labels
-    labels = c("Wets first,\ndries last", "Wets last,\ndries first") # Custom labels
+    trans = "reverse",
+    breaks = c(0, 20),  # Positions for the labels
+    labels = c("Wets last,\ndries first", "Wets first,\ndries last")
   ) +
   scale_color_viridis_c(guide = "none")+
   theme_classic()+
@@ -6094,19 +6069,21 @@ w3_chains <- rbind(
 # Use pk as the basis for color scheme
 # renumber so that 1 is the most persistent
 renum_fb_pk <- FB_pk_seq %>% 
-  mutate(method = "Proportion of Time Flowing", x = 1) %>% 
+  mutate(method = "Flow Persistence", x = 1) %>% 
   filter(ID %in% FB_IDs) %>% 
-  mutate(sequence = seq(24, 1, -1))
+  #mutate(sequence = seq(24, 1, -1))
+  mutate(sequence = seq(1, 24, 1)) %>% 
+  mutate(color_ID = sequence)
 # define column for color
 color_keyFB <- renum_fb_pk %>% 
   select(ID, sequence) %>% 
   dplyr::rename(color_ID = sequence)
   
-renum_fb_pk <- renum_fb_pk %>% left_join(color_keyFB, by = "ID") %>% 
-  mutate(color_ID = abs(color_ID-24)+1)
+# renum_fb_pk <- renum_fb_pk %>% left_join(color_keyFB, by = "ID") %>% 
+#   mutate(color_ID = abs(color_ID-24)+1)
 
 renum_fb_twi <- fb_twi_sequence %>% 
-  mutate(method = "Topographic Wetness Index", x = 3) %>% 
+  mutate(method = "TWI", x = 3) %>% 
   filter(ID %in% FB_IDs) %>% 
   mutate(sequence = seq(1, 24, 1)) %>% 
   left_join(color_keyFB, by = "ID")
@@ -6116,22 +6093,22 @@ renum_fb_bfs <- best_bfs_fb %>%
   left_join(color_keyFB, by = "ID")
 
 renum_fb_event <- avg_event_fb %>% 
-  mutate(method = "Event based sequence", x = 4) %>% 
+  mutate(method = "Event", x = 4) %>% 
   left_join(color_keyFB, by = "ID")
 
 #Make dataframe to contain the locations of points
-fb_chains <- rbind(
+fb_chains <- 
+rbind(
       renum_fb_pk,
       renum_fb_bfs,
       renum_fb_event,
       renum_fb_twi
       ) %>% 
   mutate(#method = str_wrap(method, 10),
-         method = fct_relevel(method, c("Proportion of Time Flowing",
-                                
-                                "Topographic Wetness Index",
+         method = fct_relevel(method, c("Flow Persistence",
+                                "TWI",
                                 "BFS",
-                                "Event based sequence"
+                                "Event"
                                 ))
          ) %>% 
   mutate(text_ID = abs(color_ID-24)+1) %>% 
@@ -6141,8 +6118,9 @@ fb_chains <- rbind(
                 label = text_ID), color = "white", size = 2)+
   scale_x_discrete(labels = function(method) str_wrap(method, width = 10))+
   scale_y_continuous(
-    breaks = c(5, 24),  # Positions for the labels
-    labels = c("Wets first,\ndries last", "Wets last,\ndries first") # Custom labels
+    trans = "reverse",
+    breaks = c(0, 19),  # Positions for the labels
+    labels = c("Wets last,\ndries first", "Wets first,\ndries last")
   ) +
   scale_color_viridis_c(guide = "none")+
   theme_classic()+
@@ -6155,19 +6133,21 @@ fb_chains <- rbind(
 # Use pk as the basis for color scheme
 # renumber so that 1 is the most persistent
 renum_zz_pk <- ZZ_pk_seq %>% 
-  mutate(method = "Proportion of Time Flowing", x = 1) %>% 
+  mutate(method = "Flow Persistence", x = 1) %>% 
   filter(ID %in% ZZ_IDs) %>% 
-  mutate(sequence = seq(24, 1, -1))
+  #mutate(sequence = seq(24, 1, -1))
+  mutate(sequence = seq(1, 24, 1)) %>% 
+  mutate(color_ID = sequence)
 # define column for color
 color_keyZZ <- renum_zz_pk %>% 
   select(ID, sequence) %>% 
   dplyr::rename(color_ID = sequence)
   
-renum_zz_pk <- renum_zz_pk %>% left_join(color_keyZZ, by = "ID") %>% 
-  mutate(color_ID = abs(color_ID-24)+1)
+# renum_zz_pk <- renum_zz_pk %>% left_join(color_keyZZ, by = "ID") %>% 
+#   mutate(color_ID = abs(color_ID-24)+1)
 
 renum_zz_twi <- zz_twi_sequence %>% 
-  mutate(method = "Topographic Wetness Index", x = 3) %>% 
+  mutate(method = "TWI", x = 3) %>% 
   filter(ID %in% ZZ_IDs) %>% 
   mutate(sequence = seq(1, 24, 1)) %>% 
   left_join(color_keyZZ, by = "ID")
@@ -6177,22 +6157,22 @@ renum_zz_bfs <- best_bfs_zz %>%
   left_join(color_keyZZ, by = "ID")
 
 renum_zz_event <- avg_event_zz %>% 
-  mutate(method = "Event based sequence", x = 4) %>% 
+  mutate(method = "Event", x = 4) %>% 
   left_join(color_keyZZ, by = "ID")
 
 #Make dataframe to contain the locations of points
-zz_chains <- rbind(
+zz_chains <- 
+  rbind(
       renum_zz_pk,
       renum_zz_bfs,
       renum_zz_event,
       renum_zz_twi
       ) %>% 
   mutate(#method = str_wrap(method, 10),
-         method = fct_relevel(method, c("Proportion of Time Flowing",
-                                
-                                "Topographic Wetness Index",
+         method = fct_relevel(method, c("Flow Persistence",
+                                "TWI",
                                 "BFS",
-                                "Event based sequence"
+                                "Event"
                                 ))
          ) %>% 
   mutate(text_ID = abs(color_ID-24)+1) %>% 
@@ -6202,8 +6182,9 @@ zz_chains <- rbind(
                 label = text_ID), color = "white", size = 2)+
   scale_x_discrete(labels = function(method) str_wrap(method, width = 10))+
   scale_y_continuous(
-    breaks = c(5, 24),  # Positions for the labels
-    labels = c("Wets first,\ndries last", "Wets last,\ndries first") # Custom labels
+    trans = "reverse",
+    breaks = c(0, 19),  # Positions for the labels
+    labels = c("Wets last,\ndries first", "Wets first,\ndries last")
   ) +
   scale_color_viridis_c(guide = "none")+
   theme_classic()+
@@ -6235,12 +6216,18 @@ fb_stic_locs_renum <- lcc_fb %>%
   left_join(renum_fb_pk) %>% 
   filter(ID %in% FB_IDs)
 
-fb_numb_map <- ggplot()+
+
+
+fb_numb_map <- 
+  ggplot()+
   theme_void()+
-  geom_sf(data = fb_outline, fill = NA, color = "#397367", alpha = 0.3, lwd = 2) +
-  geom_sf(data = fb_net, colour = "darkslategray3", lwd = 2) +
-  geom_sf(data = fb_stic_locs_renum, aes(fill = abs(color_ID-24)+1), size = 4, pch = 21) +
-  geom_sf_text(data = fb_stic_locs_renum, aes(label = color_ID), size = 2, color = "white")+
+  geom_sf(data = terra::spin(fb_outline, 90, 279933.5, 4869173), 
+          fill = NA, color = "#397367", alpha = 0.3, lwd = 2) +
+  geom_sf(data = terra::spin(fb_net, 90, 279933.5, 4869173),
+          colour = "darkslategray3", lwd = 2) +
+  geom_sf(data = terra::spin(fb_stic_locs_renum, 90, 279933.5, 4869173),
+           aes(fill = abs(color_ID-24)+1), size = 4, pch = 21) +
+  geom_sf_text(data = terra::spin(fb_stic_locs_renum, 90, 279933.5, 4869173), aes(label = color_ID), size = 2, color = "white")+
   scale_fill_viridis_c()+
   theme(rect = element_rect(fill = "transparent", color = NA))+
   theme(legend.position = "none")
@@ -6271,9 +6258,47 @@ zz_numb_map
 ```
 
 ```{r combine-chains}
-(w3_chains ) / (fb_chains ) / (zz_chains ) 
+chains_combined <-
+  ((
+    w3_chains +
+      theme(
+        text = element_text(size = 7),
+        axis.text.x = element_text(
+          size = 5,
+          angle = 45,
+          hjust = 1,
+          vjust = 1
+        )
+      )
+  )  / (
+    fb_chains +
+      theme(
+        text = element_text(size = 7),
+        axis.text.x = element_text(
+          size = 5,
+          angle = 45,
+          hjust = 1,
+          vjust = 1
+        )
+      )
+  ) / (
+    zz_chains +
+      theme(
+        text = element_text(size = 7),
+        axis.text.x = element_text(
+          size = 5,
+          angle = 45,
+          hjust = 1,
+          vjust = 1
+        )
+      )
+  )) / plot_layout(heights = 1)
 
-(w3_numb_map / fb_numb_map / zz_numb_map) + plot_layout(heights = 1)
+ggsave("chains_combined.png", chains_combined, width = 2, height = 10)
+
+maps_combined <- (w3_numb_map / fb_numb_map / zz_numb_map) + plot_layout(heights = 1)
+ggsave("maps_combined.png", maps_combined, width = 8, height = 10)
+
 ```
 
 ## Figure 7: Hydrograph, colored by which sequence works the best
@@ -7012,8 +7037,10 @@ mutate(model = fct_relevel(model, c("Proportion of Time Flowing",
 
 FB_rot <- ggplot()+
   theme_void()+
-  geom_sf(data = terra::spin(fb_outline, 90, 279933.5, 4869173), fill = NA, color = "#397367", alpha = 0.3, lwd = 1)+
-  geom_sf(data = terra::spin(fb_net, 90, 279933.5, 4869173), colour = "grey", lwd = 1) +
+  geom_sf(data = terra::spin(fb_outline, 90, 279933.5, 4869173), 
+          fill = NA, color = "#397367", alpha = 0.3, lwd = 1)+
+  geom_sf(data = terra::spin(fb_net, 90, 279933.5, 4869173), 
+          colour = "grey", lwd = 1) +
 geom_sf(data =  terra::spin(lcc_fb, 90, 279933.5, 4869173) %>% inner_join(ID_acc_fb, by = "ID"),
         aes(fill = accuracy), size = 3, pch = 21) +
   scale_fill_gradientn(colors = c("white","lightgrey","darkgrey", "black"))+
@@ -10066,6 +10093,35 @@ plot(g,
 
 
 # DEPREC
+# Defining random sequences
+
+```{r}
+W3_random <- 
+tibble(down = sample(W3_IDs)) %>% 
+  mutate(up = lag(down)) %>% 
+  select(up, down) %>% 
+  drop_na()
+
+FB_random <- 
+tibble(down = sample(FB_IDs)) %>% 
+  mutate(up = lag(down)) %>% 
+  select(up, down) %>% 
+  drop_na()
+
+ZZ_random <- 
+tibble(down = sample(ZZ_IDs)) %>% 
+  mutate(up = lag(down)) %>% 
+  select(up, down) %>% 
+  drop_na()
+
+
+#create randomly generated sequences
+all_random <- rbind(calc_props(W3_random, "W3"),
+                    calc_props(FB_random, "FB"),
+                    calc_props(ZZ_random, "ZZ")) %>% 
+  mutate(method = "Random")
+```
+
 # Testing sequences, running models deprec
 ```{r plot-W3-model-accuracy}
 #final plot
