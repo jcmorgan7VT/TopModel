@@ -4415,12 +4415,12 @@ w3_net <- vect("./carrieZigZag/w3_network.shp")
 
 w3_map_f1 <- 
   ggplot()+
-  #geom_spatraster(data = hill)+
+  geom_spatraster(data = hill)+
   theme_void()+
   #theme(legend.position = "")+
-  # scale_fill_gradientn(colors = c("gray9", "gray48","lightgray", "white"),
-  #                      guide = "none")+
-  #   new_scale_fill() +
+  scale_fill_gradientn(colors = c("gray9", "gray48","lightgray", "white"),
+                       guide = "none")+
+    new_scale_fill() +
   #geom_spatraster(data = crop1, alpha = 0.5)+
   geom_sf(data = w3_outline, fill = NA, color = "#FFD166", alpha = 0.3, lwd = 2)+
   geom_sf(data = w3_net, colour = "#9AC0CD", lwd = 1) +
@@ -4437,7 +4437,9 @@ w3_map_f1 <-
   )+
   #geom_sf(data = w3_pour, colour = "black") +
    #scale_fill_hypso_c(palette = "dem_screen" , limits = c(200, 1000))+
-  #theme(rect = element_rect(fill = "transparent", color = NA))+
+  theme(#rect = element_rect(fill = "transparent", color = NA)
+        # legend.position = "bottom"
+        )+
   ggspatial::annotation_scale(location = 'tr'
                               )+
     guides(colour = guide_coloursteps(show.limits = TRUE))
@@ -4553,7 +4555,7 @@ hillshade_out_fb <- "./fb_dems/1mdem_hillshade.tif"
 hill_fb <- rast(hillshade_out_fb)
 
 #final plot with cropped hillshade and dem, STIC locations, watershed boundary, and stream network.
-#fb_map <- 
+fb_map <- 
   ggplot()+
   geom_spatraster(data = hill_fb)+
   theme_void()+
@@ -4578,7 +4580,10 @@ hill_fb <- rast(hillshade_out_fb)
   )+
   #geom_sf(data = fb_pour, colour = "black", pch = 8, size = 3) +
    #scale_fill_hypso_c(palette = "dem_screen", limits = c(200, 1000))+
-  theme(rect = element_rect(fill = "transparent", color = NA))+
+  theme(rect = element_rect(fill = "transparent", color = NA)
+        # ,
+        # legend.position = "bottom"
+        )+
     guides(colour = guide_coloursteps(show.limits = TRUE))
   
 
@@ -4703,7 +4708,7 @@ hillshade_out <- "./zz_dems/1mdem_hillshade.tif"
 hill <- rast(hillshade_out)
 #plot(hill)
 #final plot with cropped hillshade and dem, STIC locations, watershed boundary, and stream network.
-#zz_map <- 
+zz_map <- 
   ggplot()+
   geom_spatraster(data = hill)+
   theme_void()+
@@ -4734,10 +4739,28 @@ hill <- rast(hillshade_out)
   )+
   #geom_sf(data = fb_pour, colour = "black", pch = 8, size = 3) +
    #scale_fill_hypso_c(palette = "dem_screen", limits = c(200, 1000))+
-  theme(rect = element_rect(fill = "transparent", color = NA))+
+  theme(rect = element_rect(fill = "transparent", color = NA)
+        # ,
+        # legend.position = "bottom"
+        )+
     guides(colour = guide_coloursteps(show.limits = TRUE))
 
 
+```
+
+### combine big map with individual ones here
+```{r}
+design <- "
+1111
+2345
+"   
+
+combined <- valley_plot + w3_map_f1 + fb_map + zz_map + guide_area()+ plot_layout(design = design, guides = "collect")
+combined
+
+big_comb <- combined + plot_layout(design = design, guides = "collect")
+big_comb
+ggsave("big_comb.pdf", big_comb)
 ```
 
 ### AGU big talk
@@ -4949,8 +4972,8 @@ w3_map_f1 <-
                breaks = c(0.25, 0.5, 0.75),
                limits = c(0, 1),
                show.limits = TRUE, 
-               guide = "none"
-               #guide = "colorsteps"
+               #guide = "none"
+               guide = "colorsteps"
   )
   #geom_sf(data = w3_pour, colour = "black") +
    #scale_fill_hypso_c(palette = "dem_screen" , limits = c(200, 1000))+
@@ -6294,10 +6317,10 @@ chains_combined <-
       )
   )) / plot_layout(heights = 1)
 
-ggsave("chains_combined.png", chains_combined, width = 2, height = 10)
+ggsave("chains_combined.pdf", chains_combined, width = 2, height = 10)
 
 maps_combined <- (w3_numb_map / fb_numb_map / zz_numb_map) + plot_layout(heights = 1)
-ggsave("maps_combined.png", maps_combined, width = 8, height = 10)
+ggsave("maps_combined.pdf", maps_combined, width = 8, height = 10)
 
 ```
 
