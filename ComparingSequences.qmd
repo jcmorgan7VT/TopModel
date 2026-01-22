@@ -6957,6 +6957,83 @@ zz_plot7
 
 ```
 
+Because ggbreak no longer works, and I have illustrator, time to make a nicer version of this plot.
+
+And maybe instead of hydrograph, just show barplot with the number of timesteps where a model was more accurate than all other models, with separate bars for different components of the hydrograph?
+```{r W3-updated-AGU}
+# Adjustable threshold for how much better a model must be
+threshold <- 0.05   # i.e., 5% better than all others
+
+
+df_winners <- 
+  df_long_w3 %>%
+  # Self-join within each datetime to compare each model to all others
+  inner_join(df_long_w3, 
+             by = "datetime",
+             suffix = c("_this", "_other")) %>%
+  
+  # Only compare a model to other models
+  filter(model_this != model_other) %>%
+  
+  group_by(datetime, model_this, accuracy_this) %>%
+  summarise(
+    # max accuracy of other models at that timestamp
+    max_other = max(accuracy_other, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  
+  mutate(
+    is_winner = accuracy_this >= max_other + threshold
+  ) %>%
+  
+  # Keep only rows where a model wins by the threshold
+  filter(is_winner) %>%
+  
+  # Rename columns back to intuitive names
+  dplyr::rename(
+    model = model_this,
+    accuracy = accuracy_this
+  ) %>%
+  
+  # Join discharge
+  inner_join(w3_discharge_bind, by = "datetime") %>%
+
+  # Clean model names
+  mutate(model = case_when(
+    model == "bfs_accuracy"    ~ "BFS",
+    model == "pk_accuracy"     ~ "Flow persistence",
+    model == "event_accuracy"  ~ "Event based sequence",
+    model == "twi_accuracy"    ~ "Topographic Wetness Index",
+    TRUE ~ model
+  )) %>%
+  
+  # Model level order for faceting
+  mutate(model = fct_relevel(model,
+                             "Flow persistence",
+                             "Topographic Wetness Index",
+                             "BFS",
+                             "Event based sequence"
+                             )) %>% 
+  filter(datetime >= ymd_hms("2024-05-20 16:30:00 UTC"))
+df_winners
+
+min_accuracy  <- 0.80  # must exceed 0.60 to "work well"
+
+df_discharge_classified <- df_long_w3 %>%
+  group_by(datetime) %>%
+  summarise(all_below = all(accuracy < min_accuracy), .groups = "drop") %>%
+  inner_join(w3_limbs, by = "datetime") %>% 
+  mutate(all_below = case_when(all_below == "FALSE" ~ "Accuracy of all models >= 80%",
+                          all_below == "TRUE" ~ "Accuracy of all models < 80%")) 
+
+df_discharge_classified %>% 
+  ggplot()+
+  geom_bar(aes(fill = x = event_type))
+ggplot(data, aes(fill=condition, y=value, x=specie)) + 
+    geom_bar(position="dodge", stat="identity")
+
+```
+
 
 ## Figure 8: Maps of where sequences work in space
 Set of map panels where symbol color = flowing state, outline color or shape indicating correctly predicted or not
