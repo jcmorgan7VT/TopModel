@@ -4081,7 +4081,8 @@ locs_shape_fb <- vect(locs_fb,
 #reproject coordinates from WGS84 to NAD83 19N, which is the projection of raster
 lcc_fb <- terra::project(locs_shape_fb, crs(m1)) %>% 
   left_join(pks_fb, by = "ID")
-
+#save coordinates of FB STIC locations
+#writeVector(lcc_fb, "fb_stic_locs.shp")
 
 #assign destination for hillshade calculation
 hillshade_out_fb <- "./fb_dems/1mdem_hillshade.tif"
@@ -4136,6 +4137,7 @@ locs_shape <- vect(locs,
 lcc <- terra::project(locs_shape, crs(m1)) %>% 
   left_join(pks_zz, by = "ID")
 
+#writeVector(lcc, "zz_stic_locs.shp")
 #plot(lcc)
 #define the rectangular area that will be shown on final map
 ybounds <- c(4866400,4867500)
