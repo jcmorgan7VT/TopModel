@@ -1738,12 +1738,17 @@ pks_fb <- data_23 %>%
   ungroup() %>% 
   mutate(wshed = "FB")
 
+#write_csv(pks_fb, "pks_fb.csv")
+
+
 #Define proportion of time flowing sequence
 #make a df with ID and the number in the sequence
 FB_pk_seq <- pks_fb %>% 
   arrange(desc(pk)) %>% 
   mutate(sequence = seq(1, length(pks_fb$ID), 1)) %>% 
   select(ID, sequence)
+
+
 ```
 ```{r flow-permanence-ZZ}
 precalc_24 <- data_24 %>% 
@@ -1765,6 +1770,9 @@ pks_zz <- data_23 %>%
   select(ID, pk) %>% 
   ungroup() %>% 
   mutate(wshed = "ZZ")
+
+#write_csv(pks_zz, "pks_zz.csv")
+
 
 #define proportion of time flowing sequence for ZZ
 ZZ_pk_seq <- pks_zz %>% 
