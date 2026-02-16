@@ -2740,8 +2740,9 @@ event_seqsW3_23_accuracy %>%
 ```
 ```{r accuracy-of-individual-event-seqs-FB}
 
-FBall_events <- read_csv("FB_events.csv") %>% 
-  rename(datetime = DATETIME)
+FBall_events <- 
+  read_csv("FB_events.csv") %>% 
+  dplyr::rename(datetime = DATETIME)
 
 ttt <- 
 input_fb %>%
@@ -3982,7 +3983,7 @@ w3_map_f1 <-
                               pad_y = unit(1, "cm"))
                               
 w3_map_f1
-ggsave("w3_map_f1f.png", w3_map_f1 )
+ggsave("w3_map_f1f.pdf", w3_map_f1 )
 
 ```
 ```{r FB-map}
@@ -4354,7 +4355,7 @@ valley_plot <- ggplot()+
                               pad_y = unit(0.5, "cm"))
 valley_plot
 
-ggsave("valley.png", plot = valley_plot, limitsize = FALSE, units = "in", bg = NULL,)
+ggsave("valley.pdf", plot = valley_plot, limitsize = FALSE, units = "in", bg = NULL)
 
 # Version for AGU 25 and seismic paper, remove W3
 without_w3 <- ggplot()+
@@ -4370,7 +4371,7 @@ without_w3 <- ggplot()+
   ggspatial::annotation_scale(location = 'tr', pad_x = unit(1, "cm"), 
                               pad_y = unit(0.5, "cm"))
 
-ggsave("valley.png", plot = without_w3, limitsize = FALSE, units = "in", bg = NULL,)
+ggsave("valley.pdf", plot = without_w3, limitsize = FALSE, units = "in", bg = NULL,scale = 2)
 
 
 ```
@@ -4450,12 +4451,12 @@ w3_map_f1 <-
   theme(#rect = element_rect(fill = "transparent", color = NA)
         # legend.position = "bottom"
         )+
-  ggspatial::annotation_scale(location = 'tr'
-                              )+
+  # ggspatial::annotation_scale(location = 'tr'
+  #                             )+
     guides(colour = guide_coloursteps(show.limits = TRUE))
                               
 w3_map_f1
-ggsave("w3_map_f1f.png", w3_map_f1 )
+ggsave("w3_map_f1f.pdf", w3_map_f1 )
 
 ```
 ```{r FB-map}
@@ -4590,12 +4591,15 @@ fb_map <-
   )+
   #geom_sf(data = fb_pour, colour = "black", pch = 8, size = 3) +
    #scale_fill_hypso_c(palette = "dem_screen", limits = c(200, 1000))+
+  
   theme(rect = element_rect(fill = "transparent", color = NA)
         # ,
         # legend.position = "bottom"
         )+
     guides(colour = guide_coloursteps(show.limits = TRUE))
-  
+
+fb_map
+ggsave("fb_map.pdf", fb_map )
 
 ```
 ```{r ZZ-map}
@@ -4749,12 +4753,15 @@ zz_map <-
   )+
   #geom_sf(data = fb_pour, colour = "black", pch = 8, size = 3) +
    #scale_fill_hypso_c(palette = "dem_screen", limits = c(200, 1000))+
+  
   theme(rect = element_rect(fill = "transparent", color = NA)
         # ,
         # legend.position = "bottom"
         )+
     guides(colour = guide_coloursteps(show.limits = TRUE))
 
+
+ggsave("zz_map.pdf", zz_map)
 
 ```
 
@@ -6499,15 +6506,16 @@ df_winners <-
   filter(datetime >= ymd_hms("2024-05-20 16:30:00 UTC"))
 
 
-min_accuracy  <- 0.80  # must exceed 0.60 to "work well"
+min_accuracy  <- 0.90  # must exceed 0.60 to "work well"
 
 df_discharge_classified <- df_long_w3 %>%
   group_by(datetime) %>%
   summarise(all_below = all(accuracy < min_accuracy), .groups = "drop") %>%
   inner_join(w3_discharge_bind, by = "datetime") %>% 
   mutate(all_below = case_when(all_below == "FALSE" ~ "Accuracy of all models >= 80%",
-                          all_below == "TRUE" ~ "Accuracy of all models < 80%")) %>% 
-  filter(datetime >= ymd_hms("2024-05-20 16:30:00 UTC"))
+                          all_below == "TRUE" ~ "Accuracy of all models < 80%")) 
+# %>% 
+#   filter(datetime >= ymd_hms("2024-05-20 16:30:00 UTC"))
 
 
 ggplot() +
@@ -6525,13 +6533,13 @@ ggplot() +
   facet_wrap(~ model, 
              ncol = 1, 
              scales = "free_y") +
-  theme_classic() #+
+  theme_classic() +
   
   
-  scale_x_break(c(
-    ymd_hms("2024-06-03 00:00:00"),
-    ymd_hms("2024-07-05 00:00:00")
-  )) +
+  # scale_x_break(c(
+  #   ymd_hms("2024-06-03 00:00:00"),
+  #   ymd_hms("2024-07-05 00:00:00")
+  # )) +
   
   scale_x_datetime(
   date_labels = "%b %d",        # show month and day: "Jul 03"
@@ -6571,7 +6579,7 @@ ggplot() +
 ```
 
 ```{r FB}
-
+p_load(ggbreak)
 threshold <- 0.05
 
 df_winners_fb <- 
@@ -6652,10 +6660,10 @@ ggplot() +
     x = ""
   ) +
   
-  scale_x_break(c(
-    ymd_hms("2023-10-06 00:00:00 UTC"),
-    ymd_hms("2024-06-12 17:00:00 UTC")
-  )) +
+  # scale_x_break(c(
+  #   ymd_hms("2023-10-06 00:00:00 UTC"),
+  #   ymd_hms("2024-06-12 17:00:00 UTC")
+  # )) +
   
   scale_x_datetime(
     date_labels = "%b %Y",
@@ -6820,10 +6828,10 @@ w3_plot7 <- ggplot() +
     x = ""
   ) +
   
-  scale_x_break(c(
-    ymd_hms("2023-11-12 00:00:00"),
-    ymd_hms("2024-05-20 00:00:00")
-  )) +
+  # scale_x_break(c(
+  #   ymd_hms("2023-11-12 00:00:00"),
+  #   ymd_hms("2024-05-20 00:00:00")
+  # )) +
   
   scale_x_datetime(
     date_labels = "%b %Y",
@@ -6878,10 +6886,10 @@ fb_plot7 <-
     x = ""
   ) +
   
-  scale_x_break(c(
-    ymd_hms("2023-10-06 00:00:00 UTC"),
-    ymd_hms("2024-06-12 17:00:00 UTC")
-  )) +
+  # scale_x_break(c(
+  #   ymd_hms("2023-10-06 00:00:00 UTC"),
+  #   ymd_hms("2024-06-12 17:00:00 UTC")
+  # )) +
   
   scale_x_datetime(
     date_labels = "%b %Y",
@@ -6937,10 +6945,10 @@ zz_plot7 <- ggplot() +
     x = ""
   ) +
   
-  scale_x_break(c(
-    ymd_hms("2023-10-06 00:00:00 UTC"),
-    ymd_hms("2024-06-12 17:00:00 UTC")
-  )) +
+  # scale_x_break(c(
+  #   ymd_hms("2023-10-06 00:00:00 UTC"),
+  #   ymd_hms("2024-06-12 17:00:00 UTC")
+  # )) +
   
   scale_x_datetime(
     date_labels = "%b %Y",
@@ -6961,13 +6969,203 @@ zz_plot7 <- ggplot() +
 #### combine ####
 
 
-w3_plot7
-fb_plot7
+exported <- w3_plot7/
+fb_plot7/
 zz_plot7
+
+ggsave("figure7_unedited.pdf", exported, scale = 3)
 
 ```
 
 Because ggbreak no longer works, and I have illustrator, time to make a nicer version of this plot.
+```{r clean-combine}
+#### W3 ####
+w3_plot7 <- ggplot() +
+  # Full discharge line for background context
+  geom_line(
+    data = w3_discharge_bind,
+    aes(x = datetime, y = Q_mm_day),
+    linewidth = 0.4,
+    color = "grey70"
+  ) +
+  
+  # Winner points (faceted)
+  geom_point(
+    data = df_winners,
+    aes(x = datetime, y = Q_mm_day, color = model),
+    size = 1
+  ) +
+  
+  facet_wrap(~ model, 
+             ncol = 1, 
+             scales = "free_y") +
+  theme_classic() +
+  
+  scale_color_manual(name = "Sequence",
+                     values = c(
+    "Proportion of Time Flowing"    = "#7ebdc2",
+    "Topographic Wetness Index"   = "#f3dfa2",
+    "BFS"   = "#bb4430",
+    "Event based sequence" = "#231f20"
+  )
+  ,
+  guide = "none"
+  ) +
+
+  labs(
+    title = "",
+    y = "Discharge (mm/day)",
+    x = ""
+  ) +
+  
+  # scale_x_break(c(
+  #   ymd_hms("2023-11-12 00:00:00"),
+  #   ymd_hms("2024-05-20 00:00:00")
+  # )) +
+  
+  scale_x_datetime(
+    date_labels = "%b %Y",
+    date_breaks = "1 month",
+    timezone = "UTC"
+  ) +
+  
+  theme(strip.background = element_blank(),
+        strip.text = element_blank(),
+    #strip.background = element_rect(fill = "grey95"),
+    axis.ticks.x.top = element_blank(),
+    axis.text.x.top  = element_blank(),
+    axis.line.x.top  = element_blank()
+  )
+#### FB ####
+#fb_plot7 <- 
+  ggplot() +
+  # Full discharge line for background context
+  geom_line(
+    data = FBall_events,
+    aes(x = datetime, y = roll_mean),
+    linewidth = 0.4,
+    color = "grey70"
+  ) +
+  
+  # Winner points (faceted)
+  geom_point(
+    data = df_winners_fb,
+    aes(x = datetime, y = roll_mean, color = model),
+    size = 1
+  ) +
+  
+  facet_wrap(~ model, 
+             ncol = 1, 
+             scales = "free_y") +
+  theme_classic() +
+  
+  scale_color_manual(name = "Sequence",
+                     values = c(
+    "Proportion of Time Flowing"    = "#7ebdc2",
+    "Topographic Wetness Index"   = "#f3dfa2",
+    "BFS"   = "#bb4430",
+    "Event based sequence" = "#231f20"
+  )
+  ,
+  guide = "none"
+  ) +
+
+  labs(
+    title = "",
+    y = "Stage (cm)",
+    x = ""
+  ) +
+  
+  # scale_x_break(c(
+  #   ymd_hms("2023-10-06 00:00:00 UTC"),
+  #   ymd_hms("2024-06-12 17:00:00 UTC")
+  # )) +
+  
+  scale_x_datetime(
+    date_labels = "%b %Y",
+    date_breaks = "month",
+    timezone = "UTC"
+  ) +
+  
+  lims(x = c(min(FBall_events$datetime), ymd_hms("2024-7-21 00:00:00 UTC")))+
+  
+  theme(strip.background = element_blank(),
+        strip.text = element_blank(),
+    #strip.background = element_rect(fill = "grey95"),
+    axis.ticks.x.top = element_blank(),
+    axis.text.x.top  = element_blank(),
+    axis.line.x.top  = element_blank()
+  )
+#### ZZ ####
+zz_plot7 <- ggplot() +
+  # Full discharge line for background context
+  geom_line(
+    data = ZZall_events,
+    aes(x = datetime, y = roll_mean),
+    linewidth = 0.4,
+    color = "grey70"
+  ) +
+  
+  # Winner points (faceted)
+  geom_point(
+    data = df_winners_zz,
+    aes(x = datetime, y = roll_mean, color = model),
+    size = 1
+  ) +
+  
+  facet_wrap(~ model, 
+             ncol = 1, 
+             scales = "free_y") +
+  theme_classic() +
+  
+  scale_color_manual(name = "Sequence",
+                     values = c(
+    "Proportion of Time Flowing"    = "#7ebdc2",
+    "Topographic Wetness Index"   = "#f3dfa2",
+    "BFS"   = "#bb4430",
+    "Event based sequence" = "#231f20"
+  )
+  ,
+  guide = "none"
+  ) +
+
+  labs(
+    title = "",
+    y = "Stage (cm)",
+    x = ""
+  ) +
+  
+  # scale_x_break(c(
+  #   ymd_hms("2023-10-06 00:00:00 UTC"),
+  #   ymd_hms("2024-06-12 17:00:00 UTC")
+  # )) +
+  
+  scale_x_datetime(
+    date_labels = "%b %Y",
+    date_breaks = "1 month",
+    timezone = "UTC"
+  ) +
+  
+  lims(x = c(min(ZZall_events$datetime), ymd_hms("2024-7-21 00:00:00 UTC")))+
+  
+  theme(strip.background = element_blank(),
+        strip.text = element_blank(),
+        #legend.position = "",
+    #strip.background = element_rect(fill = "grey95"),
+    axis.ticks.x.top = element_blank(),
+    axis.text.x.top  = element_blank(),
+    axis.line.x.top  = element_blank()
+  )
+#### combine ####
+
+
+exported <- w3_plot7/
+fb_plot7/
+zz_plot7
+
+ggsave("figure7_unedited.pdf", exported, scale = 3)
+
+```
 
 And maybe instead of hydrograph, just show barplot with the number of timesteps where a model was more accurate than all other models, with separate bars for different components of the hydrograph?
 ```{r W3-updated-AGU}
