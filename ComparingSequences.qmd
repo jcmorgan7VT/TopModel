@@ -56,6 +56,10 @@ bind23 <- data_23 %>%
 bind24 <- data_24 %>% 
   dplyr::select(datetime, number, wshed, binary, mins) %>% 
   rename("ID" = number)
+
+filter(bind23,
+       wshed == "ZZ",
+       ID == 5)
 ```
 
 Preparing the STIC dataset as inputs for everything I am doing.  
@@ -75,7 +79,7 @@ zz_deployed24 <- unique(filter(data_24, wshed == "ZZ")$number)
 zz_deployed23 <- unique(filter(data_23, wshed == "ZZ")$ID)
 ZZ_IDs <- intersect(zz_deployed24, zz_deployed23)
 
-
+filter()
 #detach("package:fitdistrplus")
 #detach("package:MASS")
 
