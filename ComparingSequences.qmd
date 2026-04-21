@@ -412,7 +412,7 @@ q_24 <- read_csv("w3_discharge_24.csv")
 
 #find the range of dates that I need discharge for
 start24 <- ymd_hms("2024-05-15 00:00:00 UTC")
-stop24 <- max(data_24$datetime)
+stop24 <- max(w3_24$datetime)
 
 #filtering discharge down to the range of dates
 q_24 <- q_24 %>% 
@@ -4064,6 +4064,11 @@ fb_pour_snap <- "./fb_dems/fb_pour_snap.shp"
 #                             streams = fb_streams,
 #                             output = fb_pour_snap,
 #                             snap_dist = 10)
+vect(fb_pour_snap) %>% 
+      project("EPSG:4326")
+
+vect("./w3_dems/w3_pour_snap.shp") %>% 
+      project("EPSG:4326")
 fb_pour_snap_read <- vect("./fb_dems/fb_pour_snap.shp")
 
 fb_shed <- "./fb_dems/fb_shed.tif"
@@ -4220,6 +4225,9 @@ zz_pour_snap_read <- vect("./zz_dems/zz_pour_snap.shp")
 #      xlim = c(280200, 280410),
 #      ylim = c(4869300, 4869000))
 # points(zz_pour_snap_read, pch = 1)
+    vect(zz_pour_snap) %>% 
+      project("EPSG:4326")
+      
 
 zz_shed <- "./zz_dems/zz_shed.tif"
 # wbt_watershed(d8_pntr = zz_d8pt,
@@ -4254,12 +4262,14 @@ hill <- rast(hillshade_out)
     geom_sf(data = zz_outline, fill = NA, color = "#7E6B8F", alpha = 0.3, lwd = 2) +
   geom_sf(data = zz_net, colour = "darkslategray3", lwd = 2) +
     #geom_sf(data = lcc, colour = "midnightblue", pch = 19, size = 2) +
-    geom_sf(data = lcc, aes(fill = pk), size = 3, pch = 21) +
+   # geom_sf(data = lcc, aes(fill = pk), size = 3, pch = 21) +
   #geom_sf(data = dd, aes(color = (depth)), pch = 19, size = 3) +
   scale_fill_continuous(high = "#27408B", low = "white",
                         labels = c("0", "0.5", "1"),
                         breaks = c(0, 0.5, 1),
                         limits = c(0, 1))+
+        geom_sf(data = vect(zz_pour_snap))+
+
   #geom_sf(data = zz_pour, colour = "black", pch = 8, size = 3) +
    #scale_fill_hypso_c(palette = "dem_screen", limits = c(200, 1000))+
   theme(rect = element_rect(fill = "transparent", color = NA),

@@ -1,0 +1,416 @@
+---
+title: "STIC_Synthesis"
+format: html
+editor_options: 
+  chunk_output_type: console
+---
+Finally preparing datasets for STIC sysnthesis
+
+```{r 01_Sensors}
+data_23 <- read_csv("./STIC_synthesis/all_23.csv")
+data_24 <- read_csv("./STIC_synthesis/all_24.csv")
+
+# W3 2023
+w3_23 <- data_23 %>% 
+  filter(wshed == "W3") %>% 
+  select(datetime, condUncal, wetdry, ID, wshed) %>% 
+  #add columns for timezone, QAQC
+  mutate(
+         qaqc_code = "g",
+         wetdry = case_when(wetdry == "wet" ~ 1,
+                            wetdry == "dry" ~ 0),
+         datetime = datetime + hours(4),
+         datetime = force_tz(datetime, "GMT"),
+         Timezone = tz(datetime),
+         ID = paste0("w3_",ID)) %>% 
+  rename(raw_output = condUncal,
+         binary_flow = wetdry,
+         sensor_name = ID) %>% 
+  select(datetime, Timezone, raw_output, binary_flow, qaqc_code, sensor_name)
+
+# W3 2024
+w3_24 <- data_24 %>% 
+  filter(wshed == "W3") %>%
+  select(datetime, condUncal, wetdry, number, wshed) %>% 
+  #add columns for timezone, QAQC
+  mutate(
+         qaqc_code = "g",
+         wetdry = case_when(wetdry == "wet" ~ 1,
+                            wetdry == "dry" ~ 0),
+         datetime = datetime + hours(4),
+         datetime = force_tz(datetime, "GMT"),
+         Timezone = tz(datetime),
+         number = paste0("w3_",number)) %>% 
+  rename(raw_output = condUncal,
+         binary_flow = wetdry,
+         sensor_name = number) %>% 
+  select(datetime, Timezone, raw_output, binary_flow, qaqc_code, sensor_name)
+
+all_w3 <- bind_rows(w3_23, w3_24)
+
+IDs <- unique(all_w3$sensor_name)
+saving <- function(x){
+  all_w3 %>% 
+  filter(sensor_name == x) %>% 
+    write_csv(., paste0("./STIC_synthesis/01_Sensors/hb_W3/",x,"_hb_W3.csv"))
+}
+
+lapply(IDs, saving)
+
+# FB 2023
+fb_23 <- data_23 %>% 
+  filter(wshed == "FB") %>% 
+  select(datetime, condUncal, wetdry, ID, wshed) %>% 
+  #add columns for timezone, QAQC
+  mutate(
+         qaqc_code = "g",
+         wetdry = case_when(wetdry == "wet" ~ 1,
+                            wetdry == "dry" ~ 0),
+         datetime = datetime + hours(4),
+         datetime = force_tz(datetime, "GMT"),
+         Timezone = tz(datetime),
+         ID = paste0("fb_",ID)) %>% 
+  rename(raw_output = condUncal,
+         binary_flow = wetdry,
+         sensor_name = ID) %>% 
+  select(datetime, Timezone, raw_output, binary_flow, qaqc_code, sensor_name)
+
+# W3 2024
+fb_24 <- data_24 %>% 
+  filter(wshed == "FB") %>%
+  select(datetime, condUncal, wetdry, number, wshed) %>% 
+  #add columns for timezone, QAQC
+  mutate(
+         qaqc_code = "g",
+         wetdry = case_when(wetdry == "wet" ~ 1,
+                            wetdry == "dry" ~ 0),
+         datetime = datetime + hours(4),
+         datetime = force_tz(datetime, "GMT"),
+         Timezone = tz(datetime),
+         number = paste0("fb_",number)) %>% 
+  filter(number != "fb_32") %>% # remove erroneous logger
+  rename(raw_output = condUncal,
+         binary_flow = wetdry,
+         sensor_name = number) %>% 
+  select(datetime, Timezone, raw_output, binary_flow, qaqc_code, sensor_name)
+
+all_fb <- bind_rows(fb_23, fb_24)
+
+IDs_fb <- unique(all_fb$sensor_name)
+saving_fb <- function(x){
+  all_fb %>% 
+  filter(sensor_name == x) %>% 
+    write_csv(., paste0("./STIC_synthesis/01_Sensors/hb_FB/",x,"_hb_FB.csv"))
+}
+
+lapply(IDs_fb, saving_fb)
+
+## ZZ
+zz_23 <- data_23 %>% 
+  filter(wshed == "ZZ") %>% 
+  select(datetime, condUncal, wetdry, ID, wshed) %>% 
+  #add columns for timezone, QAQC
+  mutate(
+         qaqc_code = "g",
+         wetdry = case_when(wetdry == "wet" ~ 1,
+                            wetdry == "dry" ~ 0),
+         datetime = datetime + hours(4),
+         datetime = force_tz(datetime, "GMT"),
+         Timezone = tz(datetime),
+         ID = paste0("zz_",ID)) %>% 
+  rename(raw_output = condUncal,
+         binary_flow = wetdry,
+         sensor_name = ID) %>% 
+  select(datetime, Timezone, raw_output, binary_flow, qaqc_code, sensor_name)
+
+# W3 2024
+zz_24 <- data_24 %>% 
+  filter(wshed == "ZZ") %>%
+  select(datetime, condUncal, wetdry, number, wshed) %>% 
+  #add columns for timezone, QAQC
+  mutate(
+         qaqc_code = "g",
+         wetdry = case_when(wetdry == "wet" ~ 1,
+                            wetdry == "dry" ~ 0),
+         datetime = datetime + hours(4),
+         datetime = force_tz(datetime, "GMT"),
+         Timezone = tz(datetime),
+         number = paste0("zz_",number)) %>% 
+  rename(raw_output = condUncal,
+         binary_flow = wetdry,
+         sensor_name = number) %>% 
+  select(datetime, Timezone, raw_output, binary_flow, qaqc_code, sensor_name)
+
+all_zz <- bind_rows(zz_23, zz_24)
+
+IDs_zz <- unique(all_zz$sensor_name)
+saving_zz <- function(x){
+  all_zz %>% 
+  filter(sensor_name == x) %>% 
+    write_csv(., paste0("./STIC_synthesis/01_Sensors/hb_ZZ/",x,"_hb_ZZ.csv"))
+}
+
+lapply(IDs_zz, saving_zz)
+```
+
+```{r 02_binaryMatrix}
+all_w3 %>% 
+  select(datetime, Timezone, binary_flow, sensor_name) %>% 
+  pivot_wider(names_from = sensor_name, values_from = binary_flow) %>% 
+  write_csv(., "./STIC_synthesis/02_BinaryMatrix/hb_W3.csv")
+
+all_fb %>% 
+  select(datetime, Timezone, binary_flow, sensor_name) %>% 
+  pivot_wider(names_from = sensor_name, values_from = binary_flow) %>%
+  write_csv(., "./STIC_synthesis/02_BinaryMatrix/hb_FB.csv")
+  
+all_fb |>
+  dplyr::summarise(n = dplyr::n(), .by = c(datetime, Timezone, sensor_name)) |>
+  dplyr::filter(n > 1L)
+
+all_zz %>% 
+  select(datetime, Timezone, binary_flow, sensor_name) %>% 
+  pivot_wider(names_from = sensor_name, values_from = binary_flow) %>% 
+  write_csv(., "./STIC_synthesis/02_BinaryMatrix/hb_ZZ.csv")
+```
+
+```{r 03_discharge}
+## W3
+#from TestingFrameworks script
+read_csv("https://pasta.lternet.edu/package/data/eml/knb-lter-hbr/1/18/1b101627265d0b5763fa0bba93d93bf7") %>% 
+  summary()
+#read in discharge from W3-- input to Carrie's model, discharge in L/s
+#q <- read_csv("https://portal.edirepository.org/nis/dataviewer?packageid=knb-lter-hbr.1.17&entityid=efc477b3ef1bb3dd8b9355c9115cd849")
+#write.csv(q, "HB_5minQ.csv")
+q <- read_csv("HB_5minQ.csv")
+
+#input discharge needs to be in mm/day?
+#reference to understand difference between daily mean and instantaneous streamflow:
+#https://hydrofunctions.readthedocs.io/en/master/notebooks/DailyMean_vs_Instant.html
+
+#creating minute column, used to filter out higher temporal resolution measurements for plotting
+data_23$mins <- minute(data_23$datetime)
+data_24$mins <- minute(data_24$datetime)
+
+#find the range of dates that I need discharge for
+start <- min(data_23$datetime)
+stop <- max(data_23$datetime)
+
+#filtering discharge down to the range of dates
+q_23 <- q %>% 
+  filter(DATETIME > start & DATETIME < stop) %>% 
+  #convert to mm/day.
+  #converting instantaneous streamflow to mm/day by taking measurement, and scaling   it up as if that was the discharge for the whole day. It is not, it is just at that   moment, but should fix any units/order of magnitude issues
+  mutate("Q_mm_day" = Discharge_ls * 0.001 * 86400 / 420000 * 1000) 
+q_23$mins <- minute(q_23$DATETIME)
+
+#removing times that are not coincident with STIC observations
+q_23_f <- filter(q_23, mins %in% c(0, 30))
+
+ggplot(q_23_f, aes(x  = DATETIME, y = Q_mm_day))+
+  geom_line()+
+  labs(title = "Discharge from W3, July to Nov 2023",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()
+
+#also read in provisional 2024 data
+q_24 <- read_csv("w3_discharge_24.csv")
+
+#find the range of dates that I need discharge for
+start24 <- ymd_hms("2024-05-15 00:00:00 UTC")
+stop24 <- max(w3_24$datetime)
+
+#filtering discharge down to the range of dates
+q_24 <- q_24 %>% 
+  mutate(datetime = mdy_hm(datetime),
+         discharge = 0.028317 * Q_cfs) %>% 
+  filter(datetime > start24 & datetime < stop24)  
+q_24$mins <- minute(q_24$datetime)
+
+#removing times that are not coincident with STIC observations
+q_24_f <- filter(q_24, mins %in% c(0, 30))
+
+ggplot(q_24_f, aes(x  = datetime, y = Q_mmperday))+
+  geom_line()+
+  labs(title = "Discharge from W3, May to July 2024",
+       x = "",
+       y = "Instantaneous Q (mm/day)")+
+  theme_classic()
+
+#get discharge ready to bind to my other data
+q_23_bind <- 
+  q_23_f %>% 
+  select(DATETIME, Discharge_ls, Flag) %>% 
+  mutate(discharge = Discharge_ls / 1000) %>% 
+  rename("datetime" = DATETIME,
+         "qaqc_code" = Flag
+         ) %>% 
+  select(-Discharge_ls)
+
+q_24_bind <- 
+  q_24_f %>% 
+  select(datetime, discharge) %>% 
+  #rename("Q_mm_day" = Q_mmperday) %>% 
+  mutate("qaqc_code" = "P")
+
+rbind(q_23_bind, q_24_bind) %>% 
+  mutate(datetime = datetime + hours(4),
+         datetime = force_tz(datetime, "GMT"),
+         Timezone = tz(datetime)) %>% 
+   write_csv(., "./STIC_synthesis/03_Discharge/Discharge_hb_W3.csv")
+  
+  
+  
+ 
+
+#FB_stage <- 
+read_csv("FB_events.csv") %>% 
+  dplyr::rename(datetime = DATETIME) %>% 
+  select(datetime, stage_cm) %>% 
+  mutate(datetime = datetime + hours(4),
+         datetime = force_tz(datetime, "GMT"),
+         Timezone = tz(datetime),
+         "qaqc_code" = "s") %>% 
+  select(datetime, Timezone, stage_cm, qaqc_code) %>% 
+   write_csv(., "./STIC_synthesis/03_Discharge/Stage_hb_FB.csv")
+  
+
+read_csv("ZZ_events.csv") %>% 
+  dplyr::rename(datetime = DATETIME) %>% 
+  select(datetime, stage_cm) %>% 
+  mutate(datetime = datetime + hours(4),
+         datetime = force_tz(datetime, "GMT"),
+         Timezone = tz(datetime),
+         "qaqc_code" = "s") %>% 
+  select(datetime, Timezone, stage_cm, qaqc_code) %>% 
+   write_csv(., "./STIC_synthesis/03_Discharge/Stage_hb_ZZ.csv")
+```
+
+```{r 04_locations}
+# W3 2023
+w323locs <- 
+  data_23 %>% 
+  filter(wshed == "W3") %>% 
+  select(datetime, ID, lat, long) %>% 
+  #add columns for timezone, QAQC
+  mutate(
+         datetime = datetime + hours(4),
+         datetime = force_tz(datetime, "GMT"),
+         Timezone = tz(datetime),
+         ID = paste0("w3_",ID),
+         sensor_type = "flow_presence") %>% 
+  rename(latitude = lat,
+         longitude = long,
+         sensor_name = ID) %>% 
+  select(sensor_name, latitude, longitude, sensor_type) %>% 
+  unique()
+
+# W3 2024
+w324locs <- 
+  data_24 %>% 
+  filter(wshed == "W3") %>% 
+  select(datetime, number, lat, long) %>% 
+  #add columns for timezone, QAQC
+  mutate(
+         datetime = datetime + hours(4),
+         datetime = force_tz(datetime, "GMT"),
+         Timezone = tz(datetime),
+         number = paste0("w3_",number),
+         sensor_type = "flow_presence") %>% 
+  rename(latitude = lat,
+         longitude = long,
+         sensor_name = number) %>% 
+  select(sensor_name, latitude, longitude, sensor_type) %>% 
+  unique() %>% 
+    add_row(sensor_name = "w3_stage",
+          latitude = 43.95497,
+          longitude = -71.72241,  
+          sensor_type = "discharge") %>% 
+     write_csv(., "./STIC_synthesis/04_Locations/Location_hb_W3.csv")
+
+# FB
+# W3 2023
+  data_23 %>% 
+  filter(wshed == "FB") %>% 
+  select(datetime, ID, lat, long) %>% 
+  #add columns for timezone, QAQC
+  mutate(
+         datetime = datetime + hours(4),
+         datetime = force_tz(datetime, "GMT"),
+         Timezone = tz(datetime),
+         ID = paste0("fb_",ID),
+         sensor_type = "flow_presence") %>% 
+  rename(latitude = lat,
+         longitude = long,
+         sensor_name = ID) %>% 
+  select(sensor_name, latitude, longitude, sensor_type) %>% 
+  unique() %>% 
+    add_row(sensor_name = "fb_stage",
+          latitude = 43.94244,
+          longitude = -71.73636, 
+          sensor_type = "discharge") %>% 
+  write_csv(., "./STIC_synthesis/04_Locations/Location_hb_FB.csv")
+  
+data_23 %>% 
+  filter(wshed == "ZZ") %>% 
+  select(datetime, ID, lat, long) %>% 
+  #add columns for timezone, QAQC
+  mutate(
+         datetime = datetime + hours(4),
+         datetime = force_tz(datetime, "GMT"),
+         Timezone = tz(datetime),
+         ID = paste0("zz_",ID),
+         sensor_type = "flow_presence") %>% 
+  rename(latitude = lat,
+         longitude = long,
+         sensor_name = ID) %>% 
+  select(sensor_name, latitude, longitude, sensor_type) %>% 
+  unique() %>% 
+  add_row(sensor_name = "zz_stage",
+          latitude = 43.92636,
+          longitude = -71.77449,
+          sensor_type = "discharge") %>% 
+  write_csv(., "./STIC_synthesis/04_Locations/Location_hb_ZZ.csv")
+
+```
+
+```{r 05_qaqc}
+ #flags
+  # M = measured
+  # P = provisional
+  # S = stage
+  # g = STIC flow state good/believed to be true
+
+tibble("qaqc_code" = c("M","P","S","g"),
+       "description" = c(
+         "Measured, from Forest Service discharge QAQC",
+         "Provisional, from Forest Service discharge QAQC (probably good, but has not passed through their formal QAQC process)",
+         "Stage, in watersheds where discharge is not available",
+         "STIC flow state good/believed to be true"
+       ),
+       "data_type" = c("discharge",
+                       "discharge",
+                       "discharge",
+                       "STIC")) %>% 
+    write_csv(., "./STIC_synthesis/05_QAQC/QAQC_hb.csv")
+
+```
+
+```{r 06_shapefiles}
+rast("./w3_dems/w3_shed.tif") %>%  
+  as.polygons(., extent=FALSE) %>%
+  project("EPSG:4326") %>% 
+    writeVector(., "./STIC_synthesis/06_WatershedShapefiles/hb_W3.shp")
+
+rast("./fb_dems/fb_shed.tif") %>%  
+  as.polygons(., extent=FALSE) %>%
+  project("EPSG:4326") %>% 
+    writeVector(., "./STIC_synthesis/06_WatershedShapefiles/hb_FB.shp")
+
+rast("./zz_dems/zz_shed.tif") %>%  
+  as.polygons(., extent=FALSE) %>%
+  project("EPSG:4326") %>% 
+    writeVector(., "./STIC_synthesis/06_WatershedShapefiles/hb_ZZ.shp")
+```
+

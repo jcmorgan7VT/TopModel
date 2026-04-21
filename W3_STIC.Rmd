@@ -104,6 +104,150 @@ read_deployment <- function(folder, study_shed, deployment_number) {
   return(readout)
 }
 ```
+```{r read_deployment function}
+w3_3 <- read_deployment(folder = "./HBLoggers_11_14_23/", 
+                        study_shed = "W3",
+                        deployment_number = 3) %>% tibble()
+
+read_deployment <- function(folder, study_shed, deployment_number) {
+  #file location
+  # folder = "./HBLoggers_11_14_23/"
+  # study_shed = "W3"
+  # deployment_number = 3
+  # i = 1
+  files <- list.files(folder, pattern = ".csv")
+  #deployment info
+  deploy <- read.csv("./Fieldwork_formatted_summer23/All_deployments.csv") %>% 
+    # format start and end date with lubridate
+    mutate(start = mdy_hm(start),
+           end = mdy_hm(end),
+           sensor = as.character(sensor)) %>% 
+    # filter to correct watershed and deployment
+    #filter values must have different names than colnames of spreadsheet
+    filter(
+      wshed == study_shed & deployment == deployment_number)
+  # list of sensor numbers that there are actually files for
+  sensor_num <- (substr(files, 1, 8))
+  deployed <- deploy$sensor
+  
+  deployed_and_collected <- intersect(sensor_num, deployed)
+  
+  for (i in 1:length(deployed_and_collected)) {
+  #i <- 26
+    chosen <- paste0(deployed_and_collected[i], ".csv") #line to add i
+    skip_to_next <- FALSE
+    
+  
+      path_to_chosen <- paste0(folder, chosen)
+      data <- tidy_hobo_data(path_to_chosen)
+      
+      #subset deployment information
+      deployment_info <- dplyr::filter(deploy, sensor == deployed_and_collected[i])
+      
+      wet <- classify_wetdry(
+        data,
+        classify_var = "condUncal",
+        method = "absolute",
+        threshold = 10
+      )
+      #remove dates before and after start and end date of deployment
+      wet_filt <- wet %>% 
+        bind_cols(deployment_info) %>% 
+        # mutate(start = deployment_info$start,
+        #        end = deployment_info$end)
+        dplyr::filter(datetime > start) %>%
+        dplyr::filter(datetime < end) #%>%
+        #bind_cols(deployment_info)
+      
+      
+      if (i == 1)
+        alldat <- wet_filt
+      if (i > 1)
+        alldat <- rbind(alldat, wet_filt)
+}
+  
+  #create new column that indicates if every sensor is deployed or not
+  alldat$all_deployed <- 0
+  
+  alldat$all_deployed[alldat$datetime > max(alldat$start) &
+                        alldat$datetime <= min(alldat$end)] <- 1
+  
+  readout <- alldat %>% dplyr::select(-start, -end)
+  
+  return(readout)
+}
+```
+
+```{r}
+read_deployment24 <- function(folder, study_shed) {
+  #file location
+  # folder = "./summer2024/W3_summer24/"
+  # study_shed = "W3"
+  # i = 1
+  files <- list.files(folder, pattern = ".csv")
+  #deployment info
+  deploy <- 
+    read_csv("./summer2024/stic2024.csv") %>% 
+    # format start and end date with lubridate
+    mutate(start = mdy_hm(start),
+           end = mdy_hm(stop),
+           sensor = as.character(sensor)) %>% 
+    # filter to correct watershed and deployment
+    #filter values must have different names than colnames of spreadsheet
+    filter(
+      wshed == study_shed)
+  # list of sensor numbers that there are actually files for
+  sensor_num <- (substr(files, 1, 8))
+  deployed <- deploy$sensor
+  
+  deployed_and_collected <- intersect(sensor_num, deployed)
+  
+  for (i in 1:length(deployed_and_collected)) {
+  #i <- 26
+    chosen <- paste0(deployed_and_collected[i], ".csv") #line to add i
+    skip_to_next <- FALSE
+    
+  
+      path_to_chosen <- paste0(folder, chosen)
+      data <- tidy_hobo_data(path_to_chosen)
+      
+      #subset deployment information
+      deployment_info <- dplyr::filter(deploy, sensor == deployed_and_collected[i])
+      
+      wet <- classify_wetdry(
+        data,
+        classify_var = "condUncal",
+        method = "absolute",
+        threshold = 10
+      )
+      #remove dates before and after start and end date of deployment
+      wet_filt <- wet %>% 
+        bind_cols(deployment_info) %>% 
+        # mutate(start = deployment_info$start,
+        #        end = deployment_info$end)
+        dplyr::filter(datetime > start) %>%
+        dplyr::filter(datetime < end) #%>%
+        #bind_cols(deployment_info)
+      
+      
+      if (i == 1)
+        alldat <- wet_filt
+      if (i > 1)
+        alldat <- rbind(alldat, wet_filt)
+}
+  
+  #create new column that indicates if every sensor is deployed or not
+  alldat$all_deployed <- 0
+  
+  alldat$all_deployed[alldat$datetime > max(alldat$start) &
+                        alldat$datetime <= min(alldat$end)] <- 1
+  
+  readout <- alldat %>% dplyr::select(-start, -end)
+  
+  return(readout)
+}
+
+```
 
 ```{r figuring-tz}
 # figuring out timezone
@@ -235,7 +379,9 @@ all_zz <- rbind(zz_1, zz_2, zz_3)
 all_zz$datetime <- force_tz(all_zz$datetime, "US/Eastern")
 
 # combine all 3
-all_sheds <- rbind(all_w3, all_fb, all_zz)
+all_sheds <- rbind(all_w3, all_fb, all_zz) %>% 
+  mutate(mins = minute(datetime))
+write_csv(all_sheds, "./STIC_synthesis/all_23.csv")
 
 all_sheds[which.max(all_sheds$tempC),]
 all_sheds %>% 
@@ -252,8 +398,55 @@ all_sheds %>%
 
 #create spreadsheet containing all of the data to send to Danielle Hare
 #write.csv(all_sheds2, "./DataForDanielle/HB_stic.csv")
-data <- read_csv("./DataForMary/HB_stic.csv")
+#data <- read_csv("./DataForMary/HB_stic.csv")
 
+## Now do for 2024 as well
+#create dataframe for each watershed using read in data files function above
+w3_24 <- read_deployment24(folder = "./summer2024/W3_summer24/", 
+                        study_shed = "W3") %>% tibble()
+w3_24$datetime <- force_tz(w3_24$datetime, "US/Eastern")
+
+fb_24 <- read_deployment24(folder = "./summer2024/FB_summer24/", 
+                        study_shed = "FB") %>% tibble()
+fb_24$datetime <- force_tz(fb_24$datetime, "US/Eastern")
+
+zz_24 <- read_deployment24(folder = "./summer2024/ZZ_summer24/", 
+                        study_shed = "ZZ") %>% tibble()
+zz_24$datetime <- force_tz(zz_24$datetime, "US/Eastern")
+
+
+#combine all dataframes into one big one
+all_24 <- bind_rows(w3_24, fb_24, zz_24)
+write_csv(all_24, "./STIC_synthesis/all_24.csv")
+```
+
+```{r}
+# compare to previous time reading in data
+all_sheds %>% 
+  group_by(wshed) %>% 
+  summarise(count = n())
+```
+
+```{r}
+binary <- c("#DB995A",
+            "#586BA4"
+  )
+all_sheds %>% 
+  #filter(wshed == "W3") %>% 
+  filter(mins %in% c(0, 30)) %>% 
+ggplot()+
+  geom_tile(aes(x = datetime, y = ID, fill = wetdry))+
+  #facet_grid(~deployment, scales = "free") + 
+  scale_fill_manual(drop = FALSE,
+                     values = binary,
+                    breaks = c("dry", "wet"),
+                    labels = c("No flow", "flowing"),
+                    name = ""
+                    )+
+  labs(title = "Wetting and Drying patterns 2023",
+       x = "")+
+  theme_classic()+
+  facet_wrap(~wshed)
 ```
 
 Figure out how many sensors failed in each shed in each deployment.
@@ -588,7 +781,7 @@ plot_test3$Depth[plot_test3$ID %in% c(3, 7, 12, 17)] <- "Deep"
 binary <- c("#DB995A",
             "#586BA4"
   )
-ggplot(plot_test3)+
+ggplot(all_w3)+
   geom_tile(aes(x = datetime, y = ID, fill = wetdry))+
   #facet_grid(~deployment, scales = "free") + 
   scale_fill_manual(drop = FALSE,
@@ -599,8 +792,7 @@ ggplot(plot_test3)+
                     )+
   labs(title = "Streamflow permanence in W3",
        x = "")+
-  theme_classic()+
-  facet_wrap(~Depth)
+  theme_classic()
 #ways to make better
 #order points by distance to outlet or drainage area
 #add discharge and precipitation
