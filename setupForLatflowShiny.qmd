@@ -135,19 +135,20 @@ ybounds <- c(4870350,4871350)
 xbounds <- c(281350, 282150)
 plot(one, xlim = xbounds, ylim = ybounds)
 #create a SpatExtent from a vector 
-m10 <- aggregate(m1, aggreg_factor)
+m10 <- aggregate(one, aggreg_factor)
 
-crop1 <- crop(m10, ext(c(xbounds, ybounds)))
+crop10 <- crop(m10, ext(c(xbounds, ybounds)))
 #save cropped 1m dem to reduce processing time below, and guarantee that everything has the same extent
-writeRaster(crop1, "./w3_dems/hydem1mlpns_crop.tif", overwrite = TRUE)
+writeRaster(crop10, "./w3_dems/hydem10mlpns_crop.tif", overwrite = TRUE)
+
 #read in cropped dem
-w3_crop <- "./w3_dems/hydem1mlpns_crop.tif"
+w3_crop <- "./w3_dems/hydem10mlpns_crop.tif"
 #calculate flow accumulation and direction
-w3_flowacc <- "./w3_dems/hydem1mlpns_flowacc.tif"
+w3_flowacc <- "./w3_dems/hydem10mlpns_flowacc.tif"
 wbt_d8_flow_accumulation(input = w3_crop,
                          output = w3_flowacc)
 plot(rast(w3_flowacc))
-w3_d8pt <- "./w3_dems/hydem1mlpns_d8pt.tif"
+w3_d8pt <- "./w3_dems/hydem10mlpns_d8pt.tif"
 wbt_d8_pointer(dem = w3_crop,
                output = w3_d8pt)
 plot(rast(w3_d8pt))
@@ -157,7 +158,7 @@ plot(rast(w3_d8pt))
 w3_streams_ext <- "./w3_dems/hydem10mlpns_streams_ext.tif"
 wbt_extract_streams(flow_accum = w3_flowacc,
                     output = w3_streams_ext,
-                    threshold = 300)
+                    threshold = 80)
 plot(rast(w3_streams_ext))
 
 w3_streams_ret <- "./w3_dems/hydem10mlpns_streams_ret.tif"
@@ -171,29 +172,29 @@ w3_pour_snap <- "./w3_dems/w3_pour_snap.shp"
 wbt_jenson_snap_pour_points(pour_pts = w3_pour_filename,
                             streams = w3_streams_ext,
                             output = w3_pour_snap,
-                            snap_dist = 10)
+                            snap_dist = 20)
 w3_pour_snap_read <- vect("./w3_dems/w3_pour_snap.shp")
 plot(rast(w3_streams_ext), 
      xlim = c(281400, 281800),
      ylim = c(4870400, 4870600))
 points(w3_pour_snap_read, pch = 1)
 
-w3_shed <- "./w3_dems/hydem1mlpns_shed.tif"
+w3_shed <- "./w3_dems/hydem10mlpns_shed.tif"
 wbt_watershed(d8_pntr = w3_d8pt,
               pour_pts = w3_pour_snap,
               output = w3_shed)
 plot(rast(w3_shed))
 #crop and mask to W3
-w3_only <- crop1 %>% 
+w3_only <- crop10 %>% 
   mask(rast(w3_shed))
 plot(w3_only)
 #save output as a new DEM
-writeRaster(w3_only, "./w3_dems/hydem1mlpns_wsbound.tif", overwrite = TRUE)
+writeRaster(w3_only, "./w3_dems/hydem10mlpns_wsbound.tif", overwrite = TRUE)
 
 #use new DEM to calculate downslope distance to stream
 #or how far the water has to go
-bound_dem <- "./w3_dems/hydem1mlpns_wsbound.tif"
-w3_downdist_ext <- "./w3_dems/hydem1mlpns_downdist_ext.tif"
+bound_dem <- "./w3_dems/hydem10mlpns_wsbound.tif"
+w3_downdist_ext <- "./w3_dems/hydem10mlpns_downdist_ext.tif"
 wbt_downslope_distance_to_stream(dem = bound_dem,
                                  streams = w3_streams_ext,
                                  output = w3_downdist_ext)

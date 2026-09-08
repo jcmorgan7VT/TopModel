@@ -5,7 +5,7 @@
 
 #define function
 calcQ <- function(path){
-
+  # specify path to folder containing 3 .csv files
   meta <- read_csv(paste0(path,"/metadata.csv"))
   
   vol <- meta$slugVolume_mL #volume of slug [mL]
