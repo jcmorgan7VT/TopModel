@@ -1,10 +1,7 @@
 ---
-title: "Comparing Sequences — Restructured for Dissertation Chapter"
-subtitle: "Sequence of wetting and drying in non-perennial headwater stream networks"
+title: "Final figures, sequential wetting and drying publication"
 format:
   html:
-    toc: true
-    toc-depth: 3
     code-fold: true
     fig-width: 9
     fig-height: 7
@@ -12,28 +9,20 @@ editor_options:
   chunk_output_type: console
 ---
 
-<!--
-================================================================================
-STORYBOARD MAP (restructured chapter)
-================================================================================
-This document replaces the original ~10,000-line ComparingSequences.qmd. It
-keeps the SAME file paths and inputs but reorganises the analysis around three
-research questions and a new figure storyboard.
-
-RESEARCH QUESTIONS
-  RQ1. What is the sequence of wetting and drying in non-perennial headwater
-       stream networks during events?
-  RQ2. Is the sequence of wetting and drying consistent through time, and does
-       it differ between wetting and drying?
-  RQ3. Is there a sequence defined by empirical observation or topography that
-       can accurately capture wetting and drying dynamics through time?
-
-FIGURES (revised storyboard)
-  Fig 1  Maps of the three watersheds (flow persistence) with a relocated,
-         non-overlapping NH/USA locator (white states, black outlines).
-  Fig 2  W3 only: event-specific vs. consensus activation order for events 7 &
-         10. Taller precip/discharge strip; white = missing, grey = dry,
-         black = flowing.                                          (RQ1 + RQ2)
+Publication Figures 9/20/26
+- Fig 1: Maps of the three watersheds (flow persistence) with an inset map of 
+         United states and NH
+- Fig 2: Conceptual diagram of how test sequences were defined (made by hand in illustrator).
+- Fig 3:
+- Fig 4: 
+- Fig 5: 
+- Fig 6: 
+- Fig 7:
+- Fig 8: 
+- Table 1:
+- Table 2:
+- Table 3: 
+                                            (RQ1 + RQ2)
   Fig 3  Ordered deviation heatmap: consensus column + one column per event
          (event-based sequences only; no FP/TWI/BFS). Tan = node missing from
          that event. One row of panels per watershed.                   (RQ2)
@@ -48,18 +37,6 @@ FIGURES (revised storyboard)
          at that step.                                                   (RQ3)
   Fig 8  Maps of per-node Flow Persistence and TWI model accuracy over the whole
          record, all three watersheds (Fig 1 style).                     (RQ3)
-
-NOTES ON CHANGES FROM THE ORIGINAL
-  * Every chunk label is unique (Quarto requires this).
-  * The wetting/drying machinery NO LONGER overwrites `calc_props()`. The
-    direction-split version returns its own object and lives in clearly named
-    functions, so the support/model pipeline is never broken by it.
-  * Exploratory / poster / AGU variants were removed; only the pipeline needed
-    to produce the seven figures remains.
-  * Sequence-definition objects keep their original names so saved .csv inputs
-    (event sequences, BFS results) drop straight in.
-================================================================================
--->
 
 # Setup and inputs
 
@@ -123,7 +100,7 @@ input_zz <- rbind(bind23, bind24) %>% filter(wshed == "ZZ", ID %in% ZZ_IDs)
 input_all <- rbind(input_w3, input_fb, input_zz)
 ```
 
-# Functions
+## Functions
 
 ```{r helper-functions}
 `%not_in%` <- purrr::negate(`%in%`)
@@ -435,7 +412,7 @@ seq_similarity <- function(a, b){
 }
 ```
 
-# Discharge and event identification
+## Discharge and event identification
 
 ```{r prepare-discharge-w3}
 #| message: false
@@ -592,7 +569,7 @@ write_csv(all_eventsFB_sequences, "FBevent_sequences.csv")
 write_csv(all_eventsZZ_sequences, "ZZevent_sequences.csv")
 ```
 
-# Sequence definitions
+## Sequence definitions
 
 ```{r flow-permanence}
 #| message: false
@@ -739,7 +716,7 @@ best_bfs_fb <- bfs_consensus(bfsFB)
 best_bfs_zz <- bfs_consensus(bfsZZ)
 ```
 
-# Run the model for every sequence
+## Run the model for every sequence
 
 ```{r run-model}
 #| message: false
@@ -788,7 +765,7 @@ df_long_fb <- fb_mod$df_long
 df_long_zz <- zz_mod$df_long
 ```
 
-# Map layers
+## Map layers
 
 ```{r map-layers}
 #| message: false
@@ -891,8 +868,9 @@ figure1
 ggsave("figure1_maps.pdf", figure1, width = 12, height = 9)
 ```
 
+# Figure 2 - Conceptual diagram of how sequences were defined (made in illustrator)
 # Figure 2 — W3: event-specific vs. consensus activation order (events 7 & 10)
-
+*Changes- remove lower row
 ```{r fig2-functions}
 #| message: false
 #| warning: false
@@ -2479,207 +2457,335 @@ ggsave("figure3_test_vs_event_heatmap.pdf", figure3, width = 8, height = 9)
 ```
 
 
-# Figure 4 — Wetting vs. drying sequence (rank–rank, reverse reference)
+# Figure 4 - Grid of TAUS wetting vs wetting for each event
 
-```{r fig4-wetting-drying}
+Grid of taus of observed sequences; FINAL FIGURE
+```{r}
 #| message: false
 #| warning: false
 #| fig-width: 12
-#| fig-height: 5
-# RQ2. Wetting order on x, drying order on y with the y-axis FLIPPED, so the
-# dashed line (bottom-left to top-right) marks the case where the drying order
-# is the exact REVERSE of the wetting order (wets first => dries last). Points
-# near that line => reversible "fill-and-spill" behaviour; points near a normal
-# 1:1 (top-left to bottom-right) => wets and dries in the same order.
+#| fig-height: 8
+# Heatmap of pairwise Kendall's tau between observed event sequences, per
+# watershed x direction. Diagonal left blank. Events restricted to the curated
+# subset (both-direction + direction-specific, >= 5 cycling sensors).
 
-direction_sequences <- function(input, event_df, ids){
-  dat <- input %>% filter(ID %in% ids) %>%
-    inner_join(event_df %>% select(datetime, event_id, event_type), by = "datetime") %>%
-    filter(!is.na(event_id), event_type != "baseflow")
-  wet_out <- NULL; dry_out <- NULL
-  for (ev in unique(dat$event_id)){
-    e <- dat %>% filter(event_id == ev)
-    counts <- e %>% group_by(datetime) %>% summarise(nw = sum(binary == 1), .groups = "drop")
-    peak_t <- counts$datetime[which.max(counts$nw)]
-    w <- e %>% filter(datetime <= peak_t, binary == 1) %>%
-      group_by(ID) %>% summarise(t = min(datetime), .groups = "drop") %>% arrange(t)
-    d <- e %>% filter(datetime >= peak_t, binary == 1) %>%
-      group_by(ID) %>% summarise(t = max(datetime), .groups = "drop") %>% arrange(t)
-    if (nrow(w) >= 2) wet_out <- bind_rows(wet_out, tibble(event_id = ev, sensor_id = w$ID))
-    if (nrow(d) >= 2) dry_out <- bind_rows(dry_out, tibble(event_id = ev, sensor_id = d$ID))
+reorder_events <- FALSE
+
+# define set of events to use for each watershed
+dir_spec <- list(
+  W3 = list(remove = c(13, 18), wetting_only = c(8, 10),            drying_only = integer(0)),
+  FB = list(remove = c(1),      wetting_only = c(3, 5, 9),          drying_only = c(7, 10, 12)),
+  ZZ = list(remove = c(),     wetting_only = c(4, 11, 12, 13), drying_only = c(1))
+)
+universe <- list(W3 = 1:18, FB = 1:19, ZZ = 1:18)
+# curated event sets (from earlier) ------------------------------------------
+wetting_eligible <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$drying_only)))
+drying_eligible  <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$wetting_only)))
+keep_trans <- list(
+  W3 = events_with_transitions(input_w3, w3_events_all, W3_IDs, 3),
+  FB = events_with_transitions(input_fb, FBall_events,  FB_IDs, 3),
+  ZZ = events_with_transitions(input_zz, ZZall_events,  ZZ_IDs, 3))
+keep_wet <- Map(intersect, Map(wetting_eligible, dir_spec, universe), keep_trans)
+keep_dry <- Map(intersect, Map(drying_eligible,  dir_spec, universe), keep_trans)
+
+# calculate drying and wetting pairs
+# ---- wetting pairs
+
+# ---- all-pairs wetting-vs-wetting within a watershed ------------------------
+pairwise_wetting <- function(wet_long, shed, keep_events, min_shared = 3){
+  rl <- event_rank_list(wet_long)
+  evs <- intersect(names(rl), as.character(keep_events))
+  if (length(evs) < 2) return(tibble())
+  out <- vector("list", 0)
+  for (cc in combn(evs, 2, simplify = FALSE)){
+    m <- inner_join(rl[[cc[1]]], rl[[cc[2]]], by = "sensor_id", suffix = c("_i", "_j"))
+    if (nrow(m) < min_shared) next
+    kt <- suppressWarnings(cor.test(m$rank_i, m$rank_j, method = "kendall"))
+    out[[length(out) + 1]] <- tibble(
+      shed = shed, event_i = as.integer(cc[1]), event_j = as.integer(cc[2]),
+      n_shared = nrow(m), kendall_tau = unname(kt$estimate), tau_p = kt$p.value)
   }
-  list(wetting = wet_out, drying = dry_out)
+  bind_rows(out)
 }
-cons_dir <- function(df){
-  cs <- as.numeric(average_activation_sequence(as.data.frame(df))$consensus_sequence)
-  tibble(ID = cs, sequence = seq_along(cs))
+
+wetting_pairs <- bind_rows(
+  pairwise_wetting(ds_w3$wetting, "W3", keep_wet$W3),
+  pairwise_wetting(ds_fb$wetting, "FB", keep_wet$FB),
+  pairwise_wetting(ds_zz$wetting, "ZZ", keep_wet$ZZ)
+) %>%
+  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ"))) %>%
+  arrange(shed, event_i, event_j)
+
+# ---- all-pairs drying-vs-drying within a watershed --------------------------
+pairwise_drying <- function(dry_long, shed, keep_events, min_shared = 3){
+  rl <- event_rank_list(dry_long)
+  evs <- intersect(names(rl), as.character(keep_events))
+  if (length(evs) < 2) return(tibble())
+  out <- vector("list", 0)
+  for (cc in combn(evs, 2, simplify = FALSE)){
+    m <- inner_join(rl[[cc[1]]], rl[[cc[2]]], by = "sensor_id", suffix = c("_i", "_j"))
+    if (nrow(m) < min_shared) next
+    kt <- suppressWarnings(cor.test(m$rank_i, m$rank_j, method = "kendall"))
+    out[[length(out) + 1]] <- tibble(
+      shed = shed, event_i = as.integer(cc[1]), event_j = as.integer(cc[2]),
+      n_shared = nrow(m), kendall_tau = unname(kt$estimate), tau_p = kt$p.value)
+  }
+  bind_rows(out)
 }
-ds_w3 <- direction_sequences(input_w3, w3_events_all, W3_IDs)
-ds_fb <- direction_sequences(input_fb, FBall_events, FB_IDs)
-ds_zz <- direction_sequences(input_zz, ZZall_events, ZZ_IDs)
-wet_w3 <- cons_dir(ds_w3$wetting); dry_w3 <- cons_dir(ds_w3$drying)
-wet_fb <- cons_dir(ds_fb$wetting); dry_fb <- cons_dir(ds_fb$drying)
-wet_zz <- cons_dir(ds_zz$wetting); dry_zz <- cons_dir(ds_zz$drying)
 
-wd_rr <- function(wet, dry, shed) wet %>% transmute(ID, wet_rank = sequence) %>%
-  inner_join(dry %>% transmute(ID, dry_rank = sequence), by = "ID") %>% mutate(shed = shed)
-wd_all <- bind_rows(wd_rr(wet_w3, dry_w3, "W3"),
-                    wd_rr(wet_fb, dry_fb, "FB"),
-                    wd_rr(wet_zz, dry_zz, "ZZ")) %>%
-  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ")))
+drying_pairs <- bind_rows(
+  pairwise_drying(ds_w3$drying, "W3", keep_dry$W3),
+  pairwise_drying(ds_fb$drying, "FB", keep_dry$FB),
+  pairwise_drying(ds_zz$drying, "ZZ", keep_dry$ZZ)
+) %>%
+  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ"))) %>%
+  arrange(shed, event_i, event_j)
 
-seg_df <- wd_all %>% group_by(shed) %>%
-  summarise(n = max(c(wet_rank, dry_rank)), .groups = "drop")
-tau_df <- wd_all %>% group_by(shed) %>%
-  summarise(tau = cor(wet_rank, dry_rank, method = "kendall"), .groups = "drop") %>%
-  mutate(lab = paste0("tau = ", round(tau, 2)))
+# long, symmetric tau (NO diagonal), filtered to the eligible events ----------
+tau_matrix_long <- function(pairs, direction, keep_list){
+  purrr::imap_dfr(keep_list, function(evs, shed_sel){
+    p <- pairs %>% filter(shed == shed_sel, event_i %in% evs, event_j %in% evs)
+    if (nrow(p) == 0) return(tibble())
+    bind_rows(
+      p %>% transmute(shed = shed_sel, a = event_i, b = event_j, kendall_tau),
+      p %>% transmute(shed = shed_sel, a = event_j, b = event_i, kendall_tau)
+    )
+  }) %>% mutate(direction = direction)
+}
 
-figure4 <- ggplot(wd_all, aes(wet_rank, dry_rank)) +
-  geom_segment(data = seg_df, aes(x = 1, y = n, xend = n, yend = 1),
-               inherit.aes = FALSE, linetype = 2, color = "grey60") +
-  geom_point(size = 4, color = "black") +
-  geom_text(aes(label = ID), color = "white", size = 2) +
-  geom_text(data = tau_df, aes(-Inf, -Inf, label = lab), inherit.aes = FALSE,
-            hjust = -0.2, 
-            vjust = 2, 
-            size = 3) +
-  scale_y_reverse() + 
-  scale_color_viridis_c(guide = "none") +
-  facet_wrap(~ shed, scales = "free") +
-  labs(x = "Wetting order (1 = wets first)",
-       y = "Drying order (1 = dries first, reverse of wetting sequence)",
-       title = "Wetting vs. drying sequence (dashed = drying is the reverse of wetting)") +
-  theme_bw() + theme(strip.background = element_blank())
-figure4
-ggsave("figure4_wetting_vs_drying.pdf", figure4, width = 6, height = 3, units = "in")
+tau_long <- bind_rows(
+  tau_matrix_long(wetting_pairs, "Wetting", keep_wet),
+  tau_matrix_long(drying_pairs,  "Drying",  keep_dry)
+) %>%
+  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ")),
+         direction = factor(direction, levels = c("Wetting", "Drying")))
+
+# per-panel clustering order (on 1 - tau, diagonal = 1 only for the distance) --
+order_one <- function(df){
+  evs <- sort(unique(c(df$a, df$b)))
+  if (!reorder_events || length(evs) < 3) return(as.character(evs))
+  m <- matrix(0, length(evs), length(evs), dimnames = list(evs, evs))
+  for (i in seq_len(nrow(df))) m[as.character(df$a[i]), as.character(df$b[i])] <- df$kendall_tau[i]
+  diag(m) <- 1
+  as.character(evs[hclust(as.dist(1 - m))$order])
+}
+
+panels <- tau_long %>% group_split(shed, direction)
+plot_one <- function(df){
+  ord <- order_one(df)
+  df <- df %>% mutate(a = factor(as.character(a), levels = ord),
+                      b = factor(as.character(b), levels = ord))
+  ggplot(df, aes(a, b, fill = kendall_tau)) +
+    geom_tile(colour = "white") +
+    scale_fill_gradient2(low = "#2166AC", mid = "grey95", high = "#B2182B",
+                         midpoint = 0, limits = c(-1, 1), name = "Kendall\ntau") +
+    coord_equal() +
+    labs(x = "Event", y = "Event",
+         title = paste0(df$shed[1], " — ", df$direction[1])) +
+    theme_minimal(base_size = 10) +
+    theme(panel.grid = element_blank(),
+          axis.text = element_text(size = 7),
+          plot.title = element_text(size = 11, face = "bold"))
+}
+
+fig_tau_hm <- patchwork::wrap_plots(lapply(panels, plot_one), ncol = 2, byrow = TRUE) +
+  plot_layout(guides = "collect")
+fig_tau_hm
+ggsave("figure_event_tau_heatmap.pdf", fig_tau_hm, width = 12, height = 8)
+ggsave("figure_event_tau_heatmap.pdf", fig_tau_hm, width = 12, height = 8)
+
 ```
-```{r fig4-wetting-drying}
+# Figure 5 - Grid of TAUS comparing wetting to drying
+squares the same size, but no different than above
+```{r}
 #| message: false
 #| warning: false
-#| fig-width: 12
+#| fig-width: 13
 #| fig-height: 5
-# RQ2. Wetting order on x, drying order on y with the y-axis FLIPPED, so the
-# dashed line (bottom-left to top-right) marks the case where the drying order
-# is the exact REVERSE of the wetting order (wets first => dries last). Points
-# near that line => reversible "fill-and-spill" behaviour; points near a normal
-# 1:1 (top-left to bottom-right) => wets and dries in the same order.
+# Event x event Kendall's tau: each event's WETTING sequence (rows) vs each
+# event's DRYING sequence (cols), curated events per axis. Tile size held
+# constant across panels by sizing panels to their event counts (no coord_equal).
 
-direction_sequences <- function(input, event_df, ids){
-  dat <- input %>% filter(ID %in% ids) %>%
-    inner_join(event_df %>% select(datetime, event_id, event_type), by = "datetime") %>%
-    filter(!is.na(event_id), event_type != "baseflow")
-  wet_out <- NULL; dry_out <- NULL
-  for (ev in unique(dat$event_id)){
-    e <- dat %>% filter(event_id == ev)
-    counts <- e %>% group_by(datetime) %>% summarise(nw = sum(binary == 1), .groups = "drop")
-    peak_t <- counts$datetime[which.max(counts$nw)]
-    w <- e %>% filter(datetime <= peak_t, binary == 1) %>%
-      group_by(ID) %>% summarise(t = min(datetime), .groups = "drop") %>% arrange(t)
-    d <- e %>% filter(datetime >= peak_t, binary == 1) %>%
-      group_by(ID) %>% summarise(t = max(datetime), .groups = "drop") %>% arrange(t)
-    if (nrow(w) >= 2) wet_out <- bind_rows(wet_out, tibble(event_id = ev, sensor_id = w$ID))
-    if (nrow(d) >= 2) dry_out <- bind_rows(dry_out, tibble(event_id = ev, sensor_id = d$ID))
+reverse_drying <- FALSE
+
+dir_spec <- list(
+  W3 = list(remove = c(13, 18), wetting_only = c(8, 10),            drying_only = integer(0)),
+  FB = list(remove = c(1),      wetting_only = c(3, 5, 9),          drying_only = c(7, 10, 12)),
+  ZZ = list(remove = c(),       wetting_only = c(4, 11, 12, 13),    drying_only = c(1))
+)
+universe <- list(W3 = 1:18, FB = 1:19, ZZ = 1:18)
+wetting_eligible <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$drying_only)))
+drying_eligible  <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$wetting_only)))
+keep_trans <- list(
+  W3 = events_with_transitions(input_w3, w3_events_all, W3_IDs, 3),
+  FB = events_with_transitions(input_fb, FBall_events,  FB_IDs, 3),
+  ZZ = events_with_transitions(input_zz, ZZall_events,  ZZ_IDs, 3))
+keep_wet <- Map(intersect, Map(wetting_eligible, dir_spec, universe), keep_trans)
+keep_dry <- Map(intersect, Map(drying_eligible,  dir_spec, universe), keep_trans)
+
+event_rank_list <- function(dir_long, reverse = FALSE){
+  dir_long %>% group_by(event_id) %>% mutate(rank = row_number()) %>%
+    { if (reverse) mutate(., rank = max(rank) - rank + 1) else . } %>%
+    ungroup() %>% { split(select(., sensor_id, rank), .$event_id) }
+}
+
+wet_dry_grid <- function(wet_long, dry_long, shed, keep_w, keep_d, min_shared = 3){
+  wl <- event_rank_list(wet_long)
+  dl <- event_rank_list(dry_long, reverse = reverse_drying)
+  wl <- wl[names(wl) %in% as.character(keep_w)]
+  dl <- dl[names(dl) %in% as.character(keep_d)]
+  out <- vector("list", 0)
+  for (wi in names(wl)) for (dj in names(dl)){
+    m <- inner_join(wl[[wi]], dl[[dj]], by = "sensor_id", suffix = c("_w", "_d"))
+    if (nrow(m) < min_shared) next
+    kt <- suppressWarnings(cor(m$rank_w, m$rank_d, method = "kendall"))
+    out[[length(out)+1]] <- tibble(shed = shed,
+                                   wet_event = as.integer(wi),
+                                   dry_event = as.integer(dj),
+                                   kendall_tau = kt)
   }
-  list(wetting = wet_out, drying = dry_out)
+  bind_rows(out)
 }
-cons_dir <- function(df){
-  cs <- as.numeric(average_activation_sequence(as.data.frame(df))$consensus_sequence)
-  tibble(ID = cs, sequence = seq_along(cs))
+
+grid_all <- bind_rows(
+  wet_dry_grid(ds_w3$wetting, ds_w3$drying, "W3", keep_wet$W3, keep_dry$W3),
+  wet_dry_grid(ds_fb$wetting, ds_fb$drying, "FB", keep_wet$FB, keep_dry$FB),
+  wet_dry_grid(ds_zz$wetting, ds_zz$drying, "ZZ", keep_wet$ZZ, keep_dry$ZZ)
+) %>% mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ")))
+
+plot_one <- function(df, keep_w, keep_d){
+  df <- df %>% mutate(wet_event = factor(wet_event, levels = sort(keep_w)),
+                      dry_event = factor(dry_event, levels = sort(keep_d)))
+  diag_df <- df %>% filter(as.character(wet_event) == as.character(dry_event))
+  ggplot(df, aes(dry_event, wet_event, fill = kendall_tau)) +
+    geom_tile(colour = "white") +
+    geom_tile(data = diag_df, fill = NA, colour = "black", linewidth = 0.4) +
+    scale_fill_gradient2(low = "#2166AC", mid = "grey95", high = "#B2182B",
+                         midpoint = 0, limits = c(-1, 1), name = "Kendall\ntau") +
+    scale_x_discrete(drop = FALSE) + scale_y_discrete(drop = FALSE) +
+    labs(x = "Event (drying)", y = "Event (wetting)", title = df$shed[1]) +
+    theme_minimal(base_size = 10) +
+    theme(panel.grid = element_blank(),
+          aspect.ratio = length(keep_w) / length(keep_d),  # square tiles per panel
+          axis.text = element_text(size = 7),
+          plot.title = element_text(size = 11, face = "bold"))
 }
-ds_w3 <- direction_sequences(input_w3, w3_events_all, W3_IDs)
-ds_fb <- direction_sequences(input_fb, FBall_events, FB_IDs)
-ds_zz <- direction_sequences(input_zz, ZZall_events, ZZ_IDs)
-wet_w3 <- cons_dir(ds_w3$wetting); dry_w3 <- cons_dir(ds_w3$drying)
-wet_fb <- cons_dir(ds_fb$wetting); dry_fb <- cons_dir(ds_fb$drying)
-wet_zz <- cons_dir(ds_zz$wetting); dry_zz <- cons_dir(ds_zz$drying)
 
-wd_rr <- function(wet, dry, shed) wet %>% transmute(ID, wet_rank = sequence) %>%
-  inner_join(dry %>% transmute(ID, dry_rank = sequence), by = "ID") %>% mutate(shed = shed)
-wd_all <- bind_rows(wd_rr(wet_w3, dry_w3, "W3"),
-                    wd_rr(wet_fb, dry_fb, "FB"),
-                    wd_rr(wet_zz, dry_zz, "ZZ")) %>%
-  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ")))
+plots <- list(
+  plot_one(filter(grid_all, shed == "W3"), keep_wet$W3, keep_dry$W3),
+  plot_one(filter(grid_all, shed == "FB"), keep_wet$FB, keep_dry$FB),
+  plot_one(filter(grid_all, shed == "ZZ"), keep_wet$ZZ, keep_dry$ZZ))
 
-seg_df <- wd_all %>% group_by(shed) %>%
-  summarise(n = max(c(wet_rank, dry_rank)), .groups = "drop")
-tau_df <- wd_all %>% group_by(shed) %>%
-  summarise(tau = cor(wet_rank, dry_rank, method = "kendall"), .groups = "drop") %>%
-  mutate(lab = paste0("tau = ", round(tau, 2)))
+# widths proportional to number of drying-axis events -> constant tile size ----
+panel_widths <- c(length(keep_dry$W3), length(keep_dry$FB), length(keep_dry$ZZ))
 
-figure4 <- ggplot(wd_all, aes(wet_rank, dry_rank)) +
-  geom_segment(data = seg_df, aes(x = 1, y = n, xend = n, yend = 1),
-               inherit.aes = FALSE, linetype = 2, color = "grey60") +
-  geom_point(size = 4, color = "black") +
-  geom_text(data = tau_df, aes(-Inf, -Inf, label = lab), inherit.aes = FALSE,
-            hjust = -0.2, 
-            vjust = 2, 
-            size = 3) +
-  scale_y_reverse() + 
-  scale_color_viridis_c(guide = "none") +
-  facet_wrap(~ shed, scales = "free") +
-  labs(x = "Wetting order (1 = wets first)",
-       y = "Drying order (1 = dries first, reverse of wetting sequence)",
-       title = "Wetting vs. drying sequence (dashed = drying is the reverse of wetting)") +
-  theme_classic() + theme(strip.background = element_blank())
-figure4
-ggsave("figure4_wetting_vs_drying.png", figure4, width = 8, height = 4, units = "in")
+figure1 <- patchwork::wrap_plots(plots, ncol = 3, widths = panel_widths) +
+  plot_layout(guides = "collect") +
+  plot_annotation(
+    caption = paste(
+      "Kendall's tau: each event's wetting order (rows) vs each event's drying order (columns), curated per axis.",
+      "Black-outlined diagonal = same event. All grid squares equal size.",
+      if (reverse_drying) "Drying = 1 dries last; red = same order."
+      else "Drying = 1 dries first; blue (negative) = reversed."))
+figure1
+ggsave("figure1_wet_vs_dry_tau_heatmap_equal.pdf", figure1, width = 13, height = 5)
 ```
+# Figure 6 - boxplots of Taus for test sequences
 
-# Figure 5 — Conceptual diagram (built outside R; nothing generated here)
-
-# Figure 6 — How different are Flow Persistence & TWI from the event sequence?
-
-```{r fig6-rank-rank}
+Boxplots, but making sure I am using the correct subset of events
+```{r}
 #| message: false
 #| warning: false
-#| fig-width: 9
-#| fig-height: 10
-# RQ3. Rank-rank agreement of each TEST sequence (Flow Persistence, TWI) against
-# the EVENT-based (observed) sequence. On the dashed 1:1 line = agreement. Points
-# coloured by signed rank deviation with a high-contrast diverging scale. No BFS.
+#| fig-width: 11
+#| fig-height: 6
+# For each event, compare its WETTING and DRYING sequence to the two MODEL
+# sequences (Flow Persistence, TWI) via Kendall's tau on shared nodes.
+# Drying ranks are REVERSED (1 = dries last) so that, like wetting and like the
+# model sequences, rank 1 = most persistent -> positive tau = model agrees.
 
-rr_vs_event <- function(consensus, fp, twi, shed){
-  ref <- consensus %>% transmute(ID, ref_rank = sequence)
-  bind_rows(fp  %>% transmute(ID, rank = sequence, method = "Flow Persistence"),
-            twi %>% transmute(ID, rank = sequence, method = "TWI")) %>%
-    inner_join(ref, by = "ID") %>% mutate(dev = rank - ref_rank, shed = shed)
+dir_spec <- list(
+  W3 = list(remove = c(13, 18), wetting_only = c(8, 10),            drying_only = integer(0)),
+  FB = list(remove = c(1),      wetting_only = c(3, 5, 9),          drying_only = c(7, 10, 12)),
+  ZZ = list(remove = c(),       wetting_only = c(4, 11, 12, 13),    drying_only = c(1))
+)
+universe <- list(W3 = 1:18, FB = 1:19, ZZ = 1:18)
+wetting_eligible <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$drying_only)))
+drying_eligible  <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$wetting_only)))
+keep_trans <- list(
+  W3 = events_with_transitions(input_w3, w3_events_all, W3_IDs, 3),
+  FB = events_with_transitions(input_fb, FBall_events,  FB_IDs, 3),
+  ZZ = events_with_transitions(input_zz, ZZall_events,  ZZ_IDs, 3))
+keep_wet <- Map(intersect, Map(wetting_eligible, dir_spec, universe), keep_trans)
+keep_dry <- Map(intersect, Map(drying_eligible,  dir_spec, universe), keep_trans)
+
+tau_event_model <- function(ev_ranks, model_seq, min_shared = 3){
+  m <- ev_ranks %>%
+    inner_join(model_seq %>% transmute(sensor_id = ID, mrank = sequence),
+               by = "sensor_id")
+  if (nrow(m) < min_shared) return(tibble(tau = NA_real_, p = NA_real_, n = nrow(m)))
+  ct <- suppressWarnings(cor.test(m$rank, m$mrank, method = "kendall"))
+  tibble(tau = unname(ct$estimate), p = ct$p.value, n = nrow(m))
 }
-rr_all <- bind_rows(
-  rr_vs_event(avg_event_w3, W3_pk_seq, w3_twi_sequence, "W3"),
-  rr_vs_event(avg_event_fb, FB_pk_seq, fb_twi_sequence, "FB"),
-  rr_vs_event(avg_event_zz, ZZ_pk_seq, zz_twi_sequence, "ZZ")) %>%
-  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ")))
 
-tau_rr <- rr_all %>% group_by(shed, method) %>%
-  summarise(tau = cor(rank, ref_rank, method = "kendall"), .groups = "drop") %>%
-  mutate(lab = paste0("tau = ", round(tau, 2)))
-# updated tau calculation, with p-value
-# small p-value means significantly associated
-tau_rr <- rr_all %>% group_by(shed, method) %>%
-  summarise(ct = list(cor.test(rank, ref_rank, method = "kendall")), .groups = "drop") %>%
-  mutate(tau = map_dbl(ct, "estimate"),
-         p   = map_dbl(ct, "p.value"),
-         lab = paste0("tau = ", round(tau, 2),
-                      "\np = ", format.pval(p, digits = 2, eps = 1e-3))) %>%
-  select(shed, method, lab)
+compare_dir <- function(dir_long, keep_events, pk_seq, twi_seq, shed, direction){
+  rl <- event_rank_list(dir_long)
+  evs <- intersect(names(rl), as.character(keep_events))
+  purrr::map_dfr(evs, function(e){
+    er <- rl[[e]]
+    # reverse drying ranks: 1 = dries last (most persistent), matching model order
+    if (direction == "Drying") er <- er %>% mutate(rank = max(rank) - rank + 1)
+    bind_rows(
+      tau_event_model(er, pk_seq)  %>% mutate(model = "Flow Persistence"),
+      tau_event_model(er, twi_seq) %>% mutate(model = "TWI")
+    ) %>% mutate(shed = shed, direction = direction, event_id = as.integer(e))
+  })
+}
 
-dmax <- max(abs(rr_all$dev), na.rm = TRUE)
-figure6 <- ggplot(rr_all, aes(ref_rank, rank)) +
-  geom_abline(slope = 1, linetype = 2, color = "grey60") +
-  geom_point(aes(color = dev), size = 4, color = "black") +
-  geom_text(aes(label = ID), color = "white", size = 2) +
-  geom_text(data = tau_rr, aes(-Inf, Inf, label = lab),
-            hjust = -0.15, vjust = 1.6, size = 3, inherit.aes = FALSE) +
-  # scale_color_gradientn(
-  #   colours = c("#00429d", "#4771b2", "#73a2c6", "grey88", "#f4777f", "#cf3759", "#93003a"),
-  #   limits = c(-dmax, dmax), name = "rank −\nevent") +
-  facet_grid(shed ~ method, scales = "free") +
-  labs(x = "Event-based rank (1 = wets first)", y = "Predicted rank",
-       title = "Test sequences vs. the event-based sequence") +
-  theme_bw() + theme(strip.background = element_blank(),
-                     text = element_text(size = 12))
-figure6
-ggsave("figure6_rank_rank.pdf", figure6, width = 6.5, units = "in")
+event_model_tau <- bind_rows(
+  compare_dir(ds_w3$wetting, keep_wet$W3, W3_pk_seq, w3_twi_sequence, "W3", "Wetting"),
+  compare_dir(ds_w3$drying,  keep_dry$W3, W3_pk_seq, w3_twi_sequence, "W3", "Drying"),
+  compare_dir(ds_fb$wetting, keep_wet$FB, FB_pk_seq, fb_twi_sequence, "FB", "Wetting"),
+  compare_dir(ds_fb$drying,  keep_dry$FB, FB_pk_seq, fb_twi_sequence, "FB", "Drying"),
+  compare_dir(ds_zz$wetting, keep_wet$ZZ, ZZ_pk_seq, zz_twi_sequence, "ZZ", "Wetting"),
+  compare_dir(ds_zz$drying,  keep_dry$ZZ, ZZ_pk_seq, zz_twi_sequence, "ZZ", "Drying")
+) %>%
+  filter(!is.na(tau)) %>%
+  mutate(shed      = factor(shed, levels = c("W3", "FB", "ZZ")),
+         direction = factor(direction, levels = c("Wetting", "Drying")),
+         model     = factor(model, levels = c("Flow Persistence", "TWI")))
+
+model_cols <- c("Flow Persistence" = "#7ebdc2", "TWI" = "#f3dfa2")
+
+fig_event_model <- ggplot(event_model_tau,
+                          aes(x = direction, y = tau, fill = model, color = model)) +
+  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
+  geom_boxplot(width = 0.55, alpha = 0.25, outlier.shape = NA,
+               position = position_dodge(0.65)) +
+  geom_point(size = 2, alpha = 0.8,
+             position = position_jitterdodge(jitter.width = 0.12, dodge.width = 0.65)) +
+  facet_wrap(~ shed) +
+  scale_fill_manual(values = model_cols, name = "Model sequence") +
+  scale_color_manual(values = model_cols, name = "Model sequence") +
+  coord_cartesian(ylim = c(-0.5, 1)) +
+  labs(x = "", y = "Kendall's tau (event order vs. model)") +
+  theme_bw(base_size = 12) +
+  theme(strip.background = element_blank(), legend.position = "right",
+        panel.grid.major = element_blank(), # Removes major grid lines
+    panel.grid.minor = element_blank())  # Removes minor grid lines)
+
+fig_event_model
+ggsave("figure_event_vs_model_tau.pdf", fig_event_model, width = 8.5, height = 3)
+ggsave("figure_event_vs_model_tau.png", fig_event_model, width = 8.5, height = 3)
+
+event_model_summary <- event_model_tau %>%
+  group_by(shed, direction, model) %>%
+  summarise(n_events = n(),
+            mean_tau = mean(tau), median_tau = median(tau), sd_tau = sd(tau),
+            frac_sig = mean(p < 0.05, na.rm = TRUE), .groups = "drop")
+knitr::kable(
+  event_model_summary %>%
+    mutate(across(c(mean_tau, median_tau, sd_tau, frac_sig), ~ round(.x, 3))),
+  caption = "Per-event agreement (Kendall's tau) of each event's wetting and (reversed) drying order with the Flow Persistence and TWI model sequences.")
 ```
 
 # Figure 7 — Flow Persistence vs. TWI accuracy through time (events only)
@@ -3020,69 +3126,74 @@ ggsave("figure8_accuracy_maps.pdf", figure8, width = 6.5, units = "in")
 ```
 
 
-# Table
+
+# Table 2 - average tau values across wetting vs wetting and drying vs drying
 ```{r}
 #| message: false
 #| warning: false
-# Accuracy of the Flow Persistence (pk) and TWI sequences DURING EVENTS ONLY.
-# Predictions come from the existing comparison tables (calc_model_result output);
-# here we simply evaluate them on event timesteps and split by hydrograph limb.
-# Positive class = "flowing" (1), so Sensitivity = correctly predicted flowing,
-# Specificity = correctly predicted dry.
+# Combines three analyses per watershed:
+#   (1) Wetting consistency = pairwise tau among wetting sequences across events
+#   (2) Drying consistency  = pairwise tau among drying sequences across events
+#   (3) Wetting vs drying   = within-event tau between an event's wetting & drying,
+#       tested with a one-sample Wilcoxon signed-rank test (H0: median tau = 0).
 
-event_metrics <- function(comparison, event_df, shed){
-  dat <- comparison %>%
-    select(datetime, ID, binary, pk, twi) %>%
-    inner_join(event_df %>% select(datetime, event_id, event_type) %>% distinct(),
-               by = "datetime") %>%
-    filter(!is.na(event_id), event_type != "baseflow") %>%
-    pivot_longer(c(pk, twi), names_to = "method", values_to = "pred") %>%
-    mutate(method = recode(method,
-                           pk  = "Flow Persistence",
-                           twi = "Topographic Wetness Index"))
-
-  comp_all  <- dat %>% mutate(component = "All event time")
-  comp_limb <- dat %>% filter(event_type %in% c("rising", "falling")) %>%
-    mutate(component = if_else(event_type == "rising", "Rising limb", "Falling limb"))
-
-  bind_rows(comp_all, comp_limb) %>%
-    group_by(shed = shed, method, component) %>%
-    summarise(n  = n(),
-              tp = sum(pred == 1 & binary == 1),
-              tn = sum(pred == 0 & binary == 0),
-              fp = sum(pred == 1 & binary == 0),
-              fn = sum(pred == 0 & binary == 1),
+summ_consistency <- function(df, label){
+  df %>% group_by(shed) %>%
+    summarise(n        = n(),
+              mean_tau = mean(kendall_tau, na.rm = TRUE),
+              sd_tau   = sd(kendall_tau, na.rm = TRUE),
+              frac_sig = mean(tau_p < 0.05, na.rm = TRUE),
+              wilcox_p = NA_real_,
               .groups = "drop") %>%
-    mutate(Accuracy    = (tp + tn) / n,
-           Sensitivity = tp / (tp + fn),
-           Specificity = tn / (tn + fp)) %>%
-    select(shed, method, component, n, Accuracy, Sensitivity, Specificity)
+    mutate(comparison = label)
 }
 
-event_accuracy <- bind_rows(
-  event_metrics(w3_mod$comparison, w3_events_all, "W3"),
-  event_metrics(fb_mod$comparison, FBall_events,  "FB"),
-  event_metrics(zz_mod$comparison, ZZall_events,  "ZZ")
-) %>%
-  mutate(component = factor(component,
-                    levels = c("All event time", "Rising limb", "Falling limb")),
-         method = factor(method,
-                    levels = c("Flow Persistence", "Topographic Wetness Index")),
-         shed   = factor(shed, levels = c("W3", "FB", "ZZ"))) %>%
-  arrange(shed, method, component)
+# within-event wetting-vs-drying: Wilcoxon signed-rank on the per-event taus ----
+wet_dry_wilcox <- wet_dry_events %>%
+  group_by(shed) %>%
+  summarise(n        = n(),
+            mean_tau = mean(kendall_tau, na.rm = TRUE),
+            sd_tau   = sd(kendall_tau, na.rm = TRUE),
+            frac_sig = NA_real_,
+            wilcox_p = tryCatch(
+              wilcox.test(kendall_tau, mu = 0)$p.value,
+              error = function(e) NA_real_),
+            .groups = "drop") %>%
+  mutate(comparison = "Wetting vs drying (within event)")
 
-# nicely formatted table (percentages, 1 decimal) -----------------------------
-event_accuracy_fmt <- event_accuracy %>%
-  mutate(across(c(Accuracy, Sensitivity, Specificity), ~ round(. * 100, 1)))
+consistency <- bind_rows(
+  summ_consistency(wetting_pairs, "Wetting consistency (across events)"),
+  summ_consistency(drying_pairs,  "Drying consistency (across events)"),
+  wet_dry_wilcox
+) %>%
+  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ")),
+         comparison = factor(comparison, levels = c(
+           "Wetting consistency (across events)",
+           "Drying consistency (across events)",
+           "Wetting vs drying (within event)"))) %>%
+  mutate(interpretation = case_when(
+    comparison != "Wetting vs drying (within event)" & mean_tau >= 0.5 ~ "Highly consistent",
+    comparison != "Wetting vs drying (within event)" & mean_tau >= 0.3 ~ "Moderately consistent",
+    comparison != "Wetting vs drying (within event)"                   ~ "Weakly consistent",
+    mean_tau <= -0.3 & wilcox_p < 0.05 ~ "Significantly reversed",
+    mean_tau <    0  & wilcox_p < 0.05 ~ "Reversed (weak but sig.)",
+    wilcox_p >= 0.05 | is.na(wilcox_p) ~ "No sig. difference",
+    TRUE ~ "Same order both directions")) %>%
+  arrange(shed, comparison) %>%
+  select(shed, comparison, n, mean_tau, sd_tau, frac_sig, wilcox_p, interpretation)
 
 knitr::kable(
-  event_accuracy_fmt,
-  col.names = c("Watershed", "Sequence", "Hydrograph component", "n",
-                "Accuracy (%)", "Sensitivity (%)", "Specificity (%)"),
-  align = c("l", "l", "l", "r", "r", "r", "r"),
-  caption = "Predictive accuracy of the Flow Persistence and TWI sequences during events only, reported overall (all event timesteps) and separately for the rising and falling limbs. Positive class = flowing: Sensitivity = fraction of flowing observations correctly predicted, Specificity = fraction of dry observations correctly predicted."
-)
+  consistency %>%
+    mutate(across(c(mean_tau, sd_tau, frac_sig), ~ round(.x, 3)),
+           wilcox_p = ifelse(is.na(wilcox_p), "—",
+                             format.pval(wilcox_p, digits = 2, eps = 1e-3))),
+  col.names = c("Watershed", "Comparison", "n", "Mean tau", "SD tau",
+                "Frac. p<0.05", "Wilcoxon p", "Interpretation"),
+  align = c("l", "l", "r", "r", "r", "r", "r", "l"),
+  caption = "Combined sequence analysis. Rows 1-2: internal consistency of wetting and drying sequences across events (Frac. p<0.05 = share of event pairs with significant positive tau). Row 3: within-event wetting-vs-drying order, tested with a one-sample Wilcoxon signed-rank test (H0: median tau = 0); negative mean tau = drying reverses wetting. n = event pairs (rows 1-2) or events (row 3).")
 ```
+
+# Table 3 - Accuracy of test sequences
 ```{r}
 #| message: false
 #| warning: false
@@ -3157,7 +3268,6 @@ knitr::kable(
 
 
 ```
-
 ```{r}
 #| message: false
 #| warning: false
@@ -3255,2114 +3365,6 @@ gtsave(tbl_dir, "./wetting_drying_acc.png")
 
 ```
 
-# 8-27-26 added thing
-```{r}
-#| message: false
-#| warning: false
-# All-pairs comparison of per-event WETTING and DRYING sequences within each
-# watershed. For every unordered pair of events (i, j) that share >= 3 nodes,
-# compute Kendall's tau and Pearson's r between the two nodes' ranks. Then
-# summarise how tau and r agree.
-#
-# Per-event direction sequences come from direction_sequences(): $wetting and
-# $drying are long tibbles (event_id, sensor_id) already ordered by activation.
 
-# turn a $wetting/$drying long tibble into per-event rank vectors --------------
-event_rank_list <- function(dir_long){
-  dir_long %>%
-    group_by(event_id) %>%
-    mutate(rank = row_number()) %>%          # activation order within the event
-    ungroup() %>%
-    { split(select(., sensor_id, rank), .$event_id) }
-}
 
-# tau + r for one watershed / one direction, all event pairs ------------------
-pairwise_event_corr <- function(dir_long, shed, direction, min_shared = 3){
-  rl <- event_rank_list(dir_long)
-  evs <- names(rl)
-  if (length(evs) < 2) return(tibble())
-  out <- vector("list", 0)
-  combos <- combn(evs, 2, simplify = FALSE)
-  for (cc in combos){
-    a <- rl[[cc[1]]]; b <- rl[[cc[2]]]
-    m <- inner_join(a, b, by = "sensor_id", suffix = c("_i", "_j"))
-    if (nrow(m) < min_shared) next
-    kt <- suppressWarnings(cor(m$rank_i, m$rank_j, method = "kendall"))
-    pr <- suppressWarnings(cor(m$rank_i, m$rank_j, method = "pearson"))
-    out[[length(out) + 1]] <- tibble(
-      shed = shed, direction = direction,
-      event_i = cc[1], event_j = cc[2],
-      n_shared = nrow(m), kendall_tau = kt, pearson_r = pr)
-  }
-  bind_rows(out)
-}
 
-# run for all watersheds x both directions ------------------------------------
-pairwise_all <- bind_rows(
-  pairwise_event_corr(ds_w3$wetting, "W3", "Wetting"),
-  pairwise_event_corr(ds_w3$drying,  "W3", "Drying"),
-  pairwise_event_corr(ds_fb$wetting, "FB", "Wetting"),
-  pairwise_event_corr(ds_fb$drying,  "FB", "Drying"),
-  pairwise_event_corr(ds_zz$wetting, "ZZ", "Wetting"),
-  pairwise_event_corr(ds_zz$drying,  "ZZ", "Drying")
-) %>%
-  mutate(shed      = factor(shed, levels = c("W3", "FB", "ZZ")),
-         direction = factor(direction, levels = c("Wetting", "Drying")))
-
-# ── summary: distribution of each coefficient, and tau-vs-r agreement ────────
-pairwise_summary <- pairwise_all %>%
-  group_by(shed, direction) %>%
-  summarise(
-    n_pairs      = n(),
-    mean_tau     = mean(kendall_tau, na.rm = TRUE),
-    median_tau   = median(kendall_tau, na.rm = TRUE),
-    sd_tau       = sd(kendall_tau, na.rm = TRUE),
-    mean_r       = mean(pearson_r, na.rm = TRUE),
-    median_r     = median(pearson_r, na.rm = TRUE),
-    sd_r         = sd(pearson_r, na.rm = TRUE),
-    mean_diff    = mean(pearson_r - kendall_tau, na.rm = TRUE),   # r tends to be larger
-    tau_r_corr   = cor(kendall_tau, pearson_r,
-                       use = "complete.obs", method = "spearman"),
-    .groups = "drop")
-
-knitr::kable(
-  pairwise_summary %>%
-    mutate(across(c(mean_tau, median_tau, sd_tau, mean_r, median_r, sd_r,
-                    mean_diff, tau_r_corr), ~ round(.x, 3))),
-  col.names = c("Watershed", "Direction", "Pairs",
-                "Mean tau", "Median tau", "SD tau",
-                "Mean r", "Median r", "SD r",
-                "Mean (r - tau)", "tau~r rank corr"),
-  caption = "Pairwise similarity of per-event activation sequences within each watershed, for wetting and drying. Each event's sequence is compared to every other event's (nodes shared by both). Reported: distribution of Kendall's tau and Pearson's r across event pairs, their mean difference, and the Spearman correlation between the two coefficients across pairs."
-)
-```
-
-Compare wetting to drying
-```{r}
-#| message: false
-#| warning: false
-# Within each event, compare that event's WETTING sequence to its own DRYING
-# sequence (nodes shared by both), using Kendall's tau and Pearson's r. Then
-# summarise across all events, per watershed.
-#
-# Reuses event_rank_list() from the pairwise chunk. ds_*$wetting / ds_*$drying
-# are the per-event long tibbles (event_id, sensor_id) from direction_sequences().
-
-wet_dry_event_corr <- function(wet_long, dry_long, shed, min_shared = 3){
-  wl <- event_rank_list(wet_long)
-  dl <- event_rank_list(dry_long)
-  evs <- intersect(names(wl), names(dl))          # events with both phases
-  out <- vector("list", 0)
-  for (e in evs){
-    m <- inner_join(wl[[e]], dl[[e]], by = "sensor_id", suffix = c("_wet", "_dry"))
-    if (nrow(m) < min_shared) next
-    kt <- suppressWarnings(cor(m$rank_wet, m$rank_dry, method = "kendall"))
-    pr <- suppressWarnings(cor(m$rank_wet, m$rank_dry, method = "pearson"))
-    out[[length(out) + 1]] <- tibble(
-      shed = shed, event_id = e, n_shared = nrow(m),
-      kendall_tau = kt, pearson_r = pr)
-  }
-  bind_rows(out)
-}
-
-wet_dry_all <- bind_rows(
-  wet_dry_event_corr(ds_w3$wetting, ds_w3$drying, "W3"),
-  wet_dry_event_corr(ds_fb$wetting, ds_fb$drying, "FB"),
-  wet_dry_event_corr(ds_zz$wetting, ds_zz$drying, "ZZ")
-) %>%
-  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ")))
-
-# ── summary across events, per watershed ─────────────────────────────────────
-wet_dry_summary <- wet_dry_all %>%
-  group_by(shed) %>%
-  summarise(
-    n_events   = n(),
-    mean_tau   = mean(kendall_tau, na.rm = TRUE),
-    median_tau = median(kendall_tau, na.rm = TRUE),
-    sd_tau     = sd(kendall_tau, na.rm = TRUE),
-    mean_r     = mean(pearson_r, na.rm = TRUE),
-    median_r   = median(pearson_r, na.rm = TRUE),
-    sd_r       = sd(pearson_r, na.rm = TRUE),
-    mean_diff  = mean(pearson_r - kendall_tau, na.rm = TRUE),
-    tau_r_corr = cor(kendall_tau, pearson_r,
-                     use = "complete.obs", method = "spearman"),
-    .groups = "drop")
-
-knitr::kable(
-  wet_dry_summary %>%
-    mutate(across(c(mean_tau, median_tau, sd_tau, mean_r, median_r, sd_r,
-                    mean_diff, tau_r_corr), ~ round(.x, 3))),
-  col.names = c("Watershed", "Events",
-                "Mean tau", "Median tau", "SD tau",
-                "Mean r", "Median r", "SD r",
-                "Mean (r - tau)", "tau~r rank corr"),
-  caption = "Within-event similarity of the wetting vs. drying sequence, summarized across events for each watershed. For every event, the wetting order and drying order are compared on their shared nodes (Kendall's tau, Pearson's r). Reported: distribution of each coefficient across events, their mean difference, and the Spearman correlation between the two coefficients across events."
-)
-```
-
-```{r}
-#| message: false
-#| warning: false
-# Within each event, compare its WETTING vs DRYING sequence on shared nodes,
-# reporting Kendall's tau and Pearson's r WITH p-values, one row per event.
-# Reuses event_rank_list() from the pairwise chunk. p-values: cor.test tests
-# H0: coefficient = 0 (no association between the two orders).
-
-wet_dry_event_tests <- function(wet_long, dry_long, shed, min_shared = 3){
-  wl <- event_rank_list(wet_long)
-  dl <- event_rank_list(dry_long)
-  evs <- intersect(names(wl), names(dl))
-  out <- vector("list", 0)
-  for (e in evs){
-    m <- inner_join(wl[[e]], dl[[e]], by = "sensor_id", suffix = c("_wet", "_dry"))
-    if (nrow(m) < min_shared) next
-    kt <- suppressWarnings(cor.test(m$rank_wet, m$rank_dry, method = "kendall"))
-    pr <- suppressWarnings(cor.test(m$rank_wet, m$rank_dry, method = "pearson"))
-    out[[length(out) + 1]] <- tibble(
-      shed = shed, event_id = as.integer(e), n_shared = nrow(m),
-      kendall_tau = unname(kt$estimate), tau_p = kt$p.value,
-      pearson_r   = unname(pr$estimate), r_p   = pr$p.value)
-  }
-  bind_rows(out)
-}
-
-wet_dry_events <- bind_rows(
-  wet_dry_event_tests(ds_w3$wetting, ds_w3$drying, "W3"),
-  wet_dry_event_tests(ds_fb$wetting, ds_fb$drying, "FB"),
-  wet_dry_event_tests(ds_zz$wetting, ds_zz$drying, "ZZ")
-) %>%
-  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ"))) %>%
-  arrange(shed, event_id)
-
-knitr::kable(
-  wet_dry_events %>%
-    mutate(kendall_tau = round(kendall_tau, 3),
-           pearson_r   = round(pearson_r, 3),
-           tau_p = format.pval(tau_p, digits = 2, eps = 1e-3),
-           r_p   = format.pval(r_p,   digits = 2, eps = 1e-3)),
-  col.names = c("Watershed", "Event", "Shared nodes",
-                "Kendall tau", "tau p", "Pearson r", "r p"),
-  align = c("l", "r", "r", "r", "r", "r", "r"),
-  caption = "Within-event similarity of wetting vs. drying sequence, per event. Kendall's tau and Pearson's r computed on nodes shared by both phases, each with a p-value testing H0: coefficient = 0 (no association). Negative values indicate a reversed order (wets first, dries last)."
-)
-
-
-# Within each event, compare its WETTING vs DRYING sequence on shared nodes,
-# reporting Kendall's tau and Pearson's r WITH p-values, one row per event,
-# plus the number of nodes that CHANGED STATE during the event.
-# Reuses event_rank_list() from the pairwise chunk.
-
-# nodes that changed state (had both wet and dry obs) per event ---------------
-changed_nodes_per_event <- function(input, event_df, ids, shed){
-  input %>% filter(ID %in% ids) %>%
-    inner_join(event_df %>% select(datetime, event_id, event_type), by = "datetime") %>%
-    filter(!is.na(event_id), event_type != "baseflow") %>%
-    group_by(event_id, ID) %>%
-    summarise(n = n(), n_wet = sum(binary == 1), .groups = "drop") %>%
-    filter(n_wet > 0, n_wet < n) %>%                 # both states seen -> changed
-    group_by(event_id) %>%
-    summarise(n_changed = n_distinct(ID), .groups = "drop") %>%
-    mutate(shed = shed, event_id = as.integer(event_id))
-}
-
-changed_counts <- bind_rows(
-  changed_nodes_per_event(input_w3, w3_events_all, W3_IDs, "W3"),
-  changed_nodes_per_event(input_fb, FBall_events,  FB_IDs, "FB"),
-  changed_nodes_per_event(input_zz, ZZall_events,  ZZ_IDs, "ZZ")
-)
-
-wet_dry_event_tests <- function(wet_long, dry_long, shed, min_shared = 3){
-  wl <- event_rank_list(wet_long)
-  dl <- event_rank_list(dry_long)
-  evs <- intersect(names(wl), names(dl))
-  out <- vector("list", 0)
-  for (e in evs){
-    m <- inner_join(wl[[e]], dl[[e]], by = "sensor_id", suffix = c("_wet", "_dry"))
-    if (nrow(m) < min_shared) next
-    kt <- suppressWarnings(cor.test(m$rank_wet, m$rank_dry, method = "kendall"))
-    pr <- suppressWarnings(cor.test(m$rank_wet, m$rank_dry, method = "pearson"))
-    out[[length(out) + 1]] <- tibble(
-      shed = shed, event_id = as.integer(e), n_shared = nrow(m),
-      kendall_tau = unname(kt$estimate), tau_p = kt$p.value,
-      pearson_r   = unname(pr$estimate), r_p   = pr$p.value)
-  }
-  bind_rows(out)
-}
-
-wet_dry_events <- bind_rows(
-  wet_dry_event_tests(ds_w3$wetting, ds_w3$drying, "W3"),
-  wet_dry_event_tests(ds_fb$wetting, ds_fb$drying, "FB"),
-  wet_dry_event_tests(ds_zz$wetting, ds_zz$drying, "ZZ")
-) %>%
-  left_join(changed_counts, by = c("shed", "event_id")) %>%
-  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ"))) %>%
-  arrange(shed, event_id) %>%
-  select(shed, event_id, n_changed, n_shared,
-         kendall_tau, tau_p, pearson_r, r_p)
-
-knitr::kable(
-  wet_dry_events %>%
-    mutate(kendall_tau = round(kendall_tau, 3),
-           pearson_r   = round(pearson_r, 3),
-           tau_p = format.pval(tau_p, digits = 2, eps = 1e-3),
-           r_p   = format.pval(r_p,   digits = 2, eps = 1e-3)),
-  col.names = c("Watershed", "Event", "Nodes changed", "Shared nodes",
-                "Kendall tau", "tau p", "Pearson r", "r p"),
-  align = c("l", "r", "r", "r", "r", "r", "r", "r"),
-  caption = "Within-event similarity of wetting vs. drying sequence, per event. 'Nodes changed' = sensors that recorded both wet and dry during the event; 'Shared nodes' = sensors that activated in both the wetting and drying phases (the n used for tau and r). Each coefficient's p-value tests H0: coefficient = 0."
-)
-```
-
-```{r}
-#| message: false
-#| warning: false
-#| fig-width: 11
-#| fig-height: 9
-# Each individual event as a presence/absence tile plot, with a vertical line
-# at the peak network extent separating WETTING (left) from DRYING (right).
-# Reuses event_specific_order() from the fig2 chunk.
-flow_tile_cols <- c("0" = "grey80", "1" = "black")   # dry / flowing; NA -> white
-
-fig_events_wet_dry <- function(shed, input, event_df, ids,
-                               consensus = NULL,
-                               event_ids = NULL,
-                               y_order   = c("wetting", "consensus"),
-                               ncol      = NULL){
-  y_order <- match.arg(y_order)
-
-  dat_all <- input %>% filter(ID %in% ids) %>%
-    inner_join(event_df %>% select(datetime, event_id, event_type), by = "datetime") %>%
-    filter(!is.na(event_id), event_type != "baseflow")
-
-  if (is.null(event_ids)) event_ids <- sort(unique(dat_all$event_id))
-  dat_all <- dat_all %>% filter(event_id %in% event_ids) %>%
-    group_by(event_id) %>%
-    mutate(hr = as.numeric(difftime(datetime, min(datetime), units = "hours"))) %>%
-    ungroup()
-
-  # peak network-extent time (wetting/drying boundary) + event end, in hours
-  bounds <- dat_all %>% group_by(event_id) %>%
-    summarise(end_hr = max(hr), .groups = "drop")
-  peaks <- dat_all %>%
-    group_by(event_id, hr) %>%
-    summarise(nw = sum(binary == 1), .groups = "drop") %>%
-    group_by(event_id) %>%
-    slice_max(nw, n = 1, with_ties = FALSE) %>%
-    transmute(event_id, peak_hr = hr) %>%
-    left_join(bounds, by = "event_id")
-
-  # y-axis ordering ----------------------------------------------------------
-  if (y_order == "consensus"){
-    if (is.null(consensus)) stop("Provide `consensus` for y_order = 'consensus'.")
-    dat_plot <- dat_all %>% inner_join(consensus %>% transmute(ID, y = sequence), by = "ID")
-    ylab <- "Consensus order (1 = wets first)"; yscale <- "free_x"
-  } else {
-    rank_tbl <- dat_all %>% group_by(event_id) %>%
-      group_modify(~ event_specific_order(.x)) %>% ungroup() %>%
-      rename(y = event_rank)
-    dat_plot <- dat_all %>% inner_join(rank_tbl, by = c("event_id", "ID"))
-    ylab <- "Event wetting order (1 = wets first)"; yscale <- "free"
-  }
-
-  ggplot(dat_plot, aes(hr, y, fill = factor(binary))) +
-    # shade the drying side lightly, then tiles, then the boundary line
-    geom_rect(data = peaks, inherit.aes = FALSE,
-              aes(xmin = peak_hr, xmax = end_hr, ymin = -Inf, ymax = Inf),
-              fill = "grey95") +
-    geom_tile() +
-    geom_vline(data = peaks, aes(xintercept = peak_hr),
-               linetype = 2, colour = "red", linewidth = 0.6) +
-    scale_fill_manual(values = flow_tile_cols, breaks = c("0", "1"),
-                      labels = c("Dry", "Flowing"), name = "",
-                      drop = FALSE, na.value = "white") +
-    facet_wrap(~ event_id, scales = yscale, ncol = ncol) +
-    labs(x = "Hours since event start", y = ylab,
-         title = paste0(shed, ": wetting (left of line) vs. drying (right, shaded)")) +
-    theme_classic(base_size = 11) +
-    theme(strip.background = element_blank(),
-          legend.position = "top",
-          axis.text = element_text(size = 8))
-}
-
-# W3, all events, ordered by each event's own wetting sequence ----------------
-fig_wet_dry_w3 <- fig_events_wet_dry(
-  shed = "W3", input = input_w3, event_df = w3_events_all, ids = W3_IDs,
-  y_order = "wetting")
-fig_wet_dry_w3
-ggsave("figure_events_wet_dry_w3.pdf", fig_wet_dry_w3, width = 11, height = 9)
-
-
-# FB, all events, ordered by each event's own wetting sequence ----------------
-fig_wet_dry_fb <- fig_events_wet_dry(
-  shed = "FB", input = input_fb, event_df = FBall_events, ids = FB_IDs,
-  y_order = "wetting")
-fig_wet_dry_fb
-ggsave("figure_events_wet_dry_fb.pdf", fig_wet_dry_fb, width = 11, height = 9)
-
-# ZZ, all events, ordered by each event's own wetting sequence ----------------
-fig_wet_dry_zz <- fig_events_wet_dry(
-  shed = "ZZ", input = input_zz, event_df = ZZall_events, ids = ZZ_IDs,
-  y_order = "wetting")
-fig_wet_dry_zz
-ggsave("figure_events_wet_dry_zz.pdf", fig_wet_dry_zz, width = 11, height = 9)
-```
-
-Filter events to only ones where 5 nodes wetted and dried
-```{r}
-#| message: false
-#| warning: false
-# Return the event IDs where at least `min_n` sensors BOTH wetted and dried
-# during the event. "Wetted" = went dry->flowing at some point within the event;
-# "dried" = went flowing->dry. A sensor counts toward the threshold only if it
-# did both, so these are the nodes with a full activation/deactivation cycle.
-events_with_transitions <- function(input, event_df, ids, min_n = 5){
-  input %>%
-    filter(ID %in% ids) %>%
-    inner_join(event_df %>% select(datetime, event_id, event_type), by = "datetime") %>%
-    filter(!is.na(event_id), event_type != "baseflow") %>%
-    arrange(event_id, ID, datetime) %>%
-    group_by(event_id, ID) %>%
-    summarise(
-      wetted = any(binary == 1 & lag(binary) == 0),   # a dry->wet transition
-      dried  = any(binary == 0 & lag(binary) == 1),   # a wet->dry transition
-      .groups = "drop") %>%
-    filter(wetted, dried) %>%                          # sensor did both
-    count(event_id, name = "n_cycled") %>%
-    filter(n_cycled >= min_n) %>%
-    pull(event_id) %>%
-    sort()
-}
-unique(w3_events_all$event_id)
-unique(FBall_events$event_id)
-unique(ZZall_events$event_id)
-
-w3_keep <- events_with_transitions(input_w3, w3_events_all, W3_IDs, min_n = 5)
-fb_keep <- events_with_transitions(input_fb, FBall_events,  FB_IDs, min_n = 5)
-zz_keep <- events_with_transitions(input_zz, ZZall_events,  ZZ_IDs, min_n = 5)
-
-fig_events_wet_dry("W3", input_w3, w3_events_all, W3_IDs,
-                   y_order = "wetting", event_ids = w3_keep)
-fig_events_wet_dry("FB", input_fb, FBall_events, FB_IDs,
-                   y_order = "wetting", event_ids = fb_keep)
-fig_events_wet_dry("ZZ", input_zz, ZZall_events, ZZ_IDs,
-                   y_order = "wetting", event_ids = zz_keep)
-```
-
-
-```{r}
-#| message: false
-#| warning: false
-# ---- Curation: trustworthy directions per event (from before) ---------------
-dir_spec <- list(
-  W3 = list(remove = c(13, 18), wetting_only = c(8, 10),            drying_only = integer(0)),
-  FB = list(remove = c(1),      wetting_only = c(3, 5, 9),          drying_only = c(7, 10, 12)),
-  ZZ = list(remove = c(10),     wetting_only = c(3, 4, 11, 12, 13), drying_only = integer(0))
-)
-universe <- list(W3 = 1:18, FB = 1:19, ZZ = 1:18)   # total events per watershed
-
-both_dir_events <- function(spec, u)
-  sort(setdiff(u, c(spec$remove, spec$wetting_only, spec$drying_only)))
-
-# ---- Transition filter: >= 5 sensors that go dry->wet AND wet->dry ----------
-events_with_transitions <- function(input, event_df, ids, min_n = 5){
-  input %>%
-    filter(ID %in% ids) %>%
-    inner_join(event_df %>% select(datetime, event_id, event_type), by = "datetime") %>%
-    filter(!is.na(event_id), event_type != "baseflow") %>%
-    arrange(event_id, ID, datetime) %>%
-    group_by(event_id, ID) %>%
-    summarise(wetted = any(binary == 1 & lag(binary) == 0),
-              dried  = any(binary == 0 & lag(binary) == 1), .groups = "drop") %>%
-    filter(wetted, dried) %>%
-    count(event_id, name = "n_cycled") %>%
-    filter(n_cycled >= min_n) %>%
-    pull(event_id) %>% sort()
-}
-
-# ---- Combine curation + transition filter -----------------------------------
-keep_curated <- Map(both_dir_events, dir_spec, universe)
-keep_trans <- list(
-  W3 = events_with_transitions(input_w3, w3_events_all, W3_IDs, 5),
-  FB = events_with_transitions(input_fb, FBall_events,  FB_IDs, 5),
-  ZZ = events_with_transitions(input_zz, ZZall_events,  ZZ_IDs, 5)
-)
-keep <- Map(intersect, keep_curated, keep_trans)
-for (s in names(keep))
-  message(s, ": ", length(keep[[s]]), " events after curation + >=5 cycled -> ",
-          paste(keep[[s]], collapse = ", "))
-
-# ---- per-event wetting-vs-drying tests --------------------------------------
-event_rank_list <- function(dir_long){
-  dir_long %>% group_by(event_id) %>% mutate(rank = row_number()) %>% ungroup() %>%
-    { split(select(., sensor_id, rank), .$event_id) }
-}
-wet_dry_event_tests <- function(wet_long, dry_long, shed, keep_events, min_shared = 3){
-  wl <- event_rank_list(wet_long); dl <- event_rank_list(dry_long)
-  evs <- intersect(intersect(names(wl), names(dl)), as.character(keep_events))
-  out <- vector("list", 0)
-  for (e in evs){
-    m <- inner_join(wl[[e]], dl[[e]], by = "sensor_id", suffix = c("_wet", "_dry"))
-    if (nrow(m) < min_shared) next
-    kt <- suppressWarnings(cor.test(m$rank_wet, m$rank_dry, method = "kendall"))
-    pr <- suppressWarnings(cor.test(m$rank_wet, m$rank_dry, method = "pearson"))
-    out[[length(out) + 1]] <- tibble(
-      shed = shed, event_id = as.integer(e), n_shared = nrow(m),
-      kendall_tau = unname(kt$estimate), tau_p = kt$p.value,
-      pearson_r   = unname(pr$estimate), r_p   = pr$p.value)
-  }
-  bind_rows(out)
-}
-
-wet_dry_events <- bind_rows(
-  wet_dry_event_tests(ds_w3$wetting, ds_w3$drying, "W3", keep$W3),
-  wet_dry_event_tests(ds_fb$wetting, ds_fb$drying, "FB", keep$FB),
-  wet_dry_event_tests(ds_zz$wetting, ds_zz$drying, "ZZ", keep$ZZ)
-) %>%
-  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ"))) %>%
-  arrange(shed, event_id)
-
-# ---- Table 1: per event -----------------------------------------------------
-knitr::kable(
-  wet_dry_events %>%
-    mutate(kendall_tau = round(kendall_tau, 3), pearson_r = round(pearson_r, 3),
-           tau_p = format.pval(tau_p, digits = 2, eps = 1e-3),
-           r_p   = format.pval(r_p,   digits = 2, eps = 1e-3)),
-  col.names = c("Watershed", "Event", "Shared nodes",
-                "Kendall tau", "tau p", "Pearson r", "r p"),
-  align = c("l", "r", "r", "r", "r", "r", "r"),
-  caption = "Per-event wetting-vs-drying similarity. Events curated for valid directions and further restricted to those with >= 5 sensors that both wetted (dry->wet) and dried (wet->dry) during the event. Negative tau = reversed order.")
-
-# ---- Table 2: average across kept events ------------------------------------
-wet_dry_summary <- wet_dry_events %>%
-  group_by(shed) %>%
-  summarise(n_events   = n(),
-            mean_tau   = mean(kendall_tau, na.rm = TRUE),
-            median_tau = median(kendall_tau, na.rm = TRUE),
-            sd_tau     = sd(kendall_tau, na.rm = TRUE),
-            mean_r     = mean(pearson_r, na.rm = TRUE),
-            median_r   = median(pearson_r, na.rm = TRUE),
-            sd_r       = sd(pearson_r, na.rm = TRUE),
-            .groups = "drop")
-
-knitr::kable(
-  wet_dry_summary %>%
-    mutate(across(c(mean_tau, median_tau, sd_tau, mean_r, median_r, sd_r), ~ round(.x, 3))),
-  col.names = c("Watershed", "Events", "Mean tau", "Median tau", "SD tau",
-                "Mean r", "Median r", "SD r"),
-  caption = "Average wetting-vs-drying similarity across curated events with >= 5 fully-cycling sensors.")
-```
-
-Wetting compared to wetting
-```{r}
-#| message: false
-#| warning: false
-# Reuses dir_spec, universe, events_with_transitions(), event_rank_list() from
-# the previous chunks. Wetting-vs-wetting comparison: an event is eligible if its
-# WETTING order is valid -> both-direction events + wetting_only events, minus
-# removed events, then gated by >= 5 fully-cycling sensors.
-
-wetting_eligible <- function(spec, u)
-  sort(setdiff(u, c(spec$remove, spec$drying_only)))   # keep both + wetting_only
-
-keep_wet_curated <- Map(wetting_eligible, dir_spec, universe)
-keep_trans <- list(
-  W3 = events_with_transitions(input_w3, w3_events_all, W3_IDs, 5),
-  FB = events_with_transitions(input_fb, FBall_events,  FB_IDs, 5),
-  ZZ = events_with_transitions(input_zz, ZZall_events,  ZZ_IDs, 5)
-)
-keep_wet <- Map(intersect, keep_wet_curated, keep_trans)
-for (s in names(keep_wet))
-  message(s, ": ", length(keep_wet[[s]]), " wetting events -> ",
-          paste(keep_wet[[s]], collapse = ", "))
-
-# ---- all-pairs wetting-vs-wetting within a watershed ------------------------
-pairwise_wetting <- function(wet_long, shed, keep_events, min_shared = 3){
-  rl <- event_rank_list(wet_long)
-  evs <- intersect(names(rl), as.character(keep_events))
-  if (length(evs) < 2) return(tibble())
-  out <- vector("list", 0)
-  for (cc in combn(evs, 2, simplify = FALSE)){
-    m <- inner_join(rl[[cc[1]]], rl[[cc[2]]], by = "sensor_id", suffix = c("_i", "_j"))
-    if (nrow(m) < min_shared) next
-    kt <- suppressWarnings(cor.test(m$rank_i, m$rank_j, method = "kendall"))
-    out[[length(out) + 1]] <- tibble(
-      shed = shed, event_i = as.integer(cc[1]), event_j = as.integer(cc[2]),
-      n_shared = nrow(m), kendall_tau = unname(kt$estimate), tau_p = kt$p.value)
-  }
-  bind_rows(out)
-}
-
-wetting_pairs <- bind_rows(
-  pairwise_wetting(ds_w3$wetting, "W3", keep_wet$W3),
-  pairwise_wetting(ds_fb$wetting, "FB", keep_wet$FB),
-  pairwise_wetting(ds_zz$wetting, "ZZ", keep_wet$ZZ)
-) %>%
-  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ"))) %>%
-  arrange(shed, event_i, event_j)
-
-# ---- Table 1: every wetting-event pair --------------------------------------
-knitr::kable(
-  wetting_pairs %>%
-    mutate(kendall_tau = round(kendall_tau, 3),
-           tau_p = format.pval(tau_p, digits = 2, eps = 1e-3)),
-  col.names = c("Watershed", "Event i", "Event j", "Shared nodes",
-                "Kendall tau", "tau p"),
-  align = c("l", "r", "r", "r", "r", "r"),
-  caption = "Pairwise similarity of every wetting sequence to every other wetting sequence within a watershed. Events eligible if their wetting order is valid (both-direction + wetting-only, removed excluded) and >= 5 sensors fully cycled. Kendall tau on shared nodes; p tests H0: tau = 0.")
-
-# ---- Table 2: per-watershed summary across pairs ----------------------------
-wetting_pairs_summary <- wetting_pairs %>%
-  group_by(shed) %>%
-  summarise(n_events   = length(unique(c(event_i, event_j))),
-            n_pairs    = n(),
-            mean_tau   = mean(kendall_tau, na.rm = TRUE),
-            median_tau = median(kendall_tau, na.rm = TRUE),
-            sd_tau     = sd(kendall_tau, na.rm = TRUE),
-            frac_sig   = mean(tau_p < 0.05, na.rm = TRUE),
-            .groups = "drop")
-
-knitr::kable(
-  wetting_pairs_summary %>%
-    mutate(across(c(mean_tau, median_tau, sd_tau, frac_sig), ~ round(.x, 3))),
-  col.names = c("Watershed", "Events", "Pairs", "Mean tau", "Median tau",
-                "SD tau", "Frac. p<0.05"),
-  caption = "Consistency of the wetting sequence through time: distribution of pairwise Kendall tau across all wetting-event pairs per watershed.")
-```
-
-drying compared to drying
-```{r}
-#| message: false
-#| warning: false
-# Reuses dir_spec, universe, events_with_transitions(), event_rank_list() from
-# earlier chunks. Drying-vs-drying comparison: an event is eligible if its DRYING
-# order is valid -> both-direction events + drying_only events, minus removed
-# events, then gated by >= 5 fully-cycling sensors.
-
-drying_eligible <- function(spec, u)
-  sort(setdiff(u, c(spec$remove, spec$wetting_only)))   # keep both + drying_only
-
-keep_dry_curated <- Map(drying_eligible, dir_spec, universe)
-keep_trans <- list(
-  W3 = events_with_transitions(input_w3, w3_events_all, W3_IDs, 5),
-  FB = events_with_transitions(input_fb, FBall_events,  FB_IDs, 5),
-  ZZ = events_with_transitions(input_zz, ZZall_events,  ZZ_IDs, 5)
-)
-keep_dry <- Map(intersect, keep_dry_curated, keep_trans)
-for (s in names(keep_dry))
-  message(s, ": ", length(keep_dry[[s]]), " drying events -> ",
-          paste(keep_dry[[s]], collapse = ", "))
-
-# ---- all-pairs drying-vs-drying within a watershed --------------------------
-pairwise_drying <- function(dry_long, shed, keep_events, min_shared = 3){
-  rl <- event_rank_list(dry_long)
-  evs <- intersect(names(rl), as.character(keep_events))
-  if (length(evs) < 2) return(tibble())
-  out <- vector("list", 0)
-  for (cc in combn(evs, 2, simplify = FALSE)){
-    m <- inner_join(rl[[cc[1]]], rl[[cc[2]]], by = "sensor_id", suffix = c("_i", "_j"))
-    if (nrow(m) < min_shared) next
-    kt <- suppressWarnings(cor.test(m$rank_i, m$rank_j, method = "kendall"))
-    out[[length(out) + 1]] <- tibble(
-      shed = shed, event_i = as.integer(cc[1]), event_j = as.integer(cc[2]),
-      n_shared = nrow(m), kendall_tau = unname(kt$estimate), tau_p = kt$p.value)
-  }
-  bind_rows(out)
-}
-
-drying_pairs <- bind_rows(
-  pairwise_drying(ds_w3$drying, "W3", keep_dry$W3),
-  pairwise_drying(ds_fb$drying, "FB", keep_dry$FB),
-  pairwise_drying(ds_zz$drying, "ZZ", keep_dry$ZZ)
-) %>%
-  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ"))) %>%
-  arrange(shed, event_i, event_j)
-
-# ---- Table 1: every drying-event pair ---------------------------------------
-knitr::kable(
-  drying_pairs %>%
-    mutate(kendall_tau = round(kendall_tau, 3),
-           tau_p = format.pval(tau_p, digits = 2, eps = 1e-3)),
-  col.names = c("Watershed", "Event i", "Event j", "Shared nodes",
-                "Kendall tau", "tau p"),
-  align = c("l", "r", "r", "r", "r", "r"),
-  caption = "Pairwise similarity of every drying sequence to every other drying sequence within a watershed. Events eligible if their drying order is valid (both-direction + drying-only, removed excluded) and >= 5 sensors fully cycled. Kendall tau on shared nodes; p tests H0: tau = 0.")
-
-# ---- Table 2: per-watershed summary across pairs ----------------------------
-drying_pairs_summary <- drying_pairs %>%
-  group_by(shed) %>%
-  summarise(n_events   = length(unique(c(event_i, event_j))),
-            n_pairs    = n(),
-            mean_tau   = mean(kendall_tau, na.rm = TRUE),
-            median_tau = median(kendall_tau, na.rm = TRUE),
-            sd_tau     = sd(kendall_tau, na.rm = TRUE),
-            frac_sig   = mean(tau_p < 0.05, na.rm = TRUE),
-            .groups = "drop")
-
-knitr::kable(
-  drying_pairs_summary %>%
-    mutate(across(c(mean_tau, median_tau, sd_tau, frac_sig), ~ round(.x, 3))),
-  col.names = c("Watershed", "Events", "Pairs", "Mean tau", "Median tau",
-                "SD tau", "Frac. p<0.05"),
-  caption = "Consistency of the drying sequence through time: distribution of pairwise Kendall tau across all drying-event pairs per watershed.")
-```
-
-TRY TO COMBINE THESE FOR FINDINGS:
-```{r}
-#| message: false
-#| warning: false
-# Combines three analyses into one interpretable summary per watershed:
-#   (1) Wetting consistency  = pairwise tau among wetting sequences (across events)
-#   (2) Drying consistency   = pairwise tau among drying sequences (across events)
-#   (3) Wetting vs drying    = within-event tau between an event's wetting & drying
-# Consistency tau > 0 and high  -> same order event to event.
-# Wet-vs-dry tau < 0            -> drying REVERSES wetting (fill-and-spill).
-
-summ <- function(df, tau = kendall_tau){
-  tau <- rlang::enquo(tau)
-  df %>% group_by(shed) %>%
-    summarise(n_pairs  = n(),
-              mean_tau = mean(!!tau, na.rm = TRUE),
-              sd_tau   = sd(!!tau, na.rm = TRUE),
-              frac_sig = mean(tau_p < 0.05, na.rm = TRUE),
-              .groups = "drop")
-}
-
-consistency <- bind_rows(
-  summ(wetting_pairs) %>% mutate(comparison = "Wetting consistency (across events)"),
-  summ(drying_pairs)  %>% mutate(comparison = "Drying consistency (across events)"),
-  wet_dry_events %>% group_by(shed) %>%          # within-event wetting vs drying
-    summarise(n_pairs  = n(),
-              mean_tau = mean(kendall_tau, na.rm = TRUE),
-              sd_tau   = sd(kendall_tau, na.rm = TRUE),
-              frac_sig = mean(tau_p < 0.05, na.rm = TRUE),
-              .groups = "drop") %>%
-    mutate(comparison = "Wetting vs drying (within event)")
-) %>%
-  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ")),
-         comparison = factor(comparison, levels = c(
-           "Wetting consistency (across events)",
-           "Drying consistency (across events)",
-           "Wetting vs drying (within event)"))) %>%
-  # plain-language verdict per row
-  mutate(interpretation = case_when(
-    comparison != "Wetting vs drying (within event)" & mean_tau >= 0.5 ~ "Highly consistent",
-    comparison != "Wetting vs drying (within event)" & mean_tau >= 0.3 ~ "Moderately consistent",
-    comparison != "Wetting vs drying (within event)"                   ~ "Weakly consistent",
-    mean_tau <= -0.3 ~ "Reversed (dries opposite to wetting)",
-    mean_tau <   0.3 & mean_tau > -0.3 ~ "Largely independent",
-    TRUE ~ "Same order both directions")) %>%
-  arrange(shed, comparison) %>%
-  select(shed, comparison, n_pairs, mean_tau, sd_tau, frac_sig, interpretation)
-
-knitr::kable(
-  consistency %>% mutate(across(c(mean_tau, sd_tau, frac_sig), ~ round(.x, 3))),
-  col.names = c("Watershed", "Comparison", "n", "Mean tau", "SD tau",
-                "Frac. p<0.05", "Interpretation"),
-  align = c("l", "l", "r", "r", "r", "r", "l"),
-  caption = "Combined sequence analysis. Rows 1-2: internal consistency of the wetting and drying sequences across events (high positive tau = same order each event). Row 3: within-event comparison of wetting vs drying order (negative tau = drying reverses wetting). n = event pairs (rows 1-2) or events (row 3).")
-```
-
-Add wilcoxon test
-```{r}
-#| message: false
-#| warning: false
-# Combines three analyses per watershed:
-#   (1) Wetting consistency = pairwise tau among wetting sequences across events
-#   (2) Drying consistency  = pairwise tau among drying sequences across events
-#   (3) Wetting vs drying   = within-event tau between an event's wetting & drying,
-#       tested with a one-sample Wilcoxon signed-rank test (H0: median tau = 0).
-
-summ_consistency <- function(df, label){
-  df %>% group_by(shed) %>%
-    summarise(n        = n(),
-              mean_tau = mean(kendall_tau, na.rm = TRUE),
-              sd_tau   = sd(kendall_tau, na.rm = TRUE),
-              frac_sig = mean(tau_p < 0.05, na.rm = TRUE),
-              wilcox_p = NA_real_,
-              .groups = "drop") %>%
-    mutate(comparison = label)
-}
-
-# within-event wetting-vs-drying: Wilcoxon signed-rank on the per-event taus ----
-wet_dry_wilcox <- wet_dry_events %>%
-  group_by(shed) %>%
-  summarise(n        = n(),
-            mean_tau = mean(kendall_tau, na.rm = TRUE),
-            sd_tau   = sd(kendall_tau, na.rm = TRUE),
-            frac_sig = NA_real_,
-            wilcox_p = tryCatch(
-              wilcox.test(kendall_tau, mu = 0)$p.value,
-              error = function(e) NA_real_),
-            .groups = "drop") %>%
-  mutate(comparison = "Wetting vs drying (within event)")
-
-consistency <- bind_rows(
-  summ_consistency(wetting_pairs, "Wetting consistency (across events)"),
-  summ_consistency(drying_pairs,  "Drying consistency (across events)"),
-  wet_dry_wilcox
-) %>%
-  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ")),
-         comparison = factor(comparison, levels = c(
-           "Wetting consistency (across events)",
-           "Drying consistency (across events)",
-           "Wetting vs drying (within event)"))) %>%
-  mutate(interpretation = case_when(
-    comparison != "Wetting vs drying (within event)" & mean_tau >= 0.5 ~ "Highly consistent",
-    comparison != "Wetting vs drying (within event)" & mean_tau >= 0.3 ~ "Moderately consistent",
-    comparison != "Wetting vs drying (within event)"                   ~ "Weakly consistent",
-    mean_tau <= -0.3 & wilcox_p < 0.05 ~ "Significantly reversed",
-    mean_tau <    0  & wilcox_p < 0.05 ~ "Reversed (weak but sig.)",
-    wilcox_p >= 0.05 | is.na(wilcox_p) ~ "No sig. difference",
-    TRUE ~ "Same order both directions")) %>%
-  arrange(shed, comparison) %>%
-  select(shed, comparison, n, mean_tau, sd_tau, frac_sig, wilcox_p, interpretation)
-
-knitr::kable(
-  consistency %>%
-    mutate(across(c(mean_tau, sd_tau, frac_sig), ~ round(.x, 3)),
-           wilcox_p = ifelse(is.na(wilcox_p), "—",
-                             format.pval(wilcox_p, digits = 2, eps = 1e-3))),
-  col.names = c("Watershed", "Comparison", "n", "Mean tau", "SD tau",
-                "Frac. p<0.05", "Wilcoxon p", "Interpretation"),
-  align = c("l", "l", "r", "r", "r", "r", "r", "l"),
-  caption = "Combined sequence analysis. Rows 1-2: internal consistency of wetting and drying sequences across events (Frac. p<0.05 = share of event pairs with significant positive tau). Row 3: within-event wetting-vs-drying order, tested with a one-sample Wilcoxon signed-rank test (H0: median tau = 0); negative mean tau = drying reverses wetting. n = event pairs (rows 1-2) or events (row 3).")
-```
-
-Look at antecedent wetness:
-```{r}
-#| message: false
-#| warning: false
-#| fig-width: 11
-#| fig-height: 5.5
-# Two panels (wetting | drying). Each point = one event pair within a watershed:
-# y = Kendall's tau between the two events' sequences (from wetting_pairs /
-# drying_pairs), x = |difference in antecedent wetness| between the two events.
-# Antecedent wetness = 15-day rolling precipitation sum up to each event's start.
-
-# ---- 1. antecedent wetness index (AWI) per event, per watershed -------------
-# Needs a precip series per watershed with columns: datetime, hourly_precip.
-# W3 uses precip1; substitute your FB/ZZ precip series if you have them.
-antecedent_wetness <- function(precip, event_df, window_days = 15){
-  ev_start <- event_df %>% filter(!is.na(event_id)) %>%
-    group_by(event_id) %>% summarise(start = min(datetime), .groups = "drop")
-  p <- precip %>% arrange(datetime)
-  purrr::map_dfr(seq_len(nrow(ev_start)), function(i){
-    t0 <- ev_start$start[i]
-    awi <- p %>% filter(datetime <= t0,
-                        datetime >  t0 - lubridate::days(window_days)) %>%
-      summarise(awi = sum(hourly_precip, na.rm = TRUE)) %>% pull(awi)
-    tibble(event_id = ev_start$event_id[i], awi = awi)
-  })
-}
-
-awi <- bind_rows(
-  antecedent_wetness(precip1,     w3_events_all) %>% mutate(shed = "W3"),
-  antecedent_wetness(precip1,   FBall_events)  %>% mutate(shed = "FB"),
-  antecedent_wetness(precip1,   ZZall_events)  %>% mutate(shed = "ZZ")
-)
-
-# ---- 2. attach |AWI difference| to each event pair --------------------------
-add_awi_diff <- function(pairs, direction){
-  pairs %>%
-    left_join(awi %>% rename(awi_i = awi), by = c("shed", "event_i" = "event_id")) %>%
-    left_join(awi %>% rename(awi_j = awi), by = c("shed", "event_j" = "event_id")) %>%
-    mutate(awi_diff = abs(awi_i - awi_j), direction = direction) %>%
-    filter(!is.na(awi_diff))
-}
-
-pair_awi <- bind_rows(
-  add_awi_diff(wetting_pairs, "Wetting"),
-  add_awi_diff(drying_pairs,  "Drying")
-) %>%
-  mutate(shed      = factor(shed, levels = c("W3", "FB", "ZZ")),
-         direction = factor(direction, levels = c("Wetting", "Drying")))
-
-# ---- 3. plot ----------------------------------------------------------------
-shed_cols <- c("W3" = "#FFB000", "FB" = "#397367", "ZZ" = "#7E6B8F")
-
-fig_tau_awi <- ggplot(pair_awi, aes(awi_diff, kendall_tau, color = shed)) +
-  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
-  geom_point(size = 2, alpha = 0.8) +
-  geom_smooth(method = "lm", se = FALSE, linewidth = 0.6, aes(group = 1),
-              color = "grey30") +      # one trend across all sheds; remove if unwanted
-  facet_wrap(~ direction) +
-  scale_color_manual(values = shed_cols, name = "Watershed") +
-  labs(x = "Difference in antecedent wetness between events\n(15-day rolling precip sum, mm)",
-       y = "Kendall's tau between event sequences",
-       title = "Sequence similarity vs. difference in antecedent wetness") +
-  theme_bw(base_size = 11) +
-  theme(strip.background = element_blank(), legend.position = "right")
-
-fig_tau_awi
-ggsave("figure_tau_vs_antecedent_wetness.pdf", fig_tau_awi, width = 11, height = 5.5)
-```
-
-```{r}
-#| message: false
-#| warning: false
-#| fig-width: 12
-#| fig-height: 8
-# Antecedent wetness at 3 windows (7 / 15 / 30 days) x 2 directions.
-# Each point = one within-watershed event pair; y = Kendall's tau,
-# x = |difference in antecedent precip sum| between the two events.
-# Needs precip series (datetime, hourly_precip) per watershed: precip1/_fb/_zz.
-
-antecedent_wetness <- function(precip, event_df, window_days){
-  ev_start <- event_df %>% filter(!is.na(event_id)) %>%
-    group_by(event_id) %>% summarise(start = min(datetime), .groups = "drop")
-  p <- precip %>% arrange(datetime)
-  purrr::map_dfr(seq_len(nrow(ev_start)), function(i){
-    t0 <- ev_start$start[i]
-    awi <- p %>% filter(datetime <= t0, datetime > t0 - lubridate::days(window_days)) %>%
-      summarise(a = sum(hourly_precip, na.rm = TRUE)) %>% pull(a)
-    tibble(event_id = ev_start$event_id[i], awi = awi)
-  })
-}
-
-windows <- c(1, 3, 7)
-awi_all <- purrr::map_dfr(windows, function(w){
-  bind_rows(
-    antecedent_wetness(precip1,   w3_events_all, w) %>% mutate(shed = "W3"),
-    antecedent_wetness(precip1, FBall_events,  w) %>% mutate(shed = "FB"),
-    antecedent_wetness(precip1, ZZall_events,  w) %>% mutate(shed = "ZZ")
-  ) %>% mutate(window = w)
-})
-
-add_awi_diff <- function(pairs, direction, awi_w){
-  pairs %>%
-    left_join(awi_w %>% rename(a_i = awi), by = c("shed", "event_i" = "event_id")) %>%
-    left_join(awi_w %>% rename(a_j = awi), by = c("shed", "event_j" = "event_id")) %>%
-    mutate(awi_diff = abs(a_i - a_j), direction = direction) %>%
-    filter(!is.na(awi_diff))
-}
-
-pair_awi <- purrr::map_dfr(windows, function(w){
-  aw <- awi_all %>% filter(window == w)
-  bind_rows(add_awi_diff(wetting_pairs, "Wetting", aw),
-            add_awi_diff(drying_pairs,  "Drying",  aw)) %>%
-    mutate(window = w)
-}) %>%
-  mutate(shed      = factor(shed, levels = c("W3", "FB", "ZZ")),
-         direction = factor(direction, levels = c("Wetting", "Drying")),
-         window_lab = factor(paste0(window, "-day window"),
-                             levels = paste0(windows, "-day window")))
-
-shed_cols <- c("W3" = "#FFB000", "FB" = "#397367", "ZZ" = "#7E6B8F")
-
-fig_windows <- ggplot(pair_awi, aes(awi_diff, kendall_tau, color = shed)) +
-  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
-  geom_point(size = 1.6, alpha = 0.7) +
-  geom_smooth(method = "lm", se = FALSE, linewidth = 0.6, aes(group = shed)) +
-  facet_grid(direction ~ window_lab) +
-  scale_color_manual(values = shed_cols, name = "Watershed") +
-  labs(x = "Difference in antecedent precipitation sum between events (mm)",
-       y = "Kendall's tau between event sequences",
-       title = "Sequence similarity vs. antecedent wetness difference, by window length") +
-  theme_bw(base_size = 11) +
-  theme(strip.background = element_blank())
-
-fig_windows
-ggsave("figure_tau_antecedent_windows.pdf", fig_windows, width = 12, height = 8)
-```
-
-now compare peak discharge
-```{r}
-#| message: false
-#| warning: false
-#| fig-width: 9
-#| fig-height: 5
-# W3 only: x = |difference in peak discharge| between the two events.
-# Peak Q per event from the discharge series used for event detection.
-peak_q_w3 <- w3_q_seasonal %>%
-  inner_join(w3_events_all %>% filter(!is.na(event_id)) %>%
-               select(datetime, event_id), by = "datetime") %>%
-  group_by(event_id) %>%
-  summarise(peak_q = max(Q_mm_day, na.rm = TRUE), .groups = "drop")
-
-add_q_diff <- function(pairs, direction){
-  pairs %>% filter(shed == "W3") %>%
-    left_join(peak_q_w3 %>% rename(q_i = peak_q), by = c("event_i" = "event_id")) %>%
-    left_join(peak_q_w3 %>% rename(q_j = peak_q), by = c("event_j" = "event_id")) %>%
-    mutate(q_diff = abs(q_i - q_j), direction = direction) %>%
-    filter(!is.na(q_diff))
-}
-
-pair_q <- bind_rows(add_q_diff(wetting_pairs, "Wetting"),
-                    add_q_diff(drying_pairs,  "Drying")) %>%
-  mutate(direction = factor(direction, levels = c("Wetting", "Drying")))
-
-fig_peakq <- ggplot(pair_q, aes(q_diff, kendall_tau)) +
-  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
-  geom_point(size = 2, alpha = 0.8, color = "#FFB000") +
-  geom_smooth(method = "lm", se = FALSE, linewidth = 0.6, color = "grey30") +
-  facet_wrap(~ direction) +
-  labs(x = "Difference in peak discharge between events (mm/day)",
-       y = "Kendall's tau between event sequences",
-       title = "W3: sequence similarity vs. difference in event peak discharge") +
-  theme_bw(base_size = 11) +
-  theme(strip.background = element_blank())
-
-fig_peakq
-ggsave("figure_tau_peak_discharge.pdf", fig_peakq, width = 9, height = 5)
-```
-
-```{r}
-#| message: false
-#| warning: false
-#| fig-width: 12
-#| fig-height: 8
-# Antecedent wetness at 7/15/30-day windows x 2 directions, all sheds on precip1.
-# Point = event pair; y = Kendall's tau, x = |diff in antecedent precip sum|.
-# A per-watershed trend line is drawn ONLY if its slope is significant by a
-# Mantel-style permutation test (event-label permutation), which respects the
-# non-independence of pairwise data.
-
-antecedent_wetness <- function(precip, event_df, window_days){
-  ev_start <- event_df %>% filter(!is.na(event_id)) %>%
-    group_by(event_id) %>% summarise(start = min(datetime), .groups = "drop")
-  p <- precip %>% arrange(datetime)
-  purrr::map_dfr(seq_len(nrow(ev_start)), function(i){
-    t0 <- ev_start$start[i]
-    a <- p %>% filter(datetime <= t0, datetime > t0 - lubridate::days(window_days)) %>%
-      summarise(a = sum(hourly_precip, na.rm = TRUE)) %>% pull(a)
-    tibble(event_id = ev_start$event_id[i], awi = a)
-  })
-}
-
-windows <- c(7, 15, 30)
-awi_all <- purrr::map_dfr(windows, function(w){
-  bind_rows(
-    antecedent_wetness(precip1, w3_events_all, w) %>% mutate(shed = "W3"),
-    antecedent_wetness(precip1, FBall_events,  w) %>% mutate(shed = "FB"),
-    antecedent_wetness(precip1, ZZall_events,  w) %>% mutate(shed = "ZZ")
-  ) %>% mutate(window = w)
-})
-
-add_awi_diff <- function(pairs, direction, awi_w){
-  pairs %>%
-    left_join(awi_w %>% rename(a_i = awi), by = c("shed", "event_i" = "event_id")) %>%
-    left_join(awi_w %>% rename(a_j = awi), by = c("shed", "event_j" = "event_id")) %>%
-    mutate(awi_diff = abs(a_i - a_j), direction = direction) %>%
-    filter(!is.na(awi_diff))
-}
-
-pair_awi <- purrr::map_dfr(windows, function(w){
-  aw <- awi_all %>% filter(window == w)
-  bind_rows(add_awi_diff(wetting_pairs, "Wetting", aw),
-            add_awi_diff(drying_pairs,  "Drying",  aw)) %>%
-    mutate(window = w)
-}) %>%
-  mutate(shed      = factor(shed, levels = c("W3", "FB", "ZZ")),
-         direction = factor(direction, levels = c("Wetting", "Drying")),
-         window_lab = factor(paste0(window, "-day window"),
-                             levels = paste0(windows, "-day window")))
-
-# ---- Mantel-style significance of the tau ~ predictor slope -----------------
-# Pass the predictor's two per-event columns by name (col_i, col_j) so we never
-# have to guess them from xvar.
-mantel_slope_p <- function(df, xvar, col_i, col_j, n_perm = 999){
-  df <- df %>% filter(!is.na(.data[[xvar]]), !is.na(kendall_tau))
-  evs <- unique(c(df$event_i, df$event_j))
-  if (length(evs) < 4 || nrow(df) < 4) return(NA_real_)
-
-  obs <- coef(lm(reformulate(xvar, "kendall_tau"), df))[2]
-
-  # one predictor value per event, gathered from the i and j columns
-  ev_val <- bind_rows(
-    df %>% transmute(event = event_i, v = .data[[col_i]]),
-    df %>% transmute(event = event_j, v = .data[[col_j]])
-  ) %>% distinct(event, v) %>% { setNames(.$v, as.character(.$event)) }
-
-  perm_stat <- replicate(n_perm, {
-    permap <- setNames(sample(evs), as.character(evs))   # shuffle event identities
-    ip <- permap[as.character(df$event_i)]
-    jp <- permap[as.character(df$event_j)]
-    xp <- abs(ev_val[as.character(ip)] - ev_val[as.character(jp)])
-    coef(lm(df$kendall_tau ~ xp))[2]
-  })
-  (1 + sum(abs(perm_stat) >= abs(obs))) / (1 + n_perm)
-}
-
-sig_awi <- pair_awi %>%
-  group_by(shed, direction, window_lab) %>%
-  group_modify(~ tibble(p = mantel_slope_p(.x, "awi_diff", "a_i", "a_j"))) %>%
-  ungroup() %>% filter(!is.na(p), p < 0.05)
-
-pair_awi_sig <- pair_awi %>% inner_join(sig_awi, by = c("shed", "direction", "window_lab"))
-
-shed_cols <- c("W3" = "#FFB000", "FB" = "#397367", "ZZ" = "#7E6B8F")
-
-fig_windows <- ggplot(pair_awi, aes(awi_diff, kendall_tau, color = shed)) +
-  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
-  geom_point(size = 1.6, alpha = 0.7) +
-  geom_smooth(data = pair_awi_sig, method = "lm", se = FALSE,
-              linewidth = 0.7, aes(group = shed)) +      # only significant sheds
-  facet_grid(direction ~ window_lab) +
-  scale_color_manual(values = shed_cols, name = "Watershed") +
-  labs(x = "Difference in antecedent precipitation sum between events (mm)",
-       y = "Kendall's tau between event sequences",
-       title = "Sequence similarity vs. antecedent wetness (trend shown only where significant, p < 0.05)") +
-  theme_bw(base_size = 11) +
-  theme(strip.background = element_blank())
-
-fig_windows
-ggsave("figure_tau_antecedent_windows.pdf", fig_windows, width = 12, height = 8)
-```
-
-Boxplots
-```{r}
-#| message: false
-#| warning: false
-#| fig-width: 11
-#| fig-height: 6
-# For each event, compare its WETTING and DRYING sequence to the two MODEL
-# sequences (Flow Persistence, TWI) via Kendall's tau on shared nodes.
-# Drying ranks are REVERSED (1 = dries last) so that, like wetting and like the
-# model sequences, rank 1 = most persistent -> positive tau = model agrees.
-
-wetting_eligible <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$drying_only)))
-drying_eligible  <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$wetting_only)))
-keep_trans <- list(
-  W3 = events_with_transitions(input_w3, w3_events_all, W3_IDs, 5),
-  FB = events_with_transitions(input_fb, FBall_events,  FB_IDs, 5),
-  ZZ = events_with_transitions(input_zz, ZZall_events,  ZZ_IDs, 5))
-keep_wet <- Map(intersect, Map(wetting_eligible, dir_spec, universe), keep_trans)
-keep_dry <- Map(intersect, Map(drying_eligible,  dir_spec, universe), keep_trans)
-
-tau_event_model <- function(ev_ranks, model_seq, min_shared = 3){
-  m <- ev_ranks %>%
-    inner_join(model_seq %>% transmute(sensor_id = ID, mrank = sequence),
-               by = "sensor_id")
-  if (nrow(m) < min_shared) return(tibble(tau = NA_real_, p = NA_real_, n = nrow(m)))
-  ct <- suppressWarnings(cor.test(m$rank, m$mrank, method = "kendall"))
-  tibble(tau = unname(ct$estimate), p = ct$p.value, n = nrow(m))
-}
-
-compare_dir <- function(dir_long, keep_events, pk_seq, twi_seq, shed, direction){
-  rl <- event_rank_list(dir_long)
-  evs <- intersect(names(rl), as.character(keep_events))
-  purrr::map_dfr(evs, function(e){
-    er <- rl[[e]]
-    # reverse drying ranks: 1 = dries last (most persistent), matching model order
-    if (direction == "Drying") er <- er %>% mutate(rank = max(rank) - rank + 1)
-    bind_rows(
-      tau_event_model(er, pk_seq)  %>% mutate(model = "Flow Persistence"),
-      tau_event_model(er, twi_seq) %>% mutate(model = "TWI")
-    ) %>% mutate(shed = shed, direction = direction, event_id = as.integer(e))
-  })
-}
-
-event_model_tau <- bind_rows(
-  compare_dir(ds_w3$wetting, keep_wet$W3, W3_pk_seq, w3_twi_sequence, "W3", "Wetting"),
-  compare_dir(ds_w3$drying,  keep_dry$W3, W3_pk_seq, w3_twi_sequence, "W3", "Drying"),
-  compare_dir(ds_fb$wetting, keep_wet$FB, FB_pk_seq, fb_twi_sequence, "FB", "Wetting"),
-  compare_dir(ds_fb$drying,  keep_dry$FB, FB_pk_seq, fb_twi_sequence, "FB", "Drying"),
-  compare_dir(ds_zz$wetting, keep_wet$ZZ, ZZ_pk_seq, zz_twi_sequence, "ZZ", "Wetting"),
-  compare_dir(ds_zz$drying,  keep_dry$ZZ, ZZ_pk_seq, zz_twi_sequence, "ZZ", "Drying")
-) %>%
-  filter(!is.na(tau)) %>%
-  mutate(shed      = factor(shed, levels = c("W3", "FB", "ZZ")),
-         direction = factor(direction, levels = c("Wetting", "Drying")),
-         model     = factor(model, levels = c("Flow Persistence", "TWI")))
-
-model_cols <- c("Flow Persistence" = "#1b7837", "TWI" = "#762a83")
-
-fig_event_model <- ggplot(event_model_tau,
-                          aes(x = direction, y = tau, fill = model, color = model)) +
-  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
-  geom_boxplot(width = 0.55, alpha = 0.25, outlier.shape = NA,
-               position = position_dodge(0.65)) +
-  geom_point(size = 2, alpha = 0.8,
-             position = position_jitterdodge(jitter.width = 0.12, dodge.width = 0.65)) +
-  facet_wrap(~ shed) +
-  scale_fill_manual(values = model_cols, name = "Model sequence") +
-  scale_color_manual(values = model_cols, name = "Model sequence") +
-  coord_cartesian(ylim = c(-1, 1)) +
-  labs(x = "", y = "Kendall's tau (event sequence vs. model)",
-       title = "How well do Flow Persistence and TWI predict each event's wetting and drying order?",
-       subtitle = "Drying ranks reversed (1 = dries last) so positive tau = model captures the order in both directions") +
-  theme_bw(base_size = 11) +
-  theme(strip.background = element_blank(), legend.position = "top")
-
-fig_event_model
-ggsave("figure_event_vs_model_tau.pdf", fig_event_model, width = 11, height = 6)
-
-event_model_summary <- event_model_tau %>%
-  group_by(shed, direction, model) %>%
-  summarise(n_events = n(),
-            mean_tau = mean(tau), median_tau = median(tau), sd_tau = sd(tau),
-            frac_sig = mean(p < 0.05, na.rm = TRUE), .groups = "drop")
-knitr::kable(
-  event_model_summary %>%
-    mutate(across(c(mean_tau, median_tau, sd_tau, frac_sig), ~ round(.x, 3))),
-  caption = "Per-event agreement (Kendall's tau) of each event's wetting and (reversed) drying order with the Flow Persistence and TWI model sequences.")
-```
-
-Adding BFS to compare
-```{r}
-#| message: false
-#| warning: false
-#| fig-width: 12
-#| fig-height: 6
-# For each event, compare its WETTING and (reversed) DRYING sequence to THREE
-# model sequences: Flow Persistence, TWI, and BFS. Kendall's tau on shared nodes.
-# Drying ranks reversed (1 = dries last) so positive tau = model agrees in both
-# directions. best_bfs_w3/fb/zz are dataframes with columns ID, sequence.
-
-wetting_eligible <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$drying_only)))
-drying_eligible  <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$wetting_only)))
-keep_trans <- list(
-  W3 = events_with_transitions(input_w3, w3_events_all, W3_IDs, 5),
-  FB = events_with_transitions(input_fb, FBall_events,  FB_IDs, 5),
-  ZZ = events_with_transitions(input_zz, ZZall_events,  ZZ_IDs, 5))
-keep_wet <- Map(intersect, Map(wetting_eligible, dir_spec, universe), keep_trans)
-keep_dry <- Map(intersect, Map(drying_eligible,  dir_spec, universe), keep_trans)
-
-tau_event_model <- function(ev_ranks, model_seq, min_shared = 3){
-  m <- ev_ranks %>%
-    inner_join(model_seq %>% transmute(sensor_id = ID, mrank = sequence),
-               by = "sensor_id")
-  if (nrow(m) < min_shared) return(tibble(tau = NA_real_, p = NA_real_, n = nrow(m)))
-  ct <- suppressWarnings(cor.test(m$rank, m$mrank, method = "kendall"))
-  tibble(tau = unname(ct$estimate), p = ct$p.value, n = nrow(m))
-}
-
-# now takes a named list of model sequences ----------------------------------
-compare_dir <- function(dir_long, keep_events, models, shed, direction){
-  rl <- event_rank_list(dir_long)
-  evs <- intersect(names(rl), as.character(keep_events))
-  purrr::map_dfr(evs, function(e){
-    er <- rl[[e]]
-    if (direction == "Drying") er <- er %>% mutate(rank = max(rank) - rank + 1)
-    purrr::imap_dfr(models, function(mseq, mname)
-      tau_event_model(er, mseq) %>% mutate(model = mname)) %>%
-      mutate(shed = shed, direction = direction, event_id = as.integer(e))
-  })
-}
-
-models_w3 <- list("Flow Persistence" = W3_pk_seq, "TWI" = w3_twi_sequence, "BFS" = best_bfs_w3)
-models_fb <- list("Flow Persistence" = FB_pk_seq, "TWI" = fb_twi_sequence, "BFS" = best_bfs_fb)
-models_zz <- list("Flow Persistence" = ZZ_pk_seq, "TWI" = zz_twi_sequence, "BFS" = best_bfs_zz)
-
-event_model_tau <- bind_rows(
-  compare_dir(ds_w3$wetting, keep_wet$W3, models_w3, "W3", "Wetting"),
-  compare_dir(ds_w3$drying,  keep_dry$W3, models_w3, "W3", "Drying"),
-  compare_dir(ds_fb$wetting, keep_wet$FB, models_fb, "FB", "Wetting"),
-  compare_dir(ds_fb$drying,  keep_dry$FB, models_fb, "FB", "Drying"),
-  compare_dir(ds_zz$wetting, keep_wet$ZZ, models_zz, "ZZ", "Wetting"),
-  compare_dir(ds_zz$drying,  keep_dry$ZZ, models_zz, "ZZ", "Drying")
-) %>%
-  filter(!is.na(tau)) %>%
-  mutate(shed      = factor(shed, levels = c("W3", "FB", "ZZ")),
-         direction = factor(direction, levels = c("Wetting", "Drying")),
-         model     = factor(model, levels = c("Flow Persistence", "TWI", "BFS")))
-
-model_cols <- c("Flow Persistence" = "#1b7837", "TWI" = "#762a83", "BFS" = "#bb4430")
-
-fig_event_model <- ggplot(event_model_tau,
-                          aes(x = direction, y = tau, fill = model, color = model)) +
-  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
-  geom_boxplot(width = 0.7, alpha = 0.25, outlier.shape = NA,
-               position = position_dodge(0.8)) +
-  geom_point(size = 1.8, alpha = 0.8,
-             position = position_jitterdodge(jitter.width = 0.12, dodge.width = 0.8)) +
-  facet_wrap(~ shed) +
-  scale_fill_manual(values = model_cols, name = "Model sequence") +
-  scale_color_manual(values = model_cols, name = "Model sequence") +
-  coord_cartesian(ylim = c(-1, 1)) +
-  labs(x = "", y = "Kendall's tau (event sequence vs. model)",
-       title = "How well do Flow Persistence, TWI, and BFS predict each event's wetting and drying order?",
-       subtitle = "Drying ranks reversed (1 = dries last) so positive tau = model captures the order in both directions") +
-  theme_bw(base_size = 11) +
-  theme(strip.background = element_blank(), legend.position = "top")
-
-fig_event_model
-ggsave("figure_event_vs_model_tau.pdf", fig_event_model, width = 12, height = 6)
-
-event_model_summary <- event_model_tau %>%
-  group_by(shed, direction, model) %>%
-  summarise(n_events = n(),
-            mean_tau = mean(tau), median_tau = median(tau), sd_tau = sd(tau),
-            frac_sig = mean(p < 0.05, na.rm = TRUE), .groups = "drop")
-knitr::kable(
-  event_model_summary %>%
-    mutate(across(c(mean_tau, median_tau, sd_tau, frac_sig), ~ round(.x, 3))),
-  caption = "Per-event agreement (Kendall's tau) of each event's wetting and (reversed) drying order with the Flow Persistence, TWI, and BFS model sequences.")
-```
-
-```{r}
-#| message: false
-#| warning: false
-#| fig-width: 11
-#| fig-height: 6
-# Each individual BFS sequence (one per starting node, from *_allout) tested
-# against each kept observed event sequence (wetting and reversed drying) via
-# Kendall's tau on shared nodes. Every point = one (BFS start x observed event)
-# comparison; boxes pool all such comparisons per watershed x direction.
-# Drying ranks reversed (1 = dries last) so positive tau = BFS captures the order.
-
-wetting_eligible <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$drying_only)))
-drying_eligible  <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$wetting_only)))
-keep_trans <- list(
-  W3 = events_with_transitions(input_w3, w3_events_all, W3_IDs, 5),
-  FB = events_with_transitions(input_fb, FBall_events,  FB_IDs, 5),
-  ZZ = events_with_transitions(input_zz, ZZall_events,  ZZ_IDs, 5))
-keep_wet <- Map(intersect, Map(wetting_eligible, dir_spec, universe), keep_trans)
-keep_dry <- Map(intersect, Map(drying_eligible,  dir_spec, universe), keep_trans)
-
-# rank each BFS start sequence (same construction as event_rank_list) ---------
-bfs_rank_list <- function(allout){
-  allout %>% group_by(event_id) %>% mutate(rank = row_number()) %>% ungroup() %>%
-    { split(select(., sensor_id, rank), .$event_id) }
-}
-
-# cross every BFS start against every kept observed event --------------------
-compare_bfs_dir <- function(dir_long, keep_events, bfs_allout, shed, direction,
-                            min_shared = 3){
-  obs <- event_rank_list(dir_long)
-  obs_evs <- intersect(names(obs), as.character(keep_events))
-  bfs <- bfs_rank_list(bfs_allout)
-  out <- vector("list", 0)
-  for (be in names(bfs)){
-    bseq <- bfs[[be]] %>% dplyr::rename(mrank = rank)
-    for (oe in obs_evs){
-      er <- obs[[oe]]
-      if (direction == "Drying") er <- er %>% mutate(rank = max(rank) - rank + 1)
-      m <- er %>% inner_join(bseq, by = "sensor_id")
-      if (nrow(m) < min_shared) next
-      ct <- suppressWarnings(cor.test(m$rank, m$mrank, method = "kendall"))
-      out[[length(out) + 1]] <- tibble(
-        shed = shed, direction = direction,
-        bfs_start = as.integer(be), obs_event = as.integer(oe),
-        tau = unname(ct$estimate), p = ct$p.value, n = nrow(m))
-    }
-  }
-  bind_rows(out)
-}
-
-bfs_event_tau <- bind_rows(
-  compare_bfs_dir(ds_w3$wetting, keep_wet$W3, w3_allout, "W3", "Wetting"),
-  compare_bfs_dir(ds_w3$drying,  keep_dry$W3, w3_allout, "W3", "Drying"),
-  compare_bfs_dir(ds_fb$wetting, keep_wet$FB, fb_allout, "FB", "Wetting"),
-  compare_bfs_dir(ds_fb$drying,  keep_dry$FB, fb_allout, "FB", "Drying"),
-  compare_bfs_dir(ds_zz$wetting, keep_wet$ZZ, zz_allout, "ZZ", "Wetting"),
-  compare_bfs_dir(ds_zz$drying,  keep_dry$ZZ, zz_allout, "ZZ", "Drying")
-) %>%
-  filter(!is.na(tau)) %>%
-  mutate(shed      = factor(shed, levels = c("W3", "FB", "ZZ")),
-         direction = factor(direction, levels = c("Wetting", "Drying")))
-
-dir_cols <- c("Wetting" = "#93C2F1", "Drying" = "#FFA400")
-
-fig_bfs_all <- ggplot(bfs_event_tau, aes(x = direction, y = tau, fill = direction)) +
-  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
-  geom_boxplot(width = 0.55, alpha = 0.4, outlier.shape = NA) +
-  geom_jitter(width = 0.15, height = 0, size = 0.6, alpha = 0.2) +
-  facet_wrap(~ shed) +
-  scale_fill_manual(values = dir_cols, guide = "none") +
-  coord_cartesian(ylim = c(-1, 1)) +
-  labs(x = "", y = "Kendall's tau (BFS start sequence vs. observed event)",
-       title = "All individual BFS start-point sequences vs. every kept event",
-       subtitle = "Each point = one BFS start x one observed event; drying reversed (1 = dries last)") +
-  theme_bw(base_size = 11) +
-  theme(strip.background = element_blank())
-
-fig_bfs_all
-ggsave("figure_bfs_allstarts_vs_events.pdf", fig_bfs_all, width = 11, height = 6)
-
-# summary table --------------------------------------------------------------
-bfs_event_summary <- bfs_event_tau %>%
-  group_by(shed, direction) %>%
-  summarise(n_comparisons = n(),
-            n_bfs_starts  = n_distinct(bfs_start),
-            n_events      = n_distinct(obs_event),
-            mean_tau = mean(tau), median_tau = median(tau), sd_tau = sd(tau),
-            .groups = "drop")
-knitr::kable(
-  bfs_event_summary %>% mutate(across(c(mean_tau, median_tau, sd_tau), ~ round(.x, 3))),
-  caption = "Distribution of Kendall's tau across all BFS start-point sequences tested against all kept observed events, per watershed and direction.")
-```
-
-Use consensus instead of BFS
-```{r}
-#| message: false
-#| warning: false
-#| fig-width: 12
-#| fig-height: 6
-# For each event, compare its WETTING and (reversed) DRYING sequence to THREE
-# model sequences: Flow Persistence, TWI, and the Consensus (avg_event_*).
-# Kendall's tau on shared nodes. Drying ranks reversed (1 = dries last) so
-# positive tau = model agrees in both directions.
-
-wetting_eligible <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$drying_only)))
-drying_eligible  <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$wetting_only)))
-keep_trans <- list(
-  W3 = events_with_transitions(input_w3, w3_events_all, W3_IDs, 5),
-  FB = events_with_transitions(input_fb, FBall_events,  FB_IDs, 5),
-  ZZ = events_with_transitions(input_zz, ZZall_events,  ZZ_IDs, 5))
-keep_wet <- Map(intersect, Map(wetting_eligible, dir_spec, universe), keep_trans)
-keep_dry <- Map(intersect, Map(drying_eligible,  dir_spec, universe), keep_trans)
-
-tau_event_model <- function(ev_ranks, model_seq, min_shared = 3){
-  m <- ev_ranks %>%
-    inner_join(model_seq %>% transmute(sensor_id = ID, mrank = sequence),
-               by = "sensor_id")
-  if (nrow(m) < min_shared) return(tibble(tau = NA_real_, p = NA_real_, n = nrow(m)))
-  ct <- suppressWarnings(cor.test(m$rank, m$mrank, method = "kendall"))
-  tibble(tau = unname(ct$estimate), p = ct$p.value, n = nrow(m))
-}
-
-compare_dir <- function(dir_long, keep_events, models, shed, direction){
-  rl <- event_rank_list(dir_long)
-  evs <- intersect(names(rl), as.character(keep_events))
-  purrr::map_dfr(evs, function(e){
-    er <- rl[[e]]
-    if (direction == "Drying") er <- er %>% mutate(rank = max(rank) - rank + 1)
-    purrr::imap_dfr(models, function(mseq, mname)
-      tau_event_model(er, mseq) %>% mutate(model = mname)) %>%
-      mutate(shed = shed, direction = direction, event_id = as.integer(e))
-  })
-}
-
-models_w3 <- list("Flow Persistence" = W3_pk_seq, "TWI" = w3_twi_sequence, "Consensus" = avg_event_w3)
-models_fb <- list("Flow Persistence" = FB_pk_seq, "TWI" = fb_twi_sequence, "Consensus" = avg_event_fb)
-models_zz <- list("Flow Persistence" = ZZ_pk_seq, "TWI" = zz_twi_sequence, "Consensus" = avg_event_zz)
-
-event_model_tau <- bind_rows(
-  compare_dir(ds_w3$wetting, keep_wet$W3, models_w3, "W3", "Wetting"),
-  compare_dir(ds_w3$drying,  keep_dry$W3, models_w3, "W3", "Drying"),
-  compare_dir(ds_fb$wetting, keep_wet$FB, models_fb, "FB", "Wetting"),
-  compare_dir(ds_fb$drying,  keep_dry$FB, models_fb, "FB", "Drying"),
-  compare_dir(ds_zz$wetting, keep_wet$ZZ, models_zz, "ZZ", "Wetting"),
-  compare_dir(ds_zz$drying,  keep_dry$ZZ, models_zz, "ZZ", "Drying")
-) %>%
-  filter(!is.na(tau)) %>%
-  mutate(shed      = factor(shed, levels = c("W3", "FB", "ZZ")),
-         direction = factor(direction, levels = c("Wetting", "Drying")),
-         model     = factor(model, levels = c("Flow Persistence", "TWI", "Consensus")))
-
-model_cols <- c("Flow Persistence" = "#1b7837", "TWI" = "#762a83", "Consensus" = "#231f20")
-
-fig_event_model <- ggplot(event_model_tau,
-                          aes(x = direction, y = tau, fill = model, color = model)) +
-  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
-  geom_boxplot(width = 0.7, alpha = 0.25, outlier.shape = NA,
-               position = position_dodge(0.8)) +
-  geom_point(size = 1.8, alpha = 0.8,
-             position = position_jitterdodge(jitter.width = 0.12, dodge.width = 0.8)) +
-  facet_wrap(~ shed) +
-  scale_fill_manual(values = model_cols, name = "Model sequence") +
-  scale_color_manual(values = model_cols, name = "Model sequence") +
-  coord_cartesian(ylim = c(-1, 1)) +
-  labs(x = "", y = "Kendall's tau (event sequence vs. model)",
-       title = "How well do Flow Persistence, TWI, and the Consensus predict each event's order?",
-       subtitle = "Drying ranks reversed (1 = dries last) so positive tau = model captures the order in both directions") +
-  theme_bw(base_size = 11) +
-  theme(strip.background = element_blank(), legend.position = "top")
-
-fig_event_model
-ggsave("figure_event_vs_model_tau.pdf", fig_event_model, width = 12, height = 6)
-
-event_model_summary <- event_model_tau %>%
-  group_by(shed, direction, model) %>%
-  summarise(n_events = n(),
-            mean_tau = mean(tau), median_tau = median(tau), sd_tau = sd(tau),
-            frac_sig = mean(p < 0.05, na.rm = TRUE), .groups = "drop")
-knitr::kable(
-  event_model_summary %>%
-    mutate(across(c(mean_tau, median_tau, sd_tau, frac_sig), ~ round(.x, 3))),
-  caption = "Per-event agreement (Kendall's tau) of each event's wetting and (reversed) drying order with the Flow Persistence, TWI, and Consensus sequences.")
-```
-
-
-another asymmetric grid FINAL- all the same size, but squares different sizes
-```{r}
-#| message: false
-#| warning: false
-#| fig-width: 12
-#| fig-height: 4.5
-# Event x event Kendall's tau: each event's WETTING sequence (rows) vs each
-# event's DRYING sequence (cols), restricted to curated eligible events per axis.
-# Wetting axis = keep_wet; drying axis = keep_dry (may differ -> non-square).
-# Convention: drying kept as 1 = dries first, so NEGATIVE tau = reversed order.
-
-reverse_drying <- FALSE   # TRUE -> 1 = dries last (positive = agreement)
-
-# ---- curation --------------------------------------------------------------
-dir_spec <- list(
-  W3 = list(remove = c(13, 18), wetting_only = c(8, 10),            drying_only = integer(0)),
-  FB = list(remove = c(1),      wetting_only = c(3, 5, 9),          drying_only = c(7, 10, 12)),
-  ZZ = list(remove = c(),       wetting_only = c(4, 11, 12, 13),    drying_only = c(1))
-)
-universe <- list(W3 = 1:18, FB = 1:19, ZZ = 1:18)
-wetting_eligible <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$drying_only)))
-drying_eligible  <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$wetting_only)))
-keep_trans <- list(
-  W3 = events_with_transitions(input_w3, w3_events_all, W3_IDs, 3),
-  FB = events_with_transitions(input_fb, FBall_events,  FB_IDs, 3),
-  ZZ = events_with_transitions(input_zz, ZZall_events,  ZZ_IDs, 3))
-keep_wet <- Map(intersect, Map(wetting_eligible, dir_spec, universe), keep_trans)
-keep_dry <- Map(intersect, Map(drying_eligible,  dir_spec, universe), keep_trans)
-
-# ---- ranked sequences ------------------------------------------------------
-event_rank_list <- function(dir_long, reverse = FALSE){
-  dir_long %>% group_by(event_id) %>% mutate(rank = row_number()) %>%
-    { if (reverse) mutate(., rank = max(rank) - rank + 1) else . } %>%
-    ungroup() %>% { split(select(., sensor_id, rank), .$event_id) }
-}
-
-# tau(wet_i, dry_j) over curated events per axis -----------------------------
-wet_dry_grid <- function(wet_long, dry_long, shed, keep_w, keep_d, min_shared = 3){
-  wl <- event_rank_list(wet_long)
-  dl <- event_rank_list(dry_long, reverse = reverse_drying)
-  wl <- wl[names(wl) %in% as.character(keep_w)]
-  dl <- dl[names(dl) %in% as.character(keep_d)]
-  out <- vector("list", 0)
-  for (wi in names(wl)) for (dj in names(dl)){
-    m <- inner_join(wl[[wi]], dl[[dj]], by = "sensor_id", suffix = c("_w", "_d"))
-    if (nrow(m) < min_shared) next
-    kt <- suppressWarnings(cor(m$rank_w, m$rank_d, method = "kendall"))
-    out[[length(out)+1]] <- tibble(shed = shed,
-                                   wet_event = as.integer(wi),
-                                   dry_event = as.integer(dj),
-                                   kendall_tau = kt)
-  }
-  bind_rows(out)
-}
-
-grid_all <- bind_rows(
-  wet_dry_grid(ds_w3$wetting, ds_w3$drying, "W3", keep_wet$W3, keep_dry$W3),
-  wet_dry_grid(ds_fb$wetting, ds_fb$drying, "FB", keep_wet$FB, keep_dry$FB),
-  wet_dry_grid(ds_zz$wetting, ds_zz$drying, "ZZ", keep_wet$ZZ, keep_dry$ZZ)
-) %>% mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ")))
-
-plot_one <- function(df, keep_w, keep_d){
-  df <- df %>% mutate(wet_event = factor(wet_event, levels = sort(keep_w)),
-                      dry_event = factor(dry_event, levels = sort(keep_d)))
-  diag_df <- df %>% filter(as.character(wet_event) == as.character(dry_event))
-  ggplot(df, aes(dry_event, wet_event, fill = kendall_tau)) +
-    geom_tile(colour = "white") +
-    geom_tile(data = diag_df, fill = NA, colour = "black", linewidth = 0.4) +
-    scale_fill_gradient2(low = "#2166AC", mid = "grey95", high = "#B2182B",
-                         midpoint = 0, limits = c(-1, 1), name = "Kendall\ntau") +
-    coord_equal() +
-    labs(x = "Event (drying sequence)", y = "Event (wetting sequence)",
-         title = df$shed[1]) +
-    theme_minimal(base_size = 10) +
-    theme(panel.grid = element_blank(),
-          axis.text = element_text(size = 7),
-          plot.title = element_text(size = 11, face = "bold"))
-}
-
-plots <- list(
-  plot_one(filter(grid_all, shed == "W3"), keep_wet$W3, keep_dry$W3),
-  plot_one(filter(grid_all, shed == "FB"), keep_wet$FB, keep_dry$FB),
-  plot_one(filter(grid_all, shed == "ZZ"), keep_wet$ZZ, keep_dry$ZZ))
-
-figure1 <- patchwork::wrap_plots(plots, ncol = 3) +
-  plot_layout(guides = "collect") +
-  plot_annotation(
-    caption = paste(
-      "Kendall's tau: each event's wetting order (rows, keep_wet) vs each event's drying order (columns, keep_dry).",
-      "Black-outlined diagonal = same event kept in both directions.",
-      if (reverse_drying) "Drying = 1 dries last; red = same order."
-      else "Drying = 1 dries first; blue (negative) = reversed (wets first, dries last)."))
-figure1
-ggsave("figure1_wet_vs_dry_tau_heatmap_curated.pdf", figure1, width = 12, height = 4.5)
-ggsave("figure1_wet_vs_dry_tau_heatmap_curated.png", figure1, width = 12, height = 4.5)
-
-```
-
-
-
-
-MDS ordination
-```{r}
-#| message: false
-#| warning: false
-#| fig-width: 11
-#| fig-height: 4.5
-# MDS ordination of observed event sequences per watershed. Distance = 1 - tau
-# between event pairs; nearby points = similarly ordered events. Wetting and
-# drying shown together so you can see if the two directions separate.
-# Uses wetting_pairs / drying_pairs from earlier.
-
-set.seed(1)
-
-# build a square 1 - tau distance matrix for one shed/direction ---------------
-tau_dist <- function(pairs, shed_sel){
-  p <- pairs %>% filter(shed == shed_sel)
-  evs <- sort(unique(c(p$event_i, p$event_j)))
-  if (length(evs) < 3) return(NULL)
-  m <- matrix(NA_real_, length(evs), length(evs),
-              dimnames = list(as.character(evs), as.character(evs)))
-  for (i in seq_len(nrow(p))){
-    a <- as.character(p$event_i[i]); b <- as.character(p$event_j[i])
-    m[a, b] <- m[b, a] <- p$kendall_tau[i]
-  }
-  diag(m) <- 1
-  m[is.na(m)] <- 0                 # unrelated where a pair was undefined
-  as.dist(1 - m)                   # dissimilarity in [0, 2]
-}
-
-mds_one <- function(pairs, shed_sel, direction){
-  d <- tau_dist(pairs, shed_sel)
-  if (is.null(d)) return(tibble())
-  pts <- as.data.frame(cmdscale(d, k = 2))
-  names(pts) <- c("MDS1", "MDS2")
-  pts$event <- attr(d, "Labels")
-  pts$shed <- shed_sel; pts$direction <- direction
-  pts
-}
-
-mds_df <- bind_rows(
-  lapply(c("W3", "FB", "ZZ"), function(s) mds_one(wetting_pairs, s, "Wetting")),
-  lapply(c("W3", "FB", "ZZ"), function(s) mds_one(drying_pairs,  s, "Drying"))
-) %>%
-  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ")),
-         direction = factor(direction, levels = c("Wetting", "Drying")))
-
-dir_cols <- c("Wetting" = "#93C2F1", "Drying" = "#FFA400")
-
-fig_mds <- ggplot(mds_df, aes(MDS1, MDS2, color = direction)) +
-  geom_point(size = 2.6) +
-  ggrepel::geom_text_repel(aes(label = event), size = 2.6, show.legend = FALSE,
-                           max.overlaps = 20, seed = 1) +
-  stat_ellipse(aes(group = direction), type = "norm", linewidth = 0.4,
-               alpha = 0.6, show.legend = FALSE) +   # drop if too few points
-  facet_wrap(~ shed, scales = "free") +
-  scale_color_manual(values = dir_cols, name = "") +
-  labs(x = "MDS axis 1", y = "MDS axis 2",
-       title = "Event sequence ordination (distance = 1 - Kendall's tau)",
-       subtitle = "Nearby events have similar order; wetting vs. drying separation shows directional structure") +
-  theme_bw(base_size = 11) +
-  theme(strip.background = element_blank(), legend.position = "top")
-
-fig_mds
-ggsave("figure_event_tau_mds.pdf", fig_mds, width = 11, height = 4.5)
-```
-
-All events, no curation. FInal figure?
-```{r}
-#| message: false
-#| warning: false
-#| fig-width: 12
-#| fig-height: 8
-# Event x event pairwise Kendall's tau over ALL events, recomputed directly from
-# the ds_* direction sequences (NOT from the curated wetting_pairs/drying_pairs).
-reorder_events <- FALSE
-
-event_rank_list <- function(dir_long){
-  dir_long %>% group_by(event_id) %>% mutate(rank = row_number()) %>% ungroup() %>%
-    { split(select(., sensor_id, rank), .$event_id) }
-}
-
-# all-pairs tau within one shed/direction, no event filtering -----------------
-pairwise_all <- function(dir_long, shed, min_shared = 3){
-  rl <- event_rank_list(dir_long)
-  evs <- names(rl)
-  if (length(evs) < 2) return(tibble())
-  out <- vector("list", 0)
-  for (cc in combn(evs, 2, simplify = FALSE)){
-    m <- inner_join(rl[[cc[1]]], rl[[cc[2]]], by = "sensor_id", suffix = c("_i", "_j"))
-    if (nrow(m) < min_shared) next
-    kt <- suppressWarnings(cor(m$rank_i, m$rank_j, method = "kendall"))
-    out[[length(out) + 1]] <- tibble(shed = shed,
-                                     event_i = as.integer(cc[1]),
-                                     event_j = as.integer(cc[2]),
-                                     kendall_tau = kt)
-  }
-  bind_rows(out)
-}
-
-wetting_all <- bind_rows(
-  pairwise_all(ds_w3$wetting, "W3"),
-  pairwise_all(ds_fb$wetting, "FB"),
-  pairwise_all(ds_zz$wetting, "ZZ"))
-drying_all <- bind_rows(
-  pairwise_all(ds_w3$drying, "W3"),
-  pairwise_all(ds_fb$drying, "FB"),
-  pairwise_all(ds_zz$drying, "ZZ"))
-
-# long, symmetric, no diagonal -----------------------------------------------
-tau_matrix_long <- function(pairs, direction){
-  pairs %>%
-    { bind_rows(transmute(., shed, a = event_i, b = event_j, kendall_tau),
-                transmute(., shed, a = event_j, b = event_i, kendall_tau)) } %>%
-    mutate(direction = direction)
-}
-tau_long <- bind_rows(
-  tau_matrix_long(wetting_all, "Wetting"),
-  tau_matrix_long(drying_all,  "Drying")
-) %>%
-  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ")),
-         direction = factor(direction, levels = c("Wetting", "Drying")))
-
-order_one <- function(df){
-  evs <- sort(unique(c(df$a, df$b)))
-  if (!reorder_events || length(evs) < 3) return(as.character(evs))
-  m <- matrix(0, length(evs), length(evs), dimnames = list(evs, evs))
-  for (i in seq_len(nrow(df))) m[as.character(df$a[i]), as.character(df$b[i])] <- df$kendall_tau[i]
-  diag(m) <- 1
-  as.character(evs[hclust(as.dist(1 - m))$order])
-}
-
-panels <- tau_long %>% group_split(shed, direction)
-plot_one <- function(df){
-  ord <- order_one(df)
-  df <- df %>% mutate(a = factor(as.character(a), levels = ord),
-                      b = factor(as.character(b), levels = ord))
-  ggplot(df, aes(a, b, fill = kendall_tau)) +
-    geom_tile(colour = "white") +
-    scale_fill_gradient2(low = "#2166AC", mid = "grey95", high = "#B2182B",
-                         midpoint = 0, limits = c(-1, 1), name = "Kendall\ntau") +
-    coord_equal() +
-    labs(x = "Event", y = "Event", title = paste0(df$shed[1], " — ", df$direction[1])) +
-    theme_minimal(base_size = 10) +
-    theme(panel.grid = element_blank(),
-          axis.text = element_text(size = 7),
-          plot.title = element_text(size = 11, face = "bold"))
-}
-
-figure1 <- patchwork::wrap_plots(lapply(panels, plot_one), ncol = 2, byrow = TRUE) +
-  plot_layout(guides = "collect") +
-  plot_annotation(
-    caption = "Pairwise Kendall's tau between ALL observed event sequences (recomputed from ds_*). Diagonal blank. Red = similar order, blue = reversed, grey = unrelated. Events clustered within each panel.")
-figure1
-ggsave("figure1_event_tau_heatmap.pdf", figure1, width = 12, height = 8)
-```
-
-Table with all events
-```{r}
-#| message: false
-#| warning: false
-# Combined consistency table over the FULL set of observed sequences.
-# Recomputes the three tau inputs from ds_* (no curation / no >=5-cycling filter),
-# then applies the same summaries as before.
-
-event_rank_list <- function(dir_long){
-  dir_long %>% group_by(event_id) %>% mutate(rank = row_number()) %>% ungroup() %>%
-    { split(select(., sensor_id, rank), .$event_id) }
-}
-
-# --- (1,2) all-pairs within-direction tau, all events -----------------------
-pairwise_all <- function(dir_long, shed, min_shared = 3){
-  rl <- event_rank_list(dir_long); evs <- names(rl)
-  if (length(evs) < 2) return(tibble())
-  out <- vector("list", 0)
-  for (cc in combn(evs, 2, simplify = FALSE)){
-    m <- inner_join(rl[[cc[1]]], rl[[cc[2]]], by = "sensor_id", suffix = c("_i","_j"))
-    if (nrow(m) < min_shared) next
-    ct <- suppressWarnings(cor.test(m$rank_i, m$rank_j, method = "kendall"))
-    out[[length(out)+1]] <- tibble(shed = shed,
-                                   event_i = as.integer(cc[1]), event_j = as.integer(cc[2]),
-                                   kendall_tau = unname(ct$estimate), tau_p = ct$p.value)
-  }
-  bind_rows(out)
-}
-wetting_pairs_full <- bind_rows(pairwise_all(ds_w3$wetting,"W3"),
-                                pairwise_all(ds_fb$wetting,"FB"),
-                                pairwise_all(ds_zz$wetting,"ZZ"))
-drying_pairs_full  <- bind_rows(pairwise_all(ds_w3$drying,"W3"),
-                                pairwise_all(ds_fb$drying,"FB"),
-                                pairwise_all(ds_zz$drying,"ZZ"))
-
-# --- (3) within-event wetting-vs-drying tau, all events ---------------------
-wet_dry_all <- function(wet_long, dry_long, shed, min_shared = 3){
-  wl <- event_rank_list(wet_long); dl <- event_rank_list(dry_long)
-  evs <- intersect(names(wl), names(dl)); out <- vector("list", 0)
-  for (e in evs){
-    m <- inner_join(wl[[e]], dl[[e]], by = "sensor_id", suffix = c("_wet","_dry"))
-    if (nrow(m) < min_shared) next
-    ct <- suppressWarnings(cor.test(m$rank_wet, m$rank_dry, method = "kendall"))
-    out[[length(out)+1]] <- tibble(shed = shed, event_id = as.integer(e),
-                                   kendall_tau = unname(ct$estimate), tau_p = ct$p.value)
-  }
-  bind_rows(out)
-}
-wet_dry_events_full <- bind_rows(
-  wet_dry_all(ds_w3$wetting, ds_w3$drying, "W3"),
-  wet_dry_all(ds_fb$wetting, ds_fb$drying, "FB"),
-  wet_dry_all(ds_zz$wetting, ds_zz$drying, "ZZ"))
-
-# --- summaries (unchanged logic) --------------------------------------------
-summ_consistency <- function(df, label){
-  df %>% group_by(shed) %>%
-    summarise(n = n(),
-              mean_tau = mean(kendall_tau, na.rm = TRUE),
-              sd_tau   = sd(kendall_tau, na.rm = TRUE),
-              frac_sig = mean(tau_p < 0.05, na.rm = TRUE),
-              wilcox_p = NA_real_, .groups = "drop") %>%
-    mutate(comparison = label)
-}
-wet_dry_wilcox <- wet_dry_events_full %>%
-  group_by(shed) %>%
-  summarise(n = n(),
-            mean_tau = mean(kendall_tau, na.rm = TRUE),
-            sd_tau   = sd(kendall_tau, na.rm = TRUE),
-            frac_sig = NA_real_,
-            wilcox_p = tryCatch(wilcox.test(kendall_tau, mu = 0)$p.value,
-                                error = function(e) NA_real_),
-            .groups = "drop") %>%
-  mutate(comparison = "Wetting vs drying (within event)")
-
-consistency <- bind_rows(
-  summ_consistency(wetting_pairs_full, "Wetting consistency (across events)"),
-  summ_consistency(drying_pairs_full,  "Drying consistency (across events)"),
-  wet_dry_wilcox
-) %>%
-  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ")),
-         comparison = factor(comparison, levels = c(
-           "Wetting consistency (across events)",
-           "Drying consistency (across events)",
-           "Wetting vs drying (within event)"))) %>%
-  mutate(interpretation = case_when(
-    comparison != "Wetting vs drying (within event)" & mean_tau >= 0.5 ~ "Highly consistent",
-    comparison != "Wetting vs drying (within event)" & mean_tau >= 0.3 ~ "Moderately consistent",
-    comparison != "Wetting vs drying (within event)"                   ~ "Weakly consistent",
-    mean_tau <= -0.3 & wilcox_p < 0.05 ~ "Significantly reversed",
-    mean_tau <    0  & wilcox_p < 0.05 ~ "Reversed (weak but sig.)",
-    wilcox_p >= 0.05 | is.na(wilcox_p) ~ "No sig. difference",
-    TRUE ~ "Same order both directions")) %>%
-  arrange(shed, comparison) %>%
-  select(shed, comparison, n, mean_tau, sd_tau, frac_sig, wilcox_p, interpretation)
-
-knitr::kable(
-  consistency %>%
-    mutate(across(c(mean_tau, sd_tau, frac_sig), ~ round(.x, 3)),
-           wilcox_p = ifelse(is.na(wilcox_p), "—",
-                             format.pval(wilcox_p, digits = 2, eps = 1e-3))),
-  col.names = c("Watershed", "Comparison", "n", "Mean tau", "SD tau",
-                "Frac. p<0.05", "Wilcoxon p", "Interpretation"),
-  align = c("l", "l", "r", "r", "r", "r", "r", "l"),
-  caption = "Combined sequence analysis over ALL observed events (no curation). Rows 1-2: internal consistency of wetting and drying sequences across events (Frac. p<0.05 = share of event pairs with significant positive tau). Row 3: within-event wetting-vs-drying order, one-sample Wilcoxon signed-rank test (H0: median tau = 0); negative mean tau = drying reverses wetting. n = event pairs (rows 1-2) or events (row 3).")
-```
-
-# Final figure publication
-
-
-Grid of taus of observed sequences; FINAL FIGURE
-```{r}
-#| message: false
-#| warning: false
-#| fig-width: 12
-#| fig-height: 8
-# Heatmap of pairwise Kendall's tau between observed event sequences, per
-# watershed x direction. Diagonal left blank. Events restricted to the curated
-# subset (both-direction + direction-specific, >= 5 cycling sensors).
-
-reorder_events <- FALSE
-
-# define set of events to use for each watershed
-dir_spec <- list(
-  W3 = list(remove = c(13, 18), wetting_only = c(8, 10),            drying_only = integer(0)),
-  FB = list(remove = c(1),      wetting_only = c(3, 5, 9),          drying_only = c(7, 10, 12)),
-  ZZ = list(remove = c(),     wetting_only = c(4, 11, 12, 13), drying_only = c(1))
-)
-universe <- list(W3 = 1:18, FB = 1:19, ZZ = 1:18)
-# curated event sets (from earlier) ------------------------------------------
-wetting_eligible <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$drying_only)))
-drying_eligible  <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$wetting_only)))
-keep_trans <- list(
-  W3 = events_with_transitions(input_w3, w3_events_all, W3_IDs, 3),
-  FB = events_with_transitions(input_fb, FBall_events,  FB_IDs, 3),
-  ZZ = events_with_transitions(input_zz, ZZall_events,  ZZ_IDs, 3))
-keep_wet <- Map(intersect, Map(wetting_eligible, dir_spec, universe), keep_trans)
-keep_dry <- Map(intersect, Map(drying_eligible,  dir_spec, universe), keep_trans)
-
-# calculate drying and wetting pairs
-# ---- wetting pairs
-
-# ---- all-pairs wetting-vs-wetting within a watershed ------------------------
-pairwise_wetting <- function(wet_long, shed, keep_events, min_shared = 3){
-  rl <- event_rank_list(wet_long)
-  evs <- intersect(names(rl), as.character(keep_events))
-  if (length(evs) < 2) return(tibble())
-  out <- vector("list", 0)
-  for (cc in combn(evs, 2, simplify = FALSE)){
-    m <- inner_join(rl[[cc[1]]], rl[[cc[2]]], by = "sensor_id", suffix = c("_i", "_j"))
-    if (nrow(m) < min_shared) next
-    kt <- suppressWarnings(cor.test(m$rank_i, m$rank_j, method = "kendall"))
-    out[[length(out) + 1]] <- tibble(
-      shed = shed, event_i = as.integer(cc[1]), event_j = as.integer(cc[2]),
-      n_shared = nrow(m), kendall_tau = unname(kt$estimate), tau_p = kt$p.value)
-  }
-  bind_rows(out)
-}
-
-wetting_pairs <- bind_rows(
-  pairwise_wetting(ds_w3$wetting, "W3", keep_wet$W3),
-  pairwise_wetting(ds_fb$wetting, "FB", keep_wet$FB),
-  pairwise_wetting(ds_zz$wetting, "ZZ", keep_wet$ZZ)
-) %>%
-  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ"))) %>%
-  arrange(shed, event_i, event_j)
-
-# ---- all-pairs drying-vs-drying within a watershed --------------------------
-pairwise_drying <- function(dry_long, shed, keep_events, min_shared = 3){
-  rl <- event_rank_list(dry_long)
-  evs <- intersect(names(rl), as.character(keep_events))
-  if (length(evs) < 2) return(tibble())
-  out <- vector("list", 0)
-  for (cc in combn(evs, 2, simplify = FALSE)){
-    m <- inner_join(rl[[cc[1]]], rl[[cc[2]]], by = "sensor_id", suffix = c("_i", "_j"))
-    if (nrow(m) < min_shared) next
-    kt <- suppressWarnings(cor.test(m$rank_i, m$rank_j, method = "kendall"))
-    out[[length(out) + 1]] <- tibble(
-      shed = shed, event_i = as.integer(cc[1]), event_j = as.integer(cc[2]),
-      n_shared = nrow(m), kendall_tau = unname(kt$estimate), tau_p = kt$p.value)
-  }
-  bind_rows(out)
-}
-
-drying_pairs <- bind_rows(
-  pairwise_drying(ds_w3$drying, "W3", keep_dry$W3),
-  pairwise_drying(ds_fb$drying, "FB", keep_dry$FB),
-  pairwise_drying(ds_zz$drying, "ZZ", keep_dry$ZZ)
-) %>%
-  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ"))) %>%
-  arrange(shed, event_i, event_j)
-
-# long, symmetric tau (NO diagonal), filtered to the eligible events ----------
-tau_matrix_long <- function(pairs, direction, keep_list){
-  purrr::imap_dfr(keep_list, function(evs, shed_sel){
-    p <- pairs %>% filter(shed == shed_sel, event_i %in% evs, event_j %in% evs)
-    if (nrow(p) == 0) return(tibble())
-    bind_rows(
-      p %>% transmute(shed = shed_sel, a = event_i, b = event_j, kendall_tau),
-      p %>% transmute(shed = shed_sel, a = event_j, b = event_i, kendall_tau)
-    )
-  }) %>% mutate(direction = direction)
-}
-
-tau_long <- bind_rows(
-  tau_matrix_long(wetting_pairs, "Wetting", keep_wet),
-  tau_matrix_long(drying_pairs,  "Drying",  keep_dry)
-) %>%
-  mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ")),
-         direction = factor(direction, levels = c("Wetting", "Drying")))
-
-# per-panel clustering order (on 1 - tau, diagonal = 1 only for the distance) --
-order_one <- function(df){
-  evs <- sort(unique(c(df$a, df$b)))
-  if (!reorder_events || length(evs) < 3) return(as.character(evs))
-  m <- matrix(0, length(evs), length(evs), dimnames = list(evs, evs))
-  for (i in seq_len(nrow(df))) m[as.character(df$a[i]), as.character(df$b[i])] <- df$kendall_tau[i]
-  diag(m) <- 1
-  as.character(evs[hclust(as.dist(1 - m))$order])
-}
-
-panels <- tau_long %>% group_split(shed, direction)
-plot_one <- function(df){
-  ord <- order_one(df)
-  df <- df %>% mutate(a = factor(as.character(a), levels = ord),
-                      b = factor(as.character(b), levels = ord))
-  ggplot(df, aes(a, b, fill = kendall_tau)) +
-    geom_tile(colour = "white") +
-    scale_fill_gradient2(low = "#2166AC", mid = "grey95", high = "#B2182B",
-                         midpoint = 0, limits = c(-1, 1), name = "Kendall\ntau") +
-    coord_equal() +
-    labs(x = "Event", y = "Event",
-         title = paste0(df$shed[1], " — ", df$direction[1])) +
-    theme_minimal(base_size = 10) +
-    theme(panel.grid = element_blank(),
-          axis.text = element_text(size = 7),
-          plot.title = element_text(size = 11, face = "bold"))
-}
-
-fig_tau_hm <- patchwork::wrap_plots(lapply(panels, plot_one), ncol = 2, byrow = TRUE) +
-  plot_layout(guides = "collect")
-fig_tau_hm
-ggsave("figure_event_tau_heatmap.pdf", fig_tau_hm, width = 12, height = 8)
-ggsave("figure_event_tau_heatmap.pdf", fig_tau_hm, width = 12, height = 8)
-
-```
-squares the same size, but no different than above
-```{r}
-#| message: false
-#| warning: false
-#| fig-width: 13
-#| fig-height: 5
-# Event x event Kendall's tau: each event's WETTING sequence (rows) vs each
-# event's DRYING sequence (cols), curated events per axis. Tile size held
-# constant across panels by sizing panels to their event counts (no coord_equal).
-
-reverse_drying <- FALSE
-
-dir_spec <- list(
-  W3 = list(remove = c(13, 18), wetting_only = c(8, 10),            drying_only = integer(0)),
-  FB = list(remove = c(1),      wetting_only = c(3, 5, 9),          drying_only = c(7, 10, 12)),
-  ZZ = list(remove = c(),       wetting_only = c(4, 11, 12, 13),    drying_only = c(1))
-)
-universe <- list(W3 = 1:18, FB = 1:19, ZZ = 1:18)
-wetting_eligible <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$drying_only)))
-drying_eligible  <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$wetting_only)))
-keep_trans <- list(
-  W3 = events_with_transitions(input_w3, w3_events_all, W3_IDs, 3),
-  FB = events_with_transitions(input_fb, FBall_events,  FB_IDs, 3),
-  ZZ = events_with_transitions(input_zz, ZZall_events,  ZZ_IDs, 3))
-keep_wet <- Map(intersect, Map(wetting_eligible, dir_spec, universe), keep_trans)
-keep_dry <- Map(intersect, Map(drying_eligible,  dir_spec, universe), keep_trans)
-
-event_rank_list <- function(dir_long, reverse = FALSE){
-  dir_long %>% group_by(event_id) %>% mutate(rank = row_number()) %>%
-    { if (reverse) mutate(., rank = max(rank) - rank + 1) else . } %>%
-    ungroup() %>% { split(select(., sensor_id, rank), .$event_id) }
-}
-
-wet_dry_grid <- function(wet_long, dry_long, shed, keep_w, keep_d, min_shared = 3){
-  wl <- event_rank_list(wet_long)
-  dl <- event_rank_list(dry_long, reverse = reverse_drying)
-  wl <- wl[names(wl) %in% as.character(keep_w)]
-  dl <- dl[names(dl) %in% as.character(keep_d)]
-  out <- vector("list", 0)
-  for (wi in names(wl)) for (dj in names(dl)){
-    m <- inner_join(wl[[wi]], dl[[dj]], by = "sensor_id", suffix = c("_w", "_d"))
-    if (nrow(m) < min_shared) next
-    kt <- suppressWarnings(cor(m$rank_w, m$rank_d, method = "kendall"))
-    out[[length(out)+1]] <- tibble(shed = shed,
-                                   wet_event = as.integer(wi),
-                                   dry_event = as.integer(dj),
-                                   kendall_tau = kt)
-  }
-  bind_rows(out)
-}
-
-grid_all <- bind_rows(
-  wet_dry_grid(ds_w3$wetting, ds_w3$drying, "W3", keep_wet$W3, keep_dry$W3),
-  wet_dry_grid(ds_fb$wetting, ds_fb$drying, "FB", keep_wet$FB, keep_dry$FB),
-  wet_dry_grid(ds_zz$wetting, ds_zz$drying, "ZZ", keep_wet$ZZ, keep_dry$ZZ)
-) %>% mutate(shed = factor(shed, levels = c("W3", "FB", "ZZ")))
-
-plot_one <- function(df, keep_w, keep_d){
-  df <- df %>% mutate(wet_event = factor(wet_event, levels = sort(keep_w)),
-                      dry_event = factor(dry_event, levels = sort(keep_d)))
-  diag_df <- df %>% filter(as.character(wet_event) == as.character(dry_event))
-  ggplot(df, aes(dry_event, wet_event, fill = kendall_tau)) +
-    geom_tile(colour = "white") +
-    geom_tile(data = diag_df, fill = NA, colour = "black", linewidth = 0.4) +
-    scale_fill_gradient2(low = "#2166AC", mid = "grey95", high = "#B2182B",
-                         midpoint = 0, limits = c(-1, 1), name = "Kendall\ntau") +
-    scale_x_discrete(drop = FALSE) + scale_y_discrete(drop = FALSE) +
-    labs(x = "Event (drying)", y = "Event (wetting)", title = df$shed[1]) +
-    theme_minimal(base_size = 10) +
-    theme(panel.grid = element_blank(),
-          aspect.ratio = length(keep_w) / length(keep_d),  # square tiles per panel
-          axis.text = element_text(size = 7),
-          plot.title = element_text(size = 11, face = "bold"))
-}
-
-plots <- list(
-  plot_one(filter(grid_all, shed == "W3"), keep_wet$W3, keep_dry$W3),
-  plot_one(filter(grid_all, shed == "FB"), keep_wet$FB, keep_dry$FB),
-  plot_one(filter(grid_all, shed == "ZZ"), keep_wet$ZZ, keep_dry$ZZ))
-
-# widths proportional to number of drying-axis events -> constant tile size ----
-panel_widths <- c(length(keep_dry$W3), length(keep_dry$FB), length(keep_dry$ZZ))
-
-figure1 <- patchwork::wrap_plots(plots, ncol = 3, widths = panel_widths) +
-  plot_layout(guides = "collect") +
-  plot_annotation(
-    caption = paste(
-      "Kendall's tau: each event's wetting order (rows) vs each event's drying order (columns), curated per axis.",
-      "Black-outlined diagonal = same event. All grid squares equal size.",
-      if (reverse_drying) "Drying = 1 dries last; red = same order."
-      else "Drying = 1 dries first; blue (negative) = reversed."))
-figure1
-ggsave("figure1_wet_vs_dry_tau_heatmap_equal.pdf", figure1, width = 13, height = 5)
-```
-Boxplots, but making sure I am using the correct subset of events
-```{r}
-#| message: false
-#| warning: false
-#| fig-width: 11
-#| fig-height: 6
-# For each event, compare its WETTING and DRYING sequence to the two MODEL
-# sequences (Flow Persistence, TWI) via Kendall's tau on shared nodes.
-# Drying ranks are REVERSED (1 = dries last) so that, like wetting and like the
-# model sequences, rank 1 = most persistent -> positive tau = model agrees.
-
-dir_spec <- list(
-  W3 = list(remove = c(13, 18), wetting_only = c(8, 10),            drying_only = integer(0)),
-  FB = list(remove = c(1),      wetting_only = c(3, 5, 9),          drying_only = c(7, 10, 12)),
-  ZZ = list(remove = c(),       wetting_only = c(4, 11, 12, 13),    drying_only = c(1))
-)
-universe <- list(W3 = 1:18, FB = 1:19, ZZ = 1:18)
-wetting_eligible <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$drying_only)))
-drying_eligible  <- function(spec, u) sort(setdiff(u, c(spec$remove, spec$wetting_only)))
-keep_trans <- list(
-  W3 = events_with_transitions(input_w3, w3_events_all, W3_IDs, 3),
-  FB = events_with_transitions(input_fb, FBall_events,  FB_IDs, 3),
-  ZZ = events_with_transitions(input_zz, ZZall_events,  ZZ_IDs, 3))
-keep_wet <- Map(intersect, Map(wetting_eligible, dir_spec, universe), keep_trans)
-keep_dry <- Map(intersect, Map(drying_eligible,  dir_spec, universe), keep_trans)
-
-tau_event_model <- function(ev_ranks, model_seq, min_shared = 3){
-  m <- ev_ranks %>%
-    inner_join(model_seq %>% transmute(sensor_id = ID, mrank = sequence),
-               by = "sensor_id")
-  if (nrow(m) < min_shared) return(tibble(tau = NA_real_, p = NA_real_, n = nrow(m)))
-  ct <- suppressWarnings(cor.test(m$rank, m$mrank, method = "kendall"))
-  tibble(tau = unname(ct$estimate), p = ct$p.value, n = nrow(m))
-}
-
-compare_dir <- function(dir_long, keep_events, pk_seq, twi_seq, shed, direction){
-  rl <- event_rank_list(dir_long)
-  evs <- intersect(names(rl), as.character(keep_events))
-  purrr::map_dfr(evs, function(e){
-    er <- rl[[e]]
-    # reverse drying ranks: 1 = dries last (most persistent), matching model order
-    if (direction == "Drying") er <- er %>% mutate(rank = max(rank) - rank + 1)
-    bind_rows(
-      tau_event_model(er, pk_seq)  %>% mutate(model = "Flow Persistence"),
-      tau_event_model(er, twi_seq) %>% mutate(model = "TWI")
-    ) %>% mutate(shed = shed, direction = direction, event_id = as.integer(e))
-  })
-}
-
-event_model_tau <- bind_rows(
-  compare_dir(ds_w3$wetting, keep_wet$W3, W3_pk_seq, w3_twi_sequence, "W3", "Wetting"),
-  compare_dir(ds_w3$drying,  keep_dry$W3, W3_pk_seq, w3_twi_sequence, "W3", "Drying"),
-  compare_dir(ds_fb$wetting, keep_wet$FB, FB_pk_seq, fb_twi_sequence, "FB", "Wetting"),
-  compare_dir(ds_fb$drying,  keep_dry$FB, FB_pk_seq, fb_twi_sequence, "FB", "Drying"),
-  compare_dir(ds_zz$wetting, keep_wet$ZZ, ZZ_pk_seq, zz_twi_sequence, "ZZ", "Wetting"),
-  compare_dir(ds_zz$drying,  keep_dry$ZZ, ZZ_pk_seq, zz_twi_sequence, "ZZ", "Drying")
-) %>%
-  filter(!is.na(tau)) %>%
-  mutate(shed      = factor(shed, levels = c("W3", "FB", "ZZ")),
-         direction = factor(direction, levels = c("Wetting", "Drying")),
-         model     = factor(model, levels = c("Flow Persistence", "TWI")))
-
-model_cols <- c("Flow Persistence" = "#7ebdc2", "TWI" = "#f3dfa2")
-
-fig_event_model <- ggplot(event_model_tau,
-                          aes(x = direction, y = tau, fill = model, color = model)) +
-  geom_hline(yintercept = 0, linetype = 2, color = "grey60") +
-  geom_boxplot(width = 0.55, alpha = 0.25, outlier.shape = NA,
-               position = position_dodge(0.65)) +
-  geom_point(size = 2, alpha = 0.8,
-             position = position_jitterdodge(jitter.width = 0.12, dodge.width = 0.65)) +
-  facet_wrap(~ shed) +
-  scale_fill_manual(values = model_cols, name = "Model sequence") +
-  scale_color_manual(values = model_cols, name = "Model sequence") +
-  coord_cartesian(ylim = c(-0.5, 1)) +
-  labs(x = "", y = "Kendall's tau (event order vs. model)") +
-  theme_bw(base_size = 12) +
-  theme(strip.background = element_blank(), legend.position = "right",
-        panel.grid.major = element_blank(), # Removes major grid lines
-    panel.grid.minor = element_blank())  # Removes minor grid lines)
-
-fig_event_model
-ggsave("figure_event_vs_model_tau.pdf", fig_event_model, width = 8.5, height = 3)
-ggsave("figure_event_vs_model_tau.png", fig_event_model, width = 8.5, height = 3)
-
-event_model_summary <- event_model_tau %>%
-  group_by(shed, direction, model) %>%
-  summarise(n_events = n(),
-            mean_tau = mean(tau), median_tau = median(tau), sd_tau = sd(tau),
-            frac_sig = mean(p < 0.05, na.rm = TRUE), .groups = "drop")
-knitr::kable(
-  event_model_summary %>%
-    mutate(across(c(mean_tau, median_tau, sd_tau, frac_sig), ~ round(.x, 3))),
-  caption = "Per-event agreement (Kendall's tau) of each event's wetting and (reversed) drying order with the Flow Persistence and TWI model sequences.")
-```
